@@ -6,6 +6,8 @@ A playful tournament bracket builder for single elimination, double elimination,
 
 - Create seeded brackets and round-robin schedules.
 - Track match results, scores, MVPs, players, and standings.
+- Rename tournaments and participant names after generation.
+- Customize round-robin standings with metric priorities and optional AI-assisted rule parsing.
 - Save projects per account with Supabase, with local-browser fallback for development.
 - Export/import tournaments as `.tourney.json`.
 - Export/import tournament folders as `.tourney-folder.zip`.
@@ -49,6 +51,16 @@ VITE_SUPABASE_ANON_KEY=...
 
 When these env vars are present, login/signup uses Supabase and projects sync online. Without them, the app falls back to local browser storage.
 
+## Round-robin AI rules
+
+The metric assistant works locally with a built-in parser. To connect it to your own AI service, set `VITE_AI_RULES_ENDPOINT` to a server-side endpoint that accepts:
+
+```json
+{"message":"points scored first, then match wins","currentRules":{}}
+```
+
+Return JSON with a `rules` object containing `criteria`, `pointMode`, optional `scoreDiffBands`, and `summary`. Keep model API keys on that server-side endpoint, not in the Vite client.
+
 ## Vercel deployment
 
 Use these settings:
@@ -58,4 +70,4 @@ Use these settings:
 - Output directory: `dist`
 - Production branch: `main`
 
-Add the same `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` values in Vercel Project Settings → Environment Variables for Production, Preview, and Development.
+Add the same `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and optional `VITE_AI_RULES_ENDPOINT` values in Vercel Project Settings → Environment Variables for Production, Preview, and Development.

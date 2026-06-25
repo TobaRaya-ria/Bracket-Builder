@@ -10,6 +10,179 @@ const regionFlag = (region) => { if(!region)return""; const iso=COUNTRY_MAP[regi
 // ─── Palette ─────────────────────────────────────────────────────────────────
 const palette=["#e63946","#457b9d","#2a9d8f","#e9c46a","#f4a261","#8338ec","#06d6a0","#fb8500","#118ab2","#d62828","#3a86ff","#ff006e","#219ebc","#ffb703","#c77dff","#52b788","#f77f00","#4cc9f0","#b5179e","#7209b7","#3a0ca3","#4361ee","#80b918","#e07a5f","#3d405b","#81b29a","#264653","#2b2d42","#ef233c","#06aed5"];
 
+const DEFAULT_STANDINGS_RULES={
+  pointMode:"matchWins",
+  winPoints:3,
+  drawPoints:1,
+  lossPoints:0,
+  scoreDiffBands:[],
+  criteria:["points","matchWins","gameDiff","scoreDiff"],
+  summary:"3 points per match win, then match wins, game differential, then score differential."
+};
+
+const STANDINGS_CRITERIA=[
+  ["points","Points"],
+  ["scoreFor","Score for"],
+  ["scoreDiff","Score diff"],
+  ["matchWins","Match wins"],
+  ["gameWins","Game wins"],
+  ["gameDiff","Game diff"],
+  ["fewestLosses","Fewest losses"]
+];
+
+function normalizeStandingsRules(rules){
+  const base={...DEFAULT_STANDINGS_RULES,...(rules||{})};
+  const valid=new Set(STANDINGS_CRITERIA.map(([id])=>id));
+  const criteria=(Array.isArray(base.criteria)?base.criteria:DEFAULT_STANDINGS_RULES.criteria).filter(id=>valid.has(id));
+  return {
+    ...base,
+    winPoints:Number.isFinite(Number(base.winPoints))?Number(base.winPoints):3,
+    drawPoints:Number.isFinite(Number(base.drawPoints))?Number(base.drawPoints):1,
+    lossPoints:Number.isFinite(Number(base.lossPoints))?Number(base.lossPoints):0,
+    scoreDiffBands:Array.isArray(base.scoreDiffBands)?base.scoreDiffBands.map(b=>({type:b.type==="below"?"below":"atLeast",diff:Number(b.diff)||0,points:Number(b.points)||0})):[],
+    criteria:criteria.length?criteria:DEFAULT_STANDINGS_RULES.criteria,
+    summary:base.summary||DEFAULT_STANDINGS_RULES.summary
+  };
+}
+
+function standingsCriterionLabel(id){
+  return STANDINGS_CRITERIA.find(([key])=>key===id)?.[1]||id;
+}
+
+function scoreDiffPoints(diff,rules){
+  const bands=[...(rules.scoreDiffBands||[])].sort((a,b)=>a.type===b.type?b.diff-a.diff:a.type==="atLeast"?-1:1);
+  const band=bands.find(b=>b.type==="below"?diff<b.diff:diff>=b.diff);
+  return band?band.points:rules.winPoints;
+}
+
+function standingsValue(row,criterion){
+  if(criterion==="points")return row.pts;
+  if(criterion==="scoreFor")return row.sw;
+  if(criterion==="scoreDiff")return row.sw-row.sl;
+  if(criterion==="matchWins")return row.mw;
+  if(criterion==="gameWins")return row.gw;
+  if(criterion==="gameDiff")return row.gw-row.gl;
+  if(criterion==="fewestLosses")return -row.ml;
+  return 0;
+}
+
+function sortStandingsRows(rows,rules){
+  const cfg=normalizeStandingsRules(rules);
+  return rows.sort((a,b)=>{
+    for(const criterion of cfg.criteria){
+      const diff=standingsValue(b,criterion)-standingsValue(a,criterion);
+      if(diff!==0)return diff;
+    }
+    return a.team.name.localeCompare(b.team.name);
+  });
+}
+
+function standingTieSignature(row,rules){
+  const cfg=normalizeStandingsRules(rules);
+  return cfg.criteria.map(criterion=>standingsValue(row,criterion)).join("|");
+}
+
+function uniqCriteria(list){
+  const valid=new Set(STANDINGS_CRITERIA.map(([id])=>id));
+  const next=[];
+  list.forEach(item=>{if(valid.has(item)&&!next.includes(item))next.push(item);});
+  return next.length?next:DEFAULT_STANDINGS_RULES.criteria;
+}
+
+function inferStandingsCriteria(text,currentRules){
+  const lower=text.toLowerCase();
+  const chunks=lower.split(/\bthen\b|,|;|>/).map(part=>part.trim()).filter(Boolean);
+  const found=[];
+  const addFrom=(part)=>{
+    if(/pts?\s+scored|points?\s+scored|score\s+for|total\s+score/.test(part))found.push("scoreFor");
+    else if(/score\s*diff|point\s*diff|points?\s*difference|goal\s*diff/.test(part))found.push("scoreDiff");
+    else if(/game\s*diff/.test(part))found.push("gameDiff");
+    else if(/game\s*wins?/.test(part))found.push("gameWins");
+    else if(/fewest\s+loss|least\s+loss|losses/.test(part))found.push("fewestLosses");
+    else if(/match\s*wins?|wins?/.test(part))found.push("matchWins");
+    else if(/\bpts?\b|\bpoints?\b/.test(part))found.push("points");
+  };
+  chunks.forEach(addFrom);
+  if(!found.length)addFrom(lower);
+  const cur=normalizeStandingsRules(currentRules);
+  return uniqCriteria([...found,...cur.criteria]);
+}
+
+function inferScoreDiffBands(text){
+  const lower=text.toLowerCase();
+  const bands=[];
+  const atLeastPatterns=[
+    /(?:>=|at\s*least|over|above)?\s*(\d+)\s*(?:score|point|pts|goal)?\s*diff(?:erence)?\s*(?::|=|is|gets?|worth)?\s*(\d+)\s*(?:pts?|points?)/g,
+    /(?:win\s+by|diff(?:erence)?\s+of)\s*(\d+)[^0-9]+(\d+)\s*(?:pts?|points?)/g
+  ];
+  atLeastPatterns.forEach(pattern=>{
+    let match;
+    while((match=pattern.exec(lower))){
+      bands.push({type:"atLeast",diff:Number(match[1]),points:Number(match[2])});
+    }
+  });
+  const belowPattern=/(?:below|under|less\s+than)\s*(\d+)\D+?(\d+)\s*(?:pts?|points?)/g;
+  let below;
+  while((below=belowPattern.exec(lower))){
+    bands.push({type:"below",diff:Number(below[1]),points:Number(below[2])});
+  }
+  return bands.filter(b=>Number.isFinite(b.diff)&&Number.isFinite(b.points));
+}
+
+function summarizeStandingsRules(rules){
+  const cfg=normalizeStandingsRules(rules);
+  const criteria=cfg.criteria.map(standingsCriterionLabel).join(", ");
+  if(cfg.pointMode==="scoreDiffBands"&&cfg.scoreDiffBands.length){
+    const bands=cfg.scoreDiffBands.map(b=>`${b.type==="below"?"below":"at least"} ${b.diff} diff = ${b.points} pts`).join("; ");
+    return `Custom points: ${bands}. Ranking: ${criteria}.`;
+  }
+  return `${cfg.winPoints} points per match win. Ranking: ${criteria}.`;
+}
+
+function parseStandingsRulePrompt(text,currentRules){
+  const cur=normalizeStandingsRules(currentRules);
+  const bands=inferScoreDiffBands(text);
+  const next={
+    ...cur,
+    criteria:inferStandingsCriteria(text,cur)
+  };
+  const winPoints=text.match(/\bwin(?:s|ner)?\D+?(\d+)\s*(?:pts?|points?)\b/i);
+  const drawPoints=text.match(/\bdraw\D+?(\d+)\s*(?:pts?|points?)\b/i);
+  if(winPoints)next.winPoints=Number(winPoints[1]);
+  if(drawPoints)next.drawPoints=Number(drawPoints[1]);
+  if(bands.length){
+    next.pointMode="scoreDiffBands";
+    next.scoreDiffBands=uniqScoreBands(bands);
+    next.criteria=["points",...next.criteria.filter(criterion=>criterion!=="points")];
+  }
+  next.summary=summarizeStandingsRules(next);
+  return normalizeStandingsRules(next);
+}
+
+function uniqScoreBands(bands){
+  const seen=new Set();
+  return bands.filter(b=>{
+    const key=`${b.type}-${b.diff}-${b.points}`;
+    if(seen.has(key))return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function requestAiStandingsRules(message,currentRules){
+  const endpoint=AI_RULES_ENDPOINT;
+  if(!endpoint)return null;
+  const response=await fetch(endpoint,{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({message,currentRules:normalizeStandingsRules(currentRules)})
+  });
+  if(!response.ok)throw new Error("AI endpoint did not return a valid response.");
+  const payload=await response.json();
+  const rules=payload.rules||payload.standingsRules||payload;
+  return normalizeStandingsRules({...rules,summary:rules.summary||summarizeStandingsRules(rules)});
+}
+
 // ─── Match helpers ────────────────────────────────────────────────────────────
 function makeMatch(id, teamA, teamB, gpm, mode) {
   return { id, teamA: teamA||null, teamB: teamB||null, matchMode: mode, mvp: null, _autoWinner: null,
@@ -316,26 +489,27 @@ function groupTiebreakInfo(stageData, stageConfig) {
   const remainder=groupCount?advance%groupCount:0;
   if(!groupCount||!remainder)return null;
   const base=Math.floor(advance/groupCount);
-  const groupStandings=(stageData.groups||[]).map(group=>computeTeamStandings(group.teams,(group.rounds||[]).flat()));
+  const groupStandings=(stageData.groups||[]).map(group=>computeTeamStandings(group.teams,(group.rounds||[]).flat(),stageConfig.standingsRules));
   const guaranteed=groupStandings.flatMap(rows=>rows.slice(0,base).map(r=>r.team));
   const candidates=groupStandings.map((rows,idx)=>({group:idx,row:rows[base]})).filter(x=>x.row);
   const byPerformance=[...candidates].sort((a,b)=>b.row.mw-a.row.mw||b.row.gw-a.row.gw||b.row.sw-a.row.sw);
   return {groupCount,advance,remainder,base,guaranteed,candidates,byPerformance};
 }
 
-function makeTieKey(row, matchMode) {
+function makeTieKey(row, matchMode, standingsRules) {
+  if(standingsRules)return standingTieSignature(row,standingsRules);
   return matchMode==="score"?`score-${row.sw}`:`wins-${row.mw}`;
 }
 
-function buildRoundRobinTiebreakRound(teams, rounds, matchMode, gpm) {
+function buildRoundRobinTiebreakRound(teams, rounds, matchMode, gpm, standingsRules) {
   const regular=rounds.filter(round=>!round.some(m=>m._tiebreak));
   const existing=rounds.some(round=>round.some(m=>m._tiebreak));
   const all=regular.flat().filter(m=>m?.teamA&&m?.teamB);
   if(existing||all.length===0||!all.every(m=>matchResult(m).winner))return null;
-  const standings=computeTeamStandings(teams,all);
+  const standings=computeTeamStandings(teams,all,standingsRules);
   const groups=new Map();
   standings.forEach(row=>{
-    const key=makeTieKey(row,matchMode);
+    const key=makeTieKey(row,matchMode,standingsRules);
     if(!groups.has(key))groups.set(key,[]);
     groups.get(key).push(row.team);
   });
@@ -355,18 +529,34 @@ function buildRoundRobinTiebreakRound(teams, rounds, matchMode, gpm) {
 }
 
 // ─── Standings ────────────────────────────────────────────────────────────────
-function computeTeamStandings(teams, matches) {
-  return teams.map(t=>{
+function computeTeamStandings(teams, matches, standingsRules) {
+  const rules=normalizeStandingsRules(standingsRules);
+  const rows=teams.map(t=>{
     const mine=matches.filter(m=>m.teamA?.name===t.name||m.teamB?.name===t.name);
-    let mw=0,ml=0,gw=0,gl=0,sw=0,sl=0;
+    let mw=0,ml=0,draws=0,gw=0,gl=0,sw=0,sl=0,pts=0;
     mine.forEach(m=>{
       const isA=m.teamA?.name===t.name;
       const{wA,wB,scoreA,scoreB,winner}=matchResult(m);
-      gw+=isA?wA:wB; gl+=isA?wB:wA; sw+=isA?scoreA:scoreB; sl+=isA?scoreB:scoreA;
-      if(winner)winner.name===t.name?mw++:ml++;
+      const forScore=isA?scoreA:scoreB;
+      const againstScore=isA?scoreB:scoreA;
+      gw+=isA?wA:wB; gl+=isA?wB:wA; sw+=forScore; sl+=againstScore;
+      const hasScore=m.matchMode==="score"&&m.games?.some(g=>g.scoreA!==""&&g.scoreB!=="");
+      if(winner){
+        if(winner.name===t.name){
+          mw++;
+          pts+=rules.pointMode==="scoreDiffBands"?scoreDiffPoints(Math.max(0,forScore-againstScore),rules):rules.winPoints;
+        } else {
+          ml++;
+          pts+=rules.lossPoints;
+        }
+      } else if(hasScore){
+        draws++;
+        pts+=rules.drawPoints;
+      }
     });
-    return {team:t,played:mw+ml,mw,ml,gw,gl,sw,sl,pts:mw*3};
-  }).sort((a,b)=>b.pts-a.pts||b.mw-a.mw||(b.gw-b.gl)-(a.gw-a.gl)||(b.sw-b.sl)-(a.sw-a.sl));
+    return {team:t,played:mw+ml+draws,mw,ml,draws,gw,gl,sw,sl,pts};
+  });
+  return sortStandingsRows(rows,rules);
 }
 
 function computePlayerStandings(teams, matches, statCols, stageMatchSets=[]) {
@@ -623,13 +813,13 @@ function HoverPanText({text}){
   </span>;
 }
 
-function Stepper({label,value,min,max,onChange,small}){
+function Stepper({label,value,min,max,onChange,small,disabled=false}){
   const sz=small?24:30;
   return <div style={{display:"flex",alignItems:"center",gap:6}}>
     {label&&<span style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:"var(--color-text-secondary)",whiteSpace:"nowrap"}}>{label}</span>}
-    <button onClick={()=>onChange(Math.max(min,value-1))} disabled={value<=min} style={{width:sz,height:sz,borderRadius:5,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",cursor:value<=min?"not-allowed":"pointer",fontSize:14,color:"var(--color-text-primary)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,opacity:value<=min?0.35:1}}>−</button>
+    <button onClick={()=>!disabled&&onChange(Math.max(min,value-1))} disabled={disabled||value<=min} style={{width:sz,height:sz,borderRadius:5,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",cursor:disabled||value<=min?"not-allowed":"pointer",fontSize:14,color:"var(--color-text-primary)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,opacity:disabled||value<=min?0.35:1}}>−</button>
     <span style={{fontSize:small?16:20,fontWeight:800,minWidth:small?22:30,textAlign:"center",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif"}}>{value}</span>
-    <button onClick={()=>onChange(Math.min(max,value+1))} disabled={value>=max} style={{width:sz,height:sz,borderRadius:5,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",cursor:value>=max?"not-allowed":"pointer",fontSize:14,color:"var(--color-text-primary)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,opacity:value>=max?0.35:1}}>+</button>
+    <button onClick={()=>!disabled&&onChange(Math.min(max,value+1))} disabled={disabled||value>=max} style={{width:sz,height:sz,borderRadius:5,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",cursor:disabled||value>=max?"not-allowed":"pointer",fontSize:14,color:"var(--color-text-primary)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,opacity:disabled||value>=max?0.35:1}}>+</button>
   </div>;
 }
 
@@ -834,17 +1024,20 @@ function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
 }
 
 // ─── Standings tables ─────────────────────────────────────────────────────────
-function TeamStandingsTable({teams,matches,title,showScore}){
+function TeamStandingsTable({teams,matches,title,showScore,standingsRules}){
   const realMatches=playableMatches(matches);
-  const st=computeTeamStandings(teams,realMatches);
+  const rules=normalizeStandingsRules(standingsRules);
+  const st=computeTeamStandings(teams,realMatches,rules);
   const allDone=realMatches.length>0&&realMatches.every(m=>matchResult(m).winner);
+  const showDraws=st.some(row=>row.draws>0);
   return(
     <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:10,padding:"12px 14px"}}>
       {title&&<div style={{fontSize:10,fontWeight:700,letterSpacing:"0.09em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:10}}>{title}</div>}
+      {standingsRules&&<div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:8,fontFamily:"'Barlow',sans-serif"}}>{rules.summary}</div>}
       <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Barlow Condensed',sans-serif"}}>
           <thead><tr style={{borderBottom:"1.5px solid var(--color-border-tertiary)"}}>
-            {["#","Team","MP","MW","ML","GW","GL",...(showScore?["SW","SL"]:[]),"Pts"].map(h=><th key={h} style={{padding:"4px 5px",color:"var(--color-text-tertiary)",fontWeight:700,textAlign:h==="Team"?"left":"center",letterSpacing:"0.05em",fontSize:10,whiteSpace:"nowrap"}}>{h}</th>)}
+            {["#","Team","MP","MW","ML",...(showDraws?["D"]:[]),"GW","GL",...(showScore?["SW","SL"]:[]),"Pts"].map(h=><th key={h} style={{padding:"4px 5px",color:"var(--color-text-tertiary)",fontWeight:700,textAlign:h==="Team"?"left":"center",letterSpacing:"0.05em",fontSize:10,whiteSpace:"nowrap"}}>{h}</th>)}
           </tr></thead>
           <tbody>{st.map((row,i)=>(
             <tr key={row.team.name} style={{borderBottom:"0.5px solid var(--color-border-tertiary)",background:i===0&&row.mw>0?"rgba(233,196,106,0.08)":"transparent"}}>
@@ -853,6 +1046,7 @@ function TeamStandingsTable({teams,matches,title,showScore}){
               <td style={{padding:"5px 5px",textAlign:"center",color:"var(--color-text-secondary)"}}>{row.played}</td>
               <td style={{padding:"5px 5px",textAlign:"center",color:"#2a9d8f",fontWeight:700}}>{row.mw}</td>
               <td style={{padding:"5px 5px",textAlign:"center",color:"#e63946"}}>{row.ml}</td>
+              {showDraws&&<td style={{padding:"5px 5px",textAlign:"center",color:"var(--color-text-tertiary)"}}>{row.draws||"—"}</td>}
               <td style={{padding:"5px 5px",textAlign:"center",color:"#2a9d8f"}}>{row.gw}</td>
               <td style={{padding:"5px 5px",textAlign:"center",color:"#e63946"}}>{row.gl}</td>
               {showScore&&<><td style={{padding:"5px 5px",textAlign:"center",color:"#2a9d8f"}}>{row.sw}</td><td style={{padding:"5px 5px",textAlign:"center",color:"#e63946"}}>{row.sl}</td></>}
@@ -1041,7 +1235,7 @@ function DoubleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols}){
 }
 
 // ─── Round Robin view with weeks ──────────────────────────────────────────────
-function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreakRound,roundsPerWeek,matchMode,statCols}){
+function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreakRound,roundsPerWeek,matchMode,statCols,standingsRules}){
   const[activeWeek,setActiveWeek]=useState(0);
   const[playerSort,setPlayerSort]=useState("mw");
   const[showPlayers,setShowPlayers]=useState(false);
@@ -1052,7 +1246,7 @@ function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreak
   const weeks=[];
   for(let i=0;i<total;i+=roundsPerWeek)weeks.push(rrRounds.slice(i,i+roundsPerWeek));
   const gpm=rrRounds[0]?.[0]?.games?.length||1;
-  const pendingTiebreak=buildRoundRobinTiebreakRound(teams,rrRounds,matchMode,gpm);
+  const pendingTiebreak=buildRoundRobinTiebreakRound(teams,rrRounds,matchMode,gpm,standingsRules);
   const hasTiebreak=rrRounds.some(round=>round.some(m=>m._tiebreak));
   const curWeek=weeks[activeWeek]||[];
   const curRounds=curWeek;
@@ -1110,14 +1304,14 @@ function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreak
 
       <div style={{marginTop:24}}>
         {!showPlayers
-          ?<TeamStandingsTable teams={teams} matches={matchesUpToWeek} title={`Team Standings — through Week ${activeWeek+1}`} showScore={matchMode==="score"}/>
+          ?<TeamStandingsTable teams={teams} matches={matchesUpToWeek} title={`Team Standings — through Week ${activeWeek+1}`} showScore={matchMode==="score"} standingsRules={standingsRules}/>
           :<PlayerStandingsTable teams={teams} matches={matchesUpToWeek} statCols={statCols} title={`Player Standings — through Week ${activeWeek+1}`} sortBy={playerSort} onSortBy={setPlayerSort}/>}
       </div>
     </div>
   );
 }
 
-function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,roundsPerWeek,matchMode,statCols}){
+function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,roundsPerWeek,matchMode,statCols,standingsRules}){
   const[activeGroup,setActiveGroup]=useState(0);
   const groups=data.groups||[];
   const poolChoice=data.poolChoice;
@@ -1205,11 +1399,11 @@ function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,roundsPer
         })}
       </div>
 
-      {group&&<RoundRobinView rrRounds={group.rounds} teams={group.teams} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} onAddTiebreakRound={round=>onStageUpdate(d=>({...d,groups:d.groups.map((g,idx)=>idx===activeGroup?{...g,rounds:[...g.rounds,round]}:g)}))} roundsPerWeek={roundsPerWeek} matchMode={matchMode} statCols={statCols}/>}
+      {group&&<RoundRobinView rrRounds={group.rounds} teams={group.teams} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} onAddTiebreakRound={round=>onStageUpdate(d=>({...d,groups:d.groups.map((g,idx)=>idx===activeGroup?{...g,rounds:[...g.rounds,round]}:g)}))} roundsPerWeek={roundsPerWeek} matchMode={matchMode} statCols={statCols} standingsRules={standingsRules}/>}
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12,marginTop:20}}>
         {groups.map(g=>(
-          <TeamStandingsTable key={g.name} teams={g.teams} matches={(g.rounds||[]).flat()} title={`${g.name} Standings`} showScore={matchMode==="score"}/>
+          <TeamStandingsTable key={g.name} teams={g.teams} matches={(g.rounds||[]).flat()} title={`${g.name} Standings`} showScore={matchMode==="score"} standingsRules={standingsRules}/>
         ))}
       </div>
     </div>
@@ -1320,6 +1514,19 @@ function SeededTeamList({teams,onReorder,onRemove,onTeamChange,allRegions}){
   );
 }
 
+function ParticipantNameInput({team,onCommit,disabled=false}){
+  const[value,setValue]=useState(team.name||"");
+  useEffect(()=>setValue(team.name||""),[team.name]);
+  const commit=()=>{
+    const next=value.trim();
+    if(next&&next!==team.name)onCommit(next);
+    else setValue(team.name||"");
+  };
+  return(
+    <input value={value} disabled={disabled} onChange={e=>setValue(e.target.value)} onBlur={commit} onKeyDown={e=>{if(e.key==="Enter")e.currentTarget.blur();if(e.key==="Escape"){setValue(team.name||"");e.currentTarget.blur();}}} style={{width:"100%",boxSizing:"border-box",fontFamily:"'Barlow Condensed',sans-serif",fontSize:14,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.03em",padding:"7px 9px",borderRadius:7,border:"1px solid var(--color-border-tertiary)",background:disabled?"var(--color-background-secondary)":"var(--color-background-primary)",color:"var(--color-text-primary)",opacity:disabled?0.6:1}}/>
+  );
+}
+
 // ─── Bulk team adder ──────────────────────────────────────────────────────────
 function BulkTeamAdder({onAdd,maxAdd}){
   const[open,setOpen]=useState(false);
@@ -1364,47 +1571,129 @@ function StatColsEditor({statCols,onChange}){
   );
 }
 
+function StandingsRulesAssistantModal({rules,onApply,onClose}){
+  const[input,setInput]=useState("");
+  const[busy,setBusy]=useState(false);
+  const[messages,setMessages]=useState([{role:"assistant",text:"Tell me the ranking priority or custom points system, and I will turn it into standings rules."}]);
+  const cfg=normalizeStandingsRules(rules);
+  const send=async()=>{
+    const text=input.trim();
+    if(!text||busy)return;
+    setInput("");
+    setBusy(true);
+    setMessages(prev=>[...prev,{role:"user",text}]);
+    try{
+      let next=null,source="local parser";
+      try{
+        next=await requestAiStandingsRules(text,cfg);
+        if(next)source="AI";
+      }catch(error){
+        next=null;
+      }
+      if(!next)next=parseStandingsRulePrompt(text,cfg);
+      onApply(next);
+      setMessages(prev=>[...prev,{role:"assistant",text:`Applied with ${source}: ${next.summary}`}]);
+    }catch(error){
+      setMessages(prev=>[...prev,{role:"assistant",text:error.message||"I could not turn that into a standings rule."}]);
+    }finally{
+      setBusy(false);
+    }
+  };
+  return(
+    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:60,background:"rgba(0,0,0,0.72)",display:"flex",alignItems:"center",justifyContent:"center",padding:18}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"min(620px,100%)",maxHeight:"86vh",display:"flex",flexDirection:"column",background:"#0b0d13",border:"1px solid rgba(255,255,255,0.22)",borderRadius:10,boxShadow:"0 24px 80px rgba(0,0,0,0.6)",fontFamily:"'Barlow Condensed',sans-serif",color:"#f8fafc","--color-text-primary":"#f8fafc","--color-text-secondary":"rgba(248,250,252,0.82)","--color-text-tertiary":"rgba(248,250,252,0.62)","--color-background-primary":"#0b0d13","--color-background-secondary":"rgba(255,255,255,0.07)","--color-border-tertiary":"rgba(255,255,255,0.2)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,padding:"14px 16px",borderBottom:"1px solid var(--color-border-tertiary)"}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:12,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#e9c46a"}}>Metric Assistant</div>
+            <div style={{fontSize:11,color:"var(--color-text-tertiary)",fontFamily:"'Barlow',sans-serif",marginTop:3}}>{cfg.summary}</div>
+          </div>
+          <button onClick={onClose} style={{width:30,height:30,borderRadius:6,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",color:"var(--color-text-secondary)",cursor:"pointer",fontSize:18,lineHeight:1}}>×</button>
+        </div>
+        <div style={{padding:"14px 16px",overflowY:"auto",display:"flex",flexDirection:"column",gap:8}}>
+          {messages.map((message,idx)=>(
+            <div key={idx} style={{alignSelf:message.role==="user"?"flex-end":"flex-start",maxWidth:"84%",padding:"8px 10px",borderRadius:8,background:message.role==="user"?"rgba(233,196,106,0.14)":"var(--color-background-secondary)",border:`1px solid ${message.role==="user"?"rgba(233,196,106,0.35)":"var(--color-border-tertiary)"}`,fontSize:12,lineHeight:1.35,fontFamily:"'Barlow',sans-serif",color:"var(--color-text-secondary)"}}>
+              {message.text}
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:8,padding:"12px 16px",borderTop:"1px solid var(--color-border-tertiary)"}}>
+          <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")send();}} placeholder="Example: points scored first, then match wins, then score diff" style={{flex:1,minWidth:0,padding:"8px 10px",borderRadius:7,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",color:"var(--color-text-primary)",fontFamily:"'Barlow',sans-serif",fontSize:12}}/>
+          <button onClick={send} disabled={busy||!input.trim()} style={{padding:"7px 14px",borderRadius:7,border:"none",background:busy||!input.trim()?"var(--color-background-secondary)":"#e9c46a",color:busy||!input.trim()?"var(--color-text-tertiary)":"#2c2c00",cursor:busy||!input.trim()?"not-allowed":"pointer",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.05em"}}>{busy?"Working":"Apply"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StandingsRulesEditor({rules,onChange,disabled=false}){
+  const[assistantOpen,setAssistantOpen]=useState(false);
+  const cfg=normalizeStandingsRules(rules);
+  return(
+    <div style={{marginBottom:16,padding:"12px 16px",background:"var(--color-background-secondary)",borderRadius:10,border:"0.5px solid var(--color-border-tertiary)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+        <span style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Metric Prioritization</span>
+        <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+          {cfg.criteria.map(id=><span key={id} style={{fontSize:10,padding:"2px 7px",borderRadius:4,border:"0.5px solid rgba(233,196,106,0.35)",background:"rgba(233,196,106,0.08)",color:"#b8921a",fontWeight:700}}>{standingsCriterionLabel(id)}</span>)}
+        </div>
+        <button onClick={()=>setAssistantOpen(true)} disabled={disabled} style={{...btn(false),padding:"4px 10px",fontSize:11,marginLeft:"auto",opacity:disabled?0.45:1,cursor:disabled?"not-allowed":"pointer",borderColor:"rgba(69,123,157,0.45)",color:"#457b9d"}}>AI Rules</button>
+        <button onClick={()=>onChange(DEFAULT_STANDINGS_RULES)} disabled={disabled} style={{...btn(false),padding:"4px 9px",fontSize:11,opacity:disabled?0.45:1,cursor:disabled?"not-allowed":"pointer"}}>Reset</button>
+      </div>
+      <div style={{fontSize:11,color:"var(--color-text-tertiary)",fontFamily:"'Barlow',sans-serif"}}>{cfg.summary}</div>
+      {assistantOpen&&<StandingsRulesAssistantModal rules={cfg} onApply={onChange} onClose={()=>setAssistantOpen(false)}/>}
+    </div>
+  );
+}
+
 // ─── Multi-Stage ──────────────────────────────────────────────────────────────
 const FORMAT_LABELS={"single":"Single Elim","double":"Double Elim","roundrobin":"Round Robin"};
 
 // StageConfig — clean per-stage card
 // Stage 0: pick how many teams play + how many advance
 // Stage N (idx>=1): choose AAT (auto-advance teams) + how many from previous stage
-function StageConfig({stage,idx,totalTeams,isLast,onChange}){
+function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=false}){
   const teamCount=stage.teamCount||2;
   const rrTotal=teamCount%2===0?teamCount-1:teamCount;
   let bracketSz=1; while(bracketSz<teamCount)bracketSz*=2;
   const bracketByes=bracketSz-teamCount;
   const aatCount=idx>0?(stage.aat||0):0;
   const fromPrev=teamCount-aatCount;
+  const controlDisabled=locked;
+  const aatDisabled=locked||lockAat;
+  const disabledStyle={opacity:0.45,cursor:"not-allowed"};
 
   return(
-    <div style={{background:"var(--color-background-secondary)",borderRadius:10,border:"1px solid var(--color-border-tertiary)",overflow:"hidden"}}>
+    <div style={{background:"var(--color-background-secondary)",borderRadius:10,border:"1px solid var(--color-border-tertiary)",overflow:"hidden",opacity:locked?0.88:1}}>
 
       {/* ── Header row: stage label + format picker ── */}
       <div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderBottom:"0.5px solid var(--color-border-tertiary)",background:"rgba(0,0,0,0.05)"}}>
         <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,fontSize:13,letterSpacing:"0.07em",textTransform:"uppercase",color:"var(--color-text-primary)",minWidth:56}}>Stage {idx+1}</span>
         <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
           {["single","double","roundrobin"].map(f=>(
-            <button key={f} onClick={()=>onChange({...stage,format:f})} style={{...btn(stage.format===f),padding:"2px 8px",fontSize:10}}>{FORMAT_LABELS[f]}</button>
+            <button key={f} onClick={()=>!controlDisabled&&onChange({...stage,format:f})} disabled={controlDisabled} style={{...btn(stage.format===f),padding:"2px 8px",fontSize:10,...(controlDisabled?disabledStyle:{})}}>{FORMAT_LABELS[f]}</button>
           ))}
         </div>
         <div style={{display:"flex",gap:4,marginLeft:"auto",flexWrap:"wrap"}}>
           {[["wl","Win/Lose"],["games","Game Wins"],["score","Score"]].map(([id,lbl])=>(
-            <button key={id} onClick={()=>onChange({...stage,matchMode:id,gamesPerMatch:id==="wl"?1:(stage.gamesPerMatch||3)})} style={{...btn(stage.matchMode===id),padding:"2px 7px",fontSize:10}}>{lbl}</button>
+            <button key={id} onClick={()=>!controlDisabled&&onChange({...stage,matchMode:id,gamesPerMatch:id==="wl"?1:(stage.gamesPerMatch||3)})} disabled={controlDisabled} style={{...btn(stage.matchMode===id),padding:"2px 7px",fontSize:10,...(controlDisabled?disabledStyle:{})}}>{lbl}</button>
           ))}
-          {stage.matchMode!=="wl"&&<><Stepper value={stage.gamesPerMatch||3} min={1} max={11} onChange={v=>onChange({...stage,gamesPerMatch:v})} small/><span style={{fontSize:10,color:"var(--color-text-tertiary)",alignSelf:"center"}}>games</span></>}
+          {stage.matchMode!=="wl"&&<><Stepper value={stage.gamesPerMatch||3} min={1} max={11} onChange={v=>onChange({...stage,gamesPerMatch:v})} small disabled={controlDisabled}/><span style={{fontSize:10,color:"var(--color-text-tertiary)",alignSelf:"center"}}>games</span></>}
         </div>
       </div>
+
+      {stage.format==="roundrobin"&&(
+        <div style={{padding:"10px 14px 0",borderBottom:"0.5px solid var(--color-border-tertiary)"}}>
+          <StandingsRulesEditor rules={stage.standingsRules} onChange={standingsRules=>onChange({...stage,standingsRules})} disabled={controlDisabled}/>
+        </div>
+      )}
 
       {/* ── Sub-options row: RR rounds/week, bracket info ── */}
       {(stage.format==="roundrobin"||bracketByes>0)&&(
         <div style={{padding:"6px 14px",borderBottom:"0.5px solid var(--color-border-tertiary)",display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}}>
-          {stage.format==="roundrobin"&&<Stepper label="Rounds/week" value={stage.roundsPerWeek||1} min={1} max={Math.max(1,rrTotal)} onChange={v=>onChange({...stage,roundsPerWeek:v})} small/>}
+          {stage.format==="roundrobin"&&<Stepper label="Rounds/week" value={stage.roundsPerWeek||1} min={1} max={Math.max(1,rrTotal)} onChange={v=>onChange({...stage,roundsPerWeek:v})} small disabled={controlDisabled}/>}
           {stage.format==="roundrobin"&&!isLast&&(
             <>
-              <button onClick={()=>onChange({...stage,groupStage:!stage.groupStage,groupCount:stage.groupCount||2})} style={{...btn(!!stage.groupStage),padding:"3px 9px",fontSize:10}}>Group Stage</button>
-              {stage.groupStage&&<Stepper label="Groups" value={stage.groupCount||2} min={2} max={Math.max(2,Math.min(16,teamCount))} onChange={v=>onChange({...stage,groupStage:true,groupCount:v})} small/>}
+              <button onClick={()=>!controlDisabled&&onChange({...stage,groupStage:!stage.groupStage,groupCount:stage.groupCount||2})} disabled={controlDisabled} style={{...btn(!!stage.groupStage),padding:"3px 9px",fontSize:10,...(controlDisabled?disabledStyle:{})}}>Group Stage</button>
+              {stage.groupStage&&<Stepper label="Groups" value={stage.groupCount||2} min={2} max={Math.max(2,Math.min(16,teamCount))} onChange={v=>onChange({...stage,groupStage:true,groupCount:v})} small disabled={controlDisabled}/>}
             </>
           )}
           {(stage.format==="single"||stage.format==="double")&&bracketByes>0&&<span style={{fontSize:10,color:"var(--color-text-tertiary)"}}>Bracket: {bracketSz} ({bracketByes} internal bye{bracketByes>1?"s":""})</span>}
@@ -1415,10 +1704,10 @@ function StageConfig({stage,idx,totalTeams,isLast,onChange}){
           <span style={{fontSize:11,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:"#b8921a"}}>Tiebreak needed</span>
           <span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>{stage.advance||0} advancing is not divisible by {stage.groupCount||2} groups.</span>
           {[["performance","By Performance"],["manual","Manual Pick"],["stage","Add Tiebreak Stage"]].map(([id,label])=>(
-            <button key={id} onClick={()=>onChange({...stage,tiebreakMode:id})} style={{...btn((stage.tiebreakMode||"performance")===id),padding:"3px 8px",fontSize:10}}>{label}</button>
+            <button key={id} onClick={()=>!controlDisabled&&onChange({...stage,tiebreakMode:id})} disabled={controlDisabled} style={{...btn((stage.tiebreakMode||"performance")===id),padding:"3px 8px",fontSize:10,...(controlDisabled?disabledStyle:{})}}>{label}</button>
           ))}
           {(stage.tiebreakMode||"performance")==="stage"&&[["roundrobin","RR"],["single","Single"],["double","Double"]].map(([id,label])=>(
-            <button key={id} onClick={()=>onChange({...stage,tiebreakStageFormat:id})} style={{...btn((stage.tiebreakStageFormat||"roundrobin")===id),padding:"3px 7px",fontSize:10,borderColor:(stage.tiebreakStageFormat||"roundrobin")===id?"#2a9d8f":"var(--color-border-tertiary)"}}>{label}</button>
+            <button key={id} onClick={()=>!controlDisabled&&onChange({...stage,tiebreakStageFormat:id})} disabled={controlDisabled} style={{...btn((stage.tiebreakStageFormat||"roundrobin")===id),padding:"3px 7px",fontSize:10,borderColor:(stage.tiebreakStageFormat||"roundrobin")===id?"#2a9d8f":"var(--color-border-tertiary)",...(controlDisabled?disabledStyle:{})}}>{label}</button>
           ))}
         </div>
       )}
@@ -1430,14 +1719,14 @@ function StageConfig({stage,idx,totalTeams,isLast,onChange}){
           /* Stage 0: starting teams stepper → advance stepper */
           <>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <Stepper value={teamCount} min={2} max={64} onChange={v=>onChange({...stage,teamCount:v,advance:Math.min(stage.advance||Math.floor(v/2),v-1)})} small/>
+              <Stepper value={teamCount} min={2} max={64} onChange={v=>onChange({...stage,teamCount:v,advance:Math.min(stage.advance||Math.floor(v/2),v-1)})} small disabled={controlDisabled}/>
               <span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>Stage 1 starting teams</span>
             </div>
             {!isLast&&(
               <>
                 <span style={{fontSize:16,color:"var(--color-border-tertiary)",fontWeight:300}}>→</span>
                 <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <Stepper value={stage.advance||Math.floor(teamCount/2)} min={1} max={teamCount-1} onChange={v=>onChange({...stage,advance:v})} small/>
+                  <Stepper value={stage.advance||Math.floor(teamCount/2)} min={1} max={teamCount-1} onChange={v=>onChange({...stage,advance:v})} small disabled={controlDisabled}/>
                   <span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>advance to Stage 2</span>
                 </div>
               </>
@@ -1447,7 +1736,7 @@ function StageConfig({stage,idx,totalTeams,isLast,onChange}){
           /* Stage N: show AAT pill + from-prev count = total, then advance stepper */
           <>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <Stepper value={aatCount} min={0} max={64} onChange={v=>onChange({...stage,aat:v,teamCount:fromPrev+v})} small/>
+              <Stepper value={aatCount} min={0} max={64} onChange={v=>onChange({...stage,aat:v,teamCount:fromPrev+v})} small disabled={aatDisabled}/>
               <span style={{fontSize:11,color:"#2a9d8f",fontWeight:700}}>auto-advance teams (AAT)</span>
             </div>
             <span style={{fontSize:13,color:"var(--color-text-tertiary)"}}>+</span>
@@ -1462,7 +1751,7 @@ function StageConfig({stage,idx,totalTeams,isLast,onChange}){
               <>
                 <span style={{fontSize:16,color:"var(--color-border-tertiary)",fontWeight:300,marginLeft:4}}>→</span>
                 <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <Stepper value={stage.advance||Math.floor(teamCount/2)} min={1} max={Math.max(1,teamCount-1)} onChange={v=>onChange({...stage,advance:v})} small/>
+                  <Stepper value={stage.advance||Math.floor(teamCount/2)} min={1} max={Math.max(1,teamCount-1)} onChange={v=>onChange({...stage,advance:v})} small disabled={controlDisabled}/>
                   <span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>advance to Stage {idx+2}</span>
                 </div>
               </>
@@ -1530,7 +1819,7 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
     const stTeams=sd.teams||[];
     const advance=st.advance||2;
     if(sd.type==="roundrobin"){
-      const standings=computeTeamStandings(stTeams,playableMatches((sd.rounds||[]).flat()));
+      const standings=computeTeamStandings(stTeams,playableMatches((sd.rounds||[]).flat()),st.standingsRules);
       return standings.slice(0,advance).map(r=>r.team);
     }
     if(sd.type==="groupstage"){
@@ -1544,7 +1833,7 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
         if(mode==="stage")return tb.guaranteed;
         return [...tb.guaranteed,...tb.byPerformance.slice(0,tb.remainder).map(c=>c.row.team)].slice(0,advance);
       }
-      const groupStandings=(sd.groups||[]).map(g=>computeTeamStandings(g.teams,(g.rounds||[]).flat()));
+      const groupStandings=(sd.groups||[]).map(g=>computeTeamStandings(g.teams,(g.rounds||[]).flat(),st.standingsRules));
       const advancing=[];
       const maxRows=Math.max(0,...groupStandings.map(st=>st.length));
       for(let row=0;row<maxRows&&advancing.length<advance;row++){
@@ -1608,8 +1897,8 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
       {data&&(
         data.type==="single"?<SingleElimView bracketData={data} statCols={statCols} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)}/>
         :data.type==="double"?<DoubleElimView bracketData={data} statCols={statCols} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)}/>
-        :data.type==="roundrobin"?<RoundRobinView rrRounds={data.rounds} teams={getStageTeams(activeStageIdx)} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)} onAddTiebreakRound={round=>onStageUpdate(activeStageIdx,d=>({...d,rounds:[...d.rounds,round]}))} roundsPerWeek={stages[activeStageIdx]?.roundsPerWeek||1} matchMode={stages[activeStageIdx]?.matchMode||"wl"} statCols={statCols}/>
-        :data.type==="groupstage"?<GroupStageView data={data} onStageUpdate={updater=>onStageUpdate(activeStageIdx,updater)} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)} roundsPerWeek={stages[activeStageIdx]?.roundsPerWeek||1} matchMode={stages[activeStageIdx]?.matchMode||"wl"} statCols={statCols}/>
+        :data.type==="roundrobin"?<RoundRobinView rrRounds={data.rounds} teams={getStageTeams(activeStageIdx)} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)} onAddTiebreakRound={round=>onStageUpdate(activeStageIdx,d=>({...d,rounds:[...d.rounds,round]}))} roundsPerWeek={stages[activeStageIdx]?.roundsPerWeek||1} matchMode={stages[activeStageIdx]?.matchMode||"wl"} statCols={statCols} standingsRules={stages[activeStageIdx]?.standingsRules}/>
+        :data.type==="groupstage"?<GroupStageView data={data} onStageUpdate={updater=>onStageUpdate(activeStageIdx,updater)} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)} roundsPerWeek={stages[activeStageIdx]?.roundsPerWeek||1} matchMode={stages[activeStageIdx]?.matchMode||"wl"} statCols={statCols} standingsRules={stages[activeStageIdx]?.standingsRules}/>
         :null
       )}
 
@@ -1703,6 +1992,7 @@ const DEFAULT_AWARDS={weekMvps:[],stageMvps:[],finalMvps:[],finalMvpCount:1};
 const DEFAULT_STAGES=[{format:"single",teamCount:8,matchMode:"wl",gamesPerMatch:1,roundsPerWeek:1,advance:4}];
 const SUPABASE_URL=import.meta.env.VITE_SUPABASE_URL||"";
 const SUPABASE_ANON_KEY=import.meta.env.VITE_SUPABASE_ANON_KEY||"";
+const AI_RULES_ENDPOINT=import.meta.env.VITE_AI_RULES_ENDPOINT||"";
 const supabaseConfigured=!!(SUPABASE_URL&&SUPABASE_ANON_KEY);
 const supabase=supabaseConfigured?createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
 
@@ -1858,6 +2148,17 @@ function dataMatches(data){
   return[];
 }
 
+function matchHasEntry(match){
+  if(!match)return false;
+  if(match.mvp)return true;
+  if(match.games?.some(g=>g.winnerName||g.scoreA!==""||g.scoreB!==""||g.gameMvp||Object.keys(g.stats||{}).length>0))return true;
+  return !!matchResult(match).winner;
+}
+
+function matchesHaveEntries(matches){
+  return (matches||[]).some(matchHasEntry);
+}
+
 function finalProjectData(state){
   if(!state)return null;
   if(state.formatType==="multi"){
@@ -1888,10 +2189,11 @@ function projectPlacements(project){
   const matches=playableMatches(dataMatches(data));
   const matchTeams=matches.flatMap(match=>[match.teamA,match.teamB]).filter(Boolean).filter((team,i,all)=>all.findIndex(other=>other.name===team.name)===i);
   const teams=data.teams||matchTeams.length&&matchTeams||state.teams||[];
+  const standingsRules=state?.formatType==="roundrobin"?state.rrStandingsRules:null;
   if(data.type==="groupstage"){
-    return(data.groups||[]).flatMap(g=>computeTeamStandings(g.teams,(g.rounds||[]).flat()).map(r=>r.team)).filter((t,i,a)=>a.findIndex(x=>x.name===t.name)===i);
+    return(data.groups||[]).flatMap(g=>computeTeamStandings(g.teams,(g.rounds||[]).flat(),standingsRules).map(r=>r.team)).filter((t,i,a)=>a.findIndex(x=>x.name===t.name)===i);
   }
-  const ranked=computeTeamStandings(teams,matches).map(r=>r.team);
+  const ranked=computeTeamStandings(teams,matches,standingsRules).map(r=>r.team);
   if(data.type==="single"){
     const champion=matchResult(data.winners?.[data.winners.length-1]?.[0]).winner;
     return champion?[champion,...ranked.filter(t=>t.name!==champion.name)]:ranked;
@@ -1928,6 +2230,19 @@ function rebindQualifiedTeams(value,resolvedById){
   if(!value||typeof value!=="object")return value;
   if(value._qualificationLinkId&&resolvedById[value._qualificationLinkId])return{...value,...resolvedById[value._qualificationLinkId],seed:value.seed};
   return Object.fromEntries(Object.entries(value).map(([key,v])=>[key,rebindQualifiedTeams(v,resolvedById)]));
+}
+
+function renameTeamRefs(value,oldName,newName){
+  if(Array.isArray(value))return value.map(v=>renameTeamRefs(v,oldName,newName));
+  if(!value||typeof value!=="object")return value;
+  const next={};
+  Object.entries(value).forEach(([key,v])=>{
+    if(key==="winnerName"&&v===oldName)next[key]=newName;
+    else if(key==="manualTiebreakAdvancers"&&Array.isArray(v))next[key]=v.map(name=>name===oldName?newName:name);
+    else next[key]=renameTeamRefs(v,oldName,newName);
+  });
+  const looksLikeTeam=next.name===oldName&&(Array.isArray(next.players)||"color" in next||"seed" in next||"region" in next||"_qualificationLinkId" in next);
+  return looksLikeTeam?{...next,name:newName}:next;
 }
 
 function loadSavedProjects(user=null){
@@ -2093,6 +2408,7 @@ export default function App(){
   const[roundsPerWeek,setRoundsPerWeek]=useState(1);
   const[matchMode,setMatchMode]=useState("wl");
   const[gamesPerMatch,setGamesPerMatch]=useState(1);
+  const[rrStandingsRules,setRrStandingsRules]=useState(DEFAULT_STANDINGS_RULES);
   const[statCols,setStatCols]=useState(["Score"]);
   const[teams,setTeams]=useState([]);
   const[deletedTeams,setDeletedTeams]=useState([]);
@@ -2116,6 +2432,8 @@ export default function App(){
   const[cloudMessage,setCloudMessage]=useState(supabaseConfigured?"Connecting to Supabase…":"Local browser mode");
   const[sharedProject,setSharedProject]=useState(null);
   const[shareMessage,setShareMessage]=useState("");
+  const[projectName,setProjectName]=useState("");
+  const[bracketTab,setBracketTab]=useState("tournament");
   const[currentFolderId,setCurrentFolderId]=useState(null);
   const[folderNameInput,setFolderNameInput]=useState("");
   const[currentProjectId,setCurrentProjectId]=useState(null);
@@ -2263,17 +2581,18 @@ export default function App(){
 
   useEffect(()=>{
     if(step!=="bracket"||!currentProjectId)return;
-    const state={step,formatType,teamCount,roundsPerWeek,matchMode,gamesPerMatch,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks};
+    const state={step,formatType,teamCount,roundsPerWeek,matchMode,gamesPerMatch,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName};
     const hasBracket=isMulti?Object.keys(stageData||{}).length>0:isRR?rrRounds.length>0:!!bracketData;
     if(!hasBracket)return;
     const updatedAt=new Date().toISOString();
-    const project={id:currentProjectId,name:projectNameFromState({...state,teams:teamsWithSeed}),formatType,teamCount:teamsWithSeed.length,updatedAt,state,folderId:currentFolderId||null};
+    const savedName=projectName.trim()||projectNameFromState({...state,teams:teamsWithSeed});
+    const project={id:currentProjectId,name:savedName,formatType,teamCount:teamsWithSeed.length,updatedAt,state:{...state,projectName:savedName},folderId:currentFolderId||null};
     setSavedProjects(prev=>{
       const others=prev.filter(p=>p.id!==currentProjectId);
       return [project,...others].slice(0,20);
     });
     setLastSavedAt(new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}));
-  },[step,currentProjectId,currentFolderId,formatType,teamCount,roundsPerWeek,matchMode,gamesPerMatch,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,isMulti,isRR]);
+  },[step,currentProjectId,currentFolderId,formatType,teamCount,roundsPerWeek,matchMode,gamesPerMatch,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,isMulti,isRR]);
 
   useEffect(()=>{
     if(step!=="bracket"||!qualificationLinks.length)return;
@@ -2297,6 +2616,7 @@ export default function App(){
     setRoundsPerWeek(s.roundsPerWeek||1);
     setMatchMode(s.matchMode||"wl");
     setGamesPerMatch(s.gamesPerMatch||1);
+    setRrStandingsRules(normalizeStandingsRules(s.rrStandingsRules));
     setStatCols(s.statCols||["Score"]);
     setTeams(s.teams||[]);
     setDeletedTeams(s.deletedTeams||[]);
@@ -2311,6 +2631,8 @@ export default function App(){
     setStageData(s.stageData||{});
     setActiveStageIdx(s.activeStageIdx||0);
     setQualificationLinks(s.qualificationLinks||[]);
+    setProjectName(s.projectName||project.name||projectNameFromState(s));
+    setBracketTab("tournament");
     setCurrentFolderId(project.shared?null:project.folderId||null);
     setLastSavedAt(new Date(project.updatedAt||Date.now()).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}));
   };
@@ -2451,7 +2773,7 @@ export default function App(){
     if(folderImportRef.current)folderImportRef.current.value="";
   };
 
-  const goHome=()=>{setCurrentProjectId(null);setLastSavedAt(null);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setRoundsPerWeek(1);setGamesPerMatch(1);setMatchMode("wl");setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);};
+  const goHome=()=>{setCurrentProjectId(null);setLastSavedAt(null);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setRoundsPerWeek(1);setGamesPerMatch(1);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setBracketTab("tournament");};
 
   const deleteProject=async(project)=>{
     if(!window.confirm(`Delete "${project.name}"? This cannot be undone.`))return;
@@ -2462,6 +2784,15 @@ export default function App(){
       if(error){setCloudMessage(error.message);setSaveError(true);}
     }
     if(currentProjectId===project.id)goHome();
+  };
+
+  const renameSavedProject=(project)=>{
+    const name=window.prompt("Tournament name",project.name||"");
+    if(name==null)return;
+    const clean=name.trim();
+    if(!clean)return;
+    setSavedProjects(prev=>prev.map(p=>p.id===project.id?{...p,name:clean,state:{...p.state,projectName:clean},updatedAt:new Date().toISOString()}:p));
+    if(currentProjectId===project.id)setProjectName(clean);
   };
 
   const updateMultiStages=(updater)=>{
@@ -2492,11 +2823,65 @@ export default function App(){
   };
   const manualTeamCapacity=Math.max(0,teamCount-qualificationLinks.length);
   const canStartBracket=teamsWithSeed.length===teamCount&&teamsWithSeed.length>=2&&unresolvedQualificationLinks.length===0;
+  const currentTournamentName=projectName.trim()||(currentProjectId?projectNameFromState({formatType,teams:teamsWithSeed}):"");
+  const nonMultiMatches=isRR?rrRounds.flat():bracketData?dataMatches(bracketData):[];
+  const nonMultiSettingsLocked=!isMulti&&matchesHaveEntries(nonMultiMatches);
+
+  const renameParticipant=(seed,newName)=>{
+    const name=newName.trim();
+    const current=teamsWithSeed.find(t=>t.seed===seed);
+    if(!current||!name||name===current.name)return;
+    if(teamsWithSeed.some(t=>t.seed!==seed&&t.name.trim().toLowerCase()===name.toLowerCase())){
+      alert("Another participant already has that name.");
+      return;
+    }
+    const oldName=current.name;
+    setTeams(prev=>prev.map(team=>team.name===oldName?{...team,name}:team));
+    setDeletedTeams(prev=>prev.map(team=>team.name===oldName?{...team,name}:team));
+    setBracketData(prev=>prev?renameTeamRefs(prev,oldName,name):prev);
+    setRrRounds(prev=>prev.length?renameTeamRefs(prev,oldName,name):prev);
+    setStageData(prev=>Object.keys(prev||{}).length?renameTeamRefs(prev,oldName,name):prev);
+  };
+
+  const rebuildNonMultiBracket=(nextFormat,nextMode,nextGames)=>{
+    const g=nextMode==="wl"?1:nextGames;
+    const t=teamsWithSeed;
+    if(nextFormat==="roundrobin"){
+      setRrRounds(scheduleRoundRobin(t,g,nextMode));
+      setBracketData(null);
+    } else if(nextFormat==="double"){
+      setBracketData(generateDoubleElim(t,g,nextMode));
+      setRrRounds([]);
+    } else {
+      setBracketData(generateElim(t,g,nextMode));
+      setRrRounds([]);
+    }
+  };
+
+  const updateNonMultiSettings=(updates)=>{
+    if(nonMultiSettingsLocked)return;
+    const nextFormat=updates.formatType||formatType;
+    const nextMode=updates.matchMode||matchMode;
+    const nextGames=nextMode==="wl"?1:(updates.gamesPerMatch||gamesPerMatch||3);
+    if(updates.formatType)setFormatType(updates.formatType);
+    if(updates.roundsPerWeek)setRoundsPerWeek(updates.roundsPerWeek);
+    if(updates.matchMode)setMatchMode(updates.matchMode);
+    if(updates.gamesPerMatch)setGamesPerMatch(updates.gamesPerMatch);
+    if(updates.rrStandingsRules)setRrStandingsRules(normalizeStandingsRules(updates.rrStandingsRules));
+    rebuildNonMultiBracket(nextFormat,nextMode,nextGames);
+  };
+
+  const updateStageConfigFromSettings=(idx,updated)=>{
+    if(stageData[idx])return;
+    updateMultiStages(prev=>prev.map((stage,i)=>i===idx?{...updated,aat:stage.aat}:stage));
+  };
 
   const startBracket=()=>{
     if(!canStartBracket)return;
     const projectId=currentProjectId||`project-${Date.now()}`;
     setCurrentProjectId(projectId);
+    if(!projectName.trim())setProjectName(projectNameFromState({formatType,teams:teamsWithSeed}));
+    setBracketTab("tournament");
     if(currentFolderId)setSavedFolders(prev=>prev.map(f=>f.id===currentFolderId?{...f,projectIds:[projectId,...(f.projectIds||[]).filter(id=>id!==projectId)],updatedAt:new Date().toISOString()}:f));
     setShowAwards(true);
     const t=teamsWithSeed;
@@ -2658,7 +3043,7 @@ export default function App(){
     });
   };
 
-  const reset=()=>{if(typeof window!=="undefined")window.localStorage.removeItem(STORAGE_KEY);setCurrentProjectId(null);setLastSavedAt(null);setSaveError(false);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setRoundsPerWeek(1);setGamesPerMatch(1);setMatchMode("wl");setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);};
+  const reset=()=>{if(typeof window!=="undefined")window.localStorage.removeItem(STORAGE_KEY);setCurrentProjectId(null);setLastSavedAt(null);setSaveError(false);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setRoundsPerWeek(1);setGamesPerMatch(1);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setBracketTab("tournament");};
 
   const allBracketTeams=isRR?teamsWithSeed:(bracketData?teamsWithSeed:[]);
   const allBracketMatches=playableMatches(isRR?rrRounds.flat():bracketData?(bracketData.type==="single"?(bracketData.winners||[]).flat():[...(bracketData.winners||[]).flat(),...(bracketData.losers||[]).flat(),bracketData.grandFinal,bracketData.grandFinalReset].filter(Boolean)):[]);
@@ -2666,6 +3051,87 @@ export default function App(){
   const authHint=supabaseConfigured
     ?"Projects sync online with Supabase after you log in."
     :"Local browser mode. Add Supabase env vars in Vercel for real online accounts.";
+
+  const renderSettingsTab=()=>(
+    <div>
+      {!isMulti&&(
+        <div style={{padding:"14px 16px",borderRadius:10,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+            <div style={{fontSize:12,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"var(--color-text-primary)"}}>Tournament Settings</div>
+            {nonMultiSettingsLocked&&<span style={{fontSize:11,color:"#e63946",marginLeft:"auto"}}>Started - read only</span>}
+          </div>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:10}}>Format</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
+            {[["single","Single Elim"],["double","Double Elim"],["roundrobin","Round Robin"]].map(([id,label])=>(
+              <button key={id} onClick={()=>updateNonMultiSettings({formatType:id})} disabled={nonMultiSettingsLocked} style={{...btn(formatType===id),padding:"6px 12px",opacity:nonMultiSettingsLocked?0.45:1,cursor:nonMultiSettingsLocked?"not-allowed":"pointer"}}>{label}</button>
+            ))}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+            <Stepper label="Teams" value={teamCount} min={teamCount} max={teamCount} onChange={()=>{}} disabled/>
+            <span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>Participant count is locked after bracket generation.</span>
+            {formatType==="roundrobin"&&<Stepper label="Rounds/week" value={roundsPerWeek} min={1} max={rrTotalRounds} onChange={v=>updateNonMultiSettings({roundsPerWeek:v})} disabled={nonMultiSettingsLocked}/>}
+          </div>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:10}}>Match Format</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
+            {[["wl","Win / Lose"],["games","Game Wins"],["score","Score"]].map(([id,label])=>(
+              <button key={id} onClick={()=>updateNonMultiSettings({matchMode:id,gamesPerMatch:id==="wl"?1:(gamesPerMatch||3)})} disabled={nonMultiSettingsLocked} style={{...btn(matchMode===id),padding:"6px 12px",opacity:nonMultiSettingsLocked?0.45:1,cursor:nonMultiSettingsLocked?"not-allowed":"pointer"}}>{label}</button>
+            ))}
+            {matchMode!=="wl"&&<Stepper label="Games" value={gamesPerMatch||3} min={1} max={11} onChange={v=>updateNonMultiSettings({gamesPerMatch:v})} small disabled={nonMultiSettingsLocked}/>}
+          </div>
+          {formatType==="roundrobin"&&<StandingsRulesEditor rules={rrStandingsRules} onChange={rules=>updateNonMultiSettings({rrStandingsRules:rules})} disabled={nonMultiSettingsLocked}/>}
+        </div>
+      )}
+      {isMulti&&(
+        <div>
+          <div style={{padding:"12px 14px",borderRadius:10,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",marginBottom:14,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+            <Stepper label="Total teams" value={teamCount} min={teamCount} max={teamCount} onChange={()=>{}} disabled/>
+            <span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>Total participants and AAT counts are locked on the tournament page.</span>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {stages.map((stage,idx)=>{
+              const computedTC=idx===0?(stage.teamCount||teamCount):(stages[idx-1]?.advance||2)+(stage.aat||0);
+              const displayStage={...stage,teamCount:computedTC};
+              const started=!!stageData[idx];
+              return(
+                <div key={idx}>
+                  <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:started?"#e63946":"#2a9d8f",margin:"0 0 5px 2px"}}>{started?"Started - read only":"Not started - editable"}</div>
+                  <StageConfig
+                    stage={displayStage}
+                    idx={idx}
+                    totalTeams={teamCount}
+                    isLast={idx===stages.length-1}
+                    locked={started}
+                    lockAat={idx>0}
+                    onChange={updated=>updateStageConfigFromSettings(idx,updated)}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderParticipantsTab=()=>(
+    <div style={{padding:"14px 16px",borderRadius:10,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)"}}>
+      <div style={{fontSize:12,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"var(--color-text-primary)",marginBottom:12}}>Participants</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
+        {teamsWithSeed.map(team=>{
+          const locked=!!team._qualificationLinkId;
+          return(
+            <div key={`${team.seed}-${team.name}`} style={{display:"grid",gridTemplateColumns:"42px minmax(0,1fr)",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-primary)"}}>
+              <span style={{fontSize:12,fontWeight:800,color:"var(--color-text-tertiary)",textAlign:"right"}}>#{team.seed}</span>
+              <div>
+                <ParticipantNameInput team={team} disabled={locked} onCommit={name=>renameParticipant(team.seed,name)}/>
+                {locked&&<div style={{fontSize:10,color:"var(--color-text-tertiary)",marginTop:3}}>Linked qualifier name</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 
   return(
     <div style={{fontFamily:"'Barlow Condensed',sans-serif",padding:"0 0 40px"}}>
@@ -2790,10 +3256,11 @@ export default function App(){
               <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:10}}>Previous Projects</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
                 {visibleProjects.map(project=>(
-                  <div key={project.id} onClick={()=>loadProject(project)} style={{position:"relative",textAlign:"left",padding:"12px 38px 12px 14px",borderRadius:8,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif"}}>
+                  <div key={project.id} onClick={()=>loadProject(project)} style={{position:"relative",textAlign:"left",padding:"12px 38px 34px 14px",minHeight:116,borderRadius:8,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",boxSizing:"border-box"}}>
                     <button onClick={e=>{e.stopPropagation();deleteProject(project);}} title="Delete project" style={{position:"absolute",top:8,right:8,width:22,height:22,borderRadius:5,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",color:"var(--color-text-tertiary)",cursor:"pointer",fontSize:14,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
                     <button onClick={e=>{e.stopPropagation();exportProject(project);}} title="Download tournament file" style={{position:"absolute",top:36,right:8,width:22,height:22,borderRadius:5,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",color:"var(--color-text-tertiary)",cursor:"pointer",fontSize:12,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>↓</button>
                     <button onClick={e=>{e.stopPropagation();shareProject(project);}} title="Copy share link" style={{position:"absolute",top:64,right:8,width:22,height:22,borderRadius:5,border:"0.5px solid rgba(233,196,106,0.55)",background:"var(--color-background-secondary)",color:"#b8860b",cursor:"pointer",fontSize:12,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>↗</button>
+                    <button onClick={e=>{e.stopPropagation();renameSavedProject(project);}} title="Rename tournament" style={{position:"absolute",top:92,right:8,width:22,height:22,borderRadius:5,border:"0.5px solid rgba(69,123,157,0.55)",background:"var(--color-background-secondary)",color:"#457b9d",cursor:"pointer",fontSize:12,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>✎</button>
                     <div style={{fontSize:14,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",color:"var(--color-text-primary)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{project.name}</div>
                     <div style={{fontSize:11,color:"var(--color-text-tertiary)",marginTop:3,textTransform:"uppercase",letterSpacing:"0.04em"}}>
                       {project.formatType==="single"?"Single Elim":project.formatType==="double"?"Double Elim":project.formatType==="roundrobin"?"Round Robin":"Multi-Stage"} · {project.teamCount} teams
@@ -2821,6 +3288,7 @@ export default function App(){
                 </div>
               ))}
             </div>
+            {formatType==="roundrobin"&&<StandingsRulesEditor rules={rrStandingsRules} onChange={setRrStandingsRules}/>}
             {matchMode!=="wl"&&<div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16,padding:"12px 16px",background:"var(--color-background-secondary)",borderRadius:10,border:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap"}}><Stepper label="Games per match" value={gamesPerMatch} min={1} max={11} onChange={setGamesPerMatch}/><span style={{fontSize:12,color:"var(--color-text-tertiary)"}}>Best of {gamesPerMatch} · need {Math.ceil(gamesPerMatch/2)} to win</span></div>}
             <button onClick={()=>setStep("teams")} style={{padding:"10px 28px",borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,letterSpacing:"0.07em",textTransform:"uppercase",background:"#e9c46a",color:"#2c2c00",border:"none",cursor:"pointer",marginTop:8}}>Continue →</button>
           </>)}
@@ -2948,6 +3416,16 @@ export default function App(){
       {/* ── STEP 3: Bracket ───────────────────────────────────────────── */}
       {step==="bracket"&&(
         <div>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+            <input value={currentTournamentName} onChange={e=>setProjectName(e.target.value)} onBlur={()=>{if(!projectName.trim())setProjectName(projectNameFromState({formatType,teams:teamsWithSeed}));}} style={{flex:"1 1 260px",minWidth:0,fontFamily:"'Barlow Condensed',sans-serif",fontSize:22,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",padding:"8px 10px",borderRadius:8,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)"}}/>
+            <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+              {[["tournament","Tournament"],["settings","Setting"],["participants","Participant"]].map(([id,label])=>(
+                <button key={id} onClick={()=>setBracketTab(id)} style={{...btn(bracketTab===id),padding:"7px 13px",fontSize:12}}>{label}</button>
+              ))}
+            </div>
+          </div>
+          {bracketTab==="tournament"&&(
+            <>
           {!isMulti&&(
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"10px 14px",background:"var(--color-background-secondary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap"}}>
               <span style={{padding:"3px 10px",borderRadius:5,background:"rgba(233,196,106,0.12)",border:"1px solid rgba(233,196,106,0.3)",fontSize:12,fontWeight:700,color:"#b8921a",fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase",letterSpacing:"0.05em"}}>{matchMode==="wl"?"Win/Lose":matchMode==="games"?"Game Wins":"Score"}{matchMode!=="wl"&&` · Bo${effectiveGames}`}</span>
@@ -2967,7 +3445,7 @@ export default function App(){
 
           {isMulti&&<MultiStageView stages={stages} stageData={stageData} teams={teamsWithSeed} statCols={statCols} onGameUpdate={handleStageGameUpdate} onMatchUpdate={handleStageMatchUpdate} onStageUpdate={handleStageDataUpdate} onAdvance={handleAdvance} activeStageIdx={activeStageIdx} setActiveStageIdx={setActiveStageIdx}/>}
 
-          {!isMulti&&isRR&&<RoundRobinView rrRounds={rrRounds} teams={teamsWithSeed} onGameUpdate={handleGameUpdate} onMatchUpdate={handleMatchUpdate} onAddTiebreakRound={round=>setRrRounds(prev=>[...prev,round])} roundsPerWeek={roundsPerWeek} matchMode={matchMode} statCols={statCols}/>}
+          {!isMulti&&isRR&&<RoundRobinView rrRounds={rrRounds} teams={teamsWithSeed} onGameUpdate={handleGameUpdate} onMatchUpdate={handleMatchUpdate} onAddTiebreakRound={round=>setRrRounds(prev=>[...prev,round])} roundsPerWeek={roundsPerWeek} matchMode={matchMode} statCols={statCols} standingsRules={rrStandingsRules}/>}
 
           {!isMulti&&!isRR&&bracketData&&(isDE
             ?<DoubleElimView bracketData={bracketData} onGameUpdate={handleGameUpdate} onMatchUpdate={handleMatchUpdate} statCols={statCols}/>
@@ -3026,6 +3504,10 @@ export default function App(){
               </>
             );
           })()}
+            </>
+          )}
+          {bracketTab==="settings"&&renderSettingsTab()}
+          {bracketTab==="participants"&&renderParticipantsTab()}
         </div>
       )}
     </div>
