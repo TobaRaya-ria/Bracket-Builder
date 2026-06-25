@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 import { strFromU8, strToU8, unzipSync, unzlibSync, zipSync, zlibSync } from "fflate";
 
 // ─── Country map ─────────────────────────────────────────────────────────────
@@ -1700,6 +1701,74 @@ const USERS_KEY="tourney:users:v1";
 const AUTH_KEY="tourney:auth:v1";
 const DEFAULT_AWARDS={weekMvps:[],stageMvps:[],finalMvps:[],finalMvpCount:1};
 const DEFAULT_STAGES=[{format:"single",teamCount:8,matchMode:"wl",gamesPerMatch:1,roundsPerWeek:1,advance:4}];
+const SUPABASE_URL=import.meta.env.VITE_SUPABASE_URL||"";
+const SUPABASE_ANON_KEY=import.meta.env.VITE_SUPABASE_ANON_KEY||"";
+const supabaseConfigured=!!(SUPABASE_URL&&SUPABASE_ANON_KEY);
+const supabase=supabaseConfigured?createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
+
+function userFromSupabase(user){
+  if(!user)return null;
+  return {id:user.id,email:user.email||"",name:user.user_metadata?.name||user.email?.split("@")[0]||"Player",supabase:true};
+}
+
+function projectToRow(project,userId){
+  return {
+    id:project.id,
+    user_id:userId,
+    name:project.name,
+    format_type:project.formatType||project.state?.formatType||null,
+    team_count:project.teamCount||project.state?.teams?.length||0,
+    folder_id:project.folderId||null,
+    state:project.state,
+    updated_at:project.updatedAt||new Date().toISOString()
+  };
+}
+
+function rowToProject(row){
+  return {
+    id:row.id,
+    name:row.name,
+    formatType:row.format_type,
+    teamCount:row.team_count,
+    folderId:row.folder_id,
+    state:row.state,
+    updatedAt:row.updated_at
+  };
+}
+
+function folderToRow(folder,userId){
+  return {id:folder.id,user_id:userId,name:folder.name,project_ids:folder.projectIds||[],updated_at:folder.updatedAt||new Date().toISOString()};
+}
+
+function rowToFolder(row){
+  return {id:row.id,name:row.name,projectIds:row.project_ids||[],updatedAt:row.updated_at};
+}
+
+async function loadCloudData(userId){
+  if(!supabase)return{projects:[],folders:[]};
+  const [projectResult,folderResult]=await Promise.all([
+    supabase.from("tourney_projects").select("*").eq("user_id",userId).order("updated_at",{ascending:false}),
+    supabase.from("tourney_folders").select("*").eq("user_id",userId).order("updated_at",{ascending:false})
+  ]);
+  if(projectResult.error)throw projectResult.error;
+  if(folderResult.error)throw folderResult.error;
+  return {
+    projects:(projectResult.data||[]).map(rowToProject),
+    folders:(folderResult.data||[]).map(rowToFolder)
+  };
+}
+
+async function saveCloudProjects(projects,userId){
+  if(!supabase||!userId||projects.length===0)return;
+  const {error}=await supabase.from("tourney_projects").upsert(projects.map(project=>projectToRow(project,userId)),{onConflict:"id"});
+  if(error)throw error;
+}
+
+async function saveCloudFolders(folders,userId){
+  if(!supabase||!userId||folders.length===0)return;
+  const {error}=await supabase.from("tourney_folders").upsert(folders.map(folder=>folderToRow(folder,userId)),{onConflict:"id"});
+  if(error)throw error;
+}
 
 function safeFileName(value,fallback="tournament"){
   const cleaned=(value||"").trim().replace(/[^a-z0-9._-]+/gi,"-").replace(/^-+|-+$/g,"");
@@ -2012,7 +2081,7 @@ function recalcMultiStages(stages){
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App(){
-  const initialUserRef=useRef(loadActiveUser());
+  const initialUserRef=useRef(supabaseConfigured?null:loadActiveUser());
   const initialProjectsRef=useRef(loadSavedProjects(initialUserRef.current)||[]);
   const initialFoldersRef=useRef(loadSavedFolders(initialUserRef.current));
   const tournamentImportRef=useRef(null);
@@ -2043,6 +2112,8 @@ export default function App(){
   const[authEmail,setAuthEmail]=useState("");
   const[authPassword,setAuthPassword]=useState("");
   const[authError,setAuthError]=useState("");
+  const[cloudReady,setCloudReady]=useState(!supabaseConfigured);
+  const[cloudMessage,setCloudMessage]=useState(supabaseConfigured?"Connecting to Supabase…":"Local browser mode");
   const[sharedProject,setSharedProject]=useState(null);
   const[shareMessage,setShareMessage]=useState("");
   const[currentFolderId,setCurrentFolderId]=useState(null);
@@ -2073,6 +2144,72 @@ export default function App(){
   const effectiveGames=matchMode==="wl"?1:gamesPerMatch;
   const allRegions=[...new Set(teams.map(t=>t.region).filter(Boolean))];
 
+  const loadSupabaseAccount=async(user,carryProjects=savedProjects,carryFolders=savedFolders)=>{
+    const appUser=userFromSupabase(user);
+    if(!appUser)return;
+    setCurrentUser(appUser);
+    setCloudReady(false);
+    try{
+      const cloud=await loadCloudData(appUser.id);
+      let nextProjects=cloud.projects;
+      let nextFolders=cloud.folders;
+      if(nextProjects.length===0&&carryProjects.length>0){
+        nextProjects=carryProjects.map(project=>({...project,folderId:project.folderId||null}));
+        await saveCloudProjects(nextProjects,appUser.id);
+      }
+      if(nextFolders.length===0&&carryFolders.length>0){
+        nextFolders=carryFolders;
+        await saveCloudFolders(nextFolders,appUser.id);
+      }
+      setSavedProjects(nextProjects);
+      setSavedFolders(nextFolders);
+      setCurrentFolderId(null);
+      setAuthOpen(false);
+      setCloudMessage("Supabase synced");
+      setSaveError(false);
+    }catch(error){
+      setCloudMessage(error.message||"Could not load Supabase data.");
+      setSaveError(true);
+    }finally{
+      setCloudReady(true);
+    }
+  };
+
+  useEffect(()=>{
+    if(!supabase)return;
+    let cancelled=false;
+    const connect=async()=>{
+      setCloudReady(false);
+      const {data,error}=await supabase.auth.getSession();
+      if(cancelled)return;
+      if(error){setCloudMessage(error.message);setCloudReady(true);setSaveError(true);return;}
+      const user=data.session?.user;
+      if(user){await loadSupabaseAccount(user);}
+      else{
+        setCurrentUser(null);
+        setSavedProjects(loadSavedProjects(null)||[]);
+        setSavedFolders(loadSavedFolders(null));
+        setAuthOpen(true);
+        setCloudMessage("Log in to sync with Supabase");
+        setCloudReady(true);
+      }
+    };
+    connect();
+    const {data:{subscription}}=supabase.auth.onAuthStateChange(event=>{
+      if(event==="SIGNED_OUT"){
+        setCurrentUser(null);
+        setSavedProjects(loadSavedProjects(null)||[]);
+        setSavedFolders(loadSavedFolders(null));
+        setCurrentFolderId(null);
+        setAuthMode("login");
+        setAuthOpen(true);
+        setCloudMessage("Logged out");
+        setCloudReady(true);
+      }
+    });
+    return()=>{cancelled=true;subscription?.unsubscribe();};
+  },[]);
+
   useEffect(()=>{
     if(typeof window==="undefined")return;
     const payload=new URLSearchParams(window.location.search).get("share");
@@ -2100,6 +2237,29 @@ export default function App(){
     if(typeof window==="undefined")return;
     try{window.localStorage.setItem(storageKeyForUser(FOLDERS_KEY,currentUser),JSON.stringify({version:1,folders:savedFolders}));setSaveError(false);}catch{setSaveError(true);}
   },[savedFolders,currentUser]);
+
+  useEffect(()=>{
+    if(!supabase||!currentUser?.supabase||!cloudReady)return;
+    let cancelled=false;
+    const sync=async()=>{
+      try{await saveCloudProjects(savedProjects,currentUser.id);if(!cancelled){setCloudMessage("Supabase synced");setSaveError(false);}}
+      catch(error){if(!cancelled){setCloudMessage(error.message||"Supabase project sync failed.");setSaveError(true);}}
+    };
+    sync();
+    return()=>{cancelled=true;};
+  },[savedProjects,currentUser,cloudReady]);
+
+  useEffect(()=>{
+    if(!supabase||!currentUser?.supabase||!cloudReady)return;
+    let cancelled=false;
+    const sync=async()=>{
+      try{await saveCloudFolders(savedFolders,currentUser.id);if(!cancelled){setCloudMessage("Supabase synced");setSaveError(false);}}
+      catch(error){if(!cancelled){setCloudMessage(error.message||"Supabase folder sync failed.");setSaveError(true);}}
+    };
+    sync();
+    return()=>{cancelled=true;};
+  },[savedFolders,currentUser,cloudReady]);
+
 
   useEffect(()=>{
     if(step!=="bracket"||!currentProjectId)return;
@@ -2157,10 +2317,37 @@ export default function App(){
 
   const clearAuthForm=()=>{setAuthName("");setAuthEmail("");setAuthPassword("");setAuthError("");};
 
-  const handleAuth=()=>{
+  const handleAuth=async()=>{
     const email=authEmail.trim().toLowerCase();
     const password=authPassword;
     if(!email||!password){setAuthError("Email and password are required.");return;}
+    if(supabase){
+      setAuthError("");
+      const projectsToCarry=savedProjects;
+      const foldersToCarry=savedFolders;
+      if(authMode==="signup"){
+        const {data,error}=await supabase.auth.signUp({
+          email,
+          password,
+          options:{data:{name:authName.trim()||email.split("@")[0]},emailRedirectTo:window.location.origin}
+        });
+        if(error){setAuthError(error.message);return;}
+        if(data.session?.user){
+          await loadSupabaseAccount(data.session.user,projectsToCarry,foldersToCarry);
+          clearAuthForm();goHome();
+        }else{
+          setAuthMode("login");
+          setAuthPassword("");
+          setAuthError("Account created. Check your email to confirm it, then log in.");
+        }
+        return;
+      }
+      const {data,error}=await supabase.auth.signInWithPassword({email,password});
+      if(error){setAuthError(error.message);return;}
+      await loadSupabaseAccount(data.user,projectsToCarry,foldersToCarry);
+      clearAuthForm();goHome();
+      return;
+    }
     const users=loadUsers();
     if(authMode==="signup"){
       if(users.some(user=>user.email===email)){setAuthError("That email already has an account.");return;}
@@ -2179,7 +2366,8 @@ export default function App(){
     setCurrentUser(user);setSavedProjects(loadSavedProjects(user)||[]);setSavedFolders(loadSavedFolders(user));setCurrentFolderId(null);setAuthOpen(false);clearAuthForm();goHome();
   };
 
-  const logout=()=>{
+  const logout=async()=>{
+    if(supabase)await supabase.auth.signOut();
     if(typeof window!=="undefined")window.localStorage.removeItem(AUTH_KEY);
     setCurrentUser(null);setSavedProjects(loadSavedProjects(null)||[]);setSavedFolders(loadSavedFolders(null));setCurrentFolderId(null);setAuthMode("login");setAuthOpen(true);goHome();
   };
@@ -2265,10 +2453,14 @@ export default function App(){
 
   const goHome=()=>{setCurrentProjectId(null);setLastSavedAt(null);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setRoundsPerWeek(1);setGamesPerMatch(1);setMatchMode("wl");setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);};
 
-  const deleteProject=(project)=>{
+  const deleteProject=async(project)=>{
     if(!window.confirm(`Delete "${project.name}"? This cannot be undone.`))return;
     setSavedProjects(prev=>prev.filter(p=>p.id!==project.id));
     setSavedFolders(prev=>prev.map(f=>({...f,projectIds:(f.projectIds||[]).filter(id=>id!==project.id)})));
+    if(supabase&&currentUser?.supabase){
+      const {error}=await supabase.from("tourney_projects").delete().eq("id",project.id);
+      if(error){setCloudMessage(error.message);setSaveError(true);}
+    }
     if(currentProjectId===project.id)goHome();
   };
 
@@ -2470,6 +2662,10 @@ export default function App(){
 
   const allBracketTeams=isRR?teamsWithSeed:(bracketData?teamsWithSeed:[]);
   const allBracketMatches=playableMatches(isRR?rrRounds.flat():bracketData?(bracketData.type==="single"?(bracketData.winners||[]).flat():[...(bracketData.winners||[]).flat(),...(bracketData.losers||[]).flat(),bracketData.grandFinal,bracketData.grandFinalReset].filter(Boolean)):[]);
+  const saveStatusText=saveError?"Save failed":supabaseConfigured?cloudMessage:lastSavedAt?`Saved ${lastSavedAt}`:"Local autosave";
+  const authHint=supabaseConfigured
+    ?"Projects sync online with Supabase after you log in."
+    :"Local browser mode. Add Supabase env vars in Vercel for real online accounts.";
 
   return(
     <div style={{fontFamily:"'Barlow Condensed',sans-serif",padding:"0 0 40px"}}>
@@ -2529,8 +2725,8 @@ export default function App(){
           {currentUser
             ?<button onClick={logout} title={currentUser.email} style={{...btn(false),padding:"5px 10px"}}>{currentUser.name} · Log out</button>
             :<button onClick={()=>setAuthOpen(v=>!v)} style={{...btn(false),padding:"5px 10px",borderColor:"rgba(42,157,143,0.45)",color:"#2a9d8f"}}>Log in / Sign up</button>}
-          <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",fontFamily:"'Barlow Condensed',sans-serif",color:saveError?"#e63946":lastSavedAt?"#2a9d8f":"var(--color-text-tertiary)",background:"var(--color-background-secondary)",border:"1px solid var(--color-border-tertiary)",borderRadius:6,padding:"5px 10px"}}>
-            {saveError?"Autosave failed":lastSavedAt?`Saved ${lastSavedAt}`:"Autosave ready"}
+          <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",fontFamily:"'Barlow Condensed',sans-serif",color:saveError?"#e63946":currentUser?.supabase?"#2a9d8f":lastSavedAt?"#2a9d8f":"var(--color-text-tertiary)",background:"var(--color-background-secondary)",border:"1px solid var(--color-border-tertiary)",borderRadius:6,padding:"5px 10px"}}>
+            {saveStatusText}
           </span>
         </div>
       </div>
@@ -2547,7 +2743,7 @@ export default function App(){
               <input value={authEmail} onChange={e=>setAuthEmail(e.target.value)} placeholder="Email" type="email" style={{padding:"7px 9px",borderRadius:7,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)"}}/>
               <input value={authPassword} onChange={e=>setAuthPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAuth()} placeholder="Password" type="password" style={{padding:"7px 9px",borderRadius:7,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)"}}/>
               <button onClick={handleAuth} style={{...btn(false),padding:"7px 12px",background:"#2a9d8f",color:"white",borderColor:"#2a9d8f"}}>{authMode==="signup"?"Create account":"Log in"}</button>
-              <div style={{gridColumn:"1 / -1",fontSize:11,color:authError?"#e63946":"var(--color-text-tertiary)"}}>{authError||"Projects are saved inside this browser under the active account."}</div>
+              <div style={{gridColumn:"1 / -1",fontSize:11,color:authError?"#e63946":"var(--color-text-tertiary)"}}>{authError||authHint}</div>
             </div>
           )}
           {(shareMessage||sharedProject)&&(
