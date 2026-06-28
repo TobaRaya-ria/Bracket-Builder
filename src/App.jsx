@@ -294,6 +294,45 @@ function matchResult(match) {
   return { wA,wB,gameTies,scoreA,scoreB,winner,loser };
 }
 
+function teamName(team){
+  return team?.name||"";
+}
+
+function sameTeam(a,b){
+  return teamName(a)===teamName(b);
+}
+
+function uniqueTeams(list){
+  const seen=new Set();
+  return (list||[]).filter(team=>{
+    const name=teamName(team);
+    if(!name||seen.has(name))return false;
+    seen.add(name);
+    return true;
+  });
+}
+
+function bracketMatchWinner(match){
+  return match?._autoWinner||matchResult(match).winner||null;
+}
+
+function bracketMatchLoser(match){
+  if(match?._splitLoser)return match._splitLoser;
+  if(!match?.teamA||!match?.teamB)return null;
+  return matchResult(match).loser||null;
+}
+
+function bracketMatchResolved(match){
+  if(!match)return true;
+  if(match._autoWinner||match._splitDrop)return true;
+  if(match.teamA&&match.teamB)return !!matchResult(match).winner;
+  return false;
+}
+
+function bracketRoundResolved(round){
+  return (round||[]).every(bracketMatchResolved);
+}
+
 function matchIsComplete(match){
   if(!match?.teamA||!match?.teamB)return false;
   const res=matchResult(match);
@@ -311,7 +350,7 @@ function adjGames(m, ng) {
 }
 
 function isByeMatch(match){
-  return !!match?._autoWinner && !(match.teamA&&match.teamB);
+  return !!match?._splitDrop||!!match?._autoWinner && !(match.teamA&&match.teamB);
 }
 
 function playableMatches(matches){
@@ -364,16 +403,22 @@ function generateElim(teams, gpm, mode) {
 }
 
 // ─── Double Elimination (fixed) ───────────────────────────────────────────────
-function generateDoubleElim(teams, gpm, mode) {
+function generateDoubleElim(teams, gpm, mode, options={}) {
   const n=teams.length; let size=1; while(size<n)size*=2;
   const slots=buildSeededSlots(size).map(s=>s<=n?teams[s-1]:null);
+  const splitCount=Math.max(0,Math.min(Math.floor(n/2),Number(options.splitStartCount)||0));
+  const splitNames=new Set(splitCount>0?teams.slice(n-splitCount).map(t=>t.name):[]);
 
   // Winners bracket
   const wRound1=[];
   for(let i=0;i<size;i+=2){
     const a=slots[i],b=slots[i+1];
-    const m=makeMatch(`w0-${i/2}`,a,b,gpm,mode);
+    let m=makeMatch(`w0-${i/2}`,a,b,gpm,mode);
     if(a&&!b)m._autoWinner=a; if(!a&&b)m._autoWinner=b;
+    const aSplit=a&&splitNames.has(a.name),bSplit=b&&splitNames.has(b.name);
+    if(a&&b&&aSplit!==bSplit){
+      m={...m,_autoWinner:aSplit?b:a,_splitLoser:aSplit?a:b,_splitDrop:true};
+    }
     wRound1.push(m);
   }
   const wRounds=[wRound1]; let wPrev=wRound1;
@@ -384,57 +429,92 @@ function generateDoubleElim(teams, gpm, mode) {
     wRounds.push(next); wPrev=next;
   }
 
-  // Losers bracket: proper structure
-  // WR has log2(size) rounds. LR has 2*(log2(size)-1) rounds.
-  // LR round pairs:
-  //   LR[2k]:   receives losers from WR[k+1], plays vs previous LR survivors (or losers from WR[0] for k=0)
-  //   LR[2k+1]: LR survivors play each other
-  // But the first LR round receives losers from WR[0].
-  
+  // Losers bracket.
   const lRounds=[];
   let lrIdx=0;
-  const lMake=(a,b)=>makeMatch(`l${lrIdx++}`,a,b,gpm,mode);
-  
-  // LR Round 0: losers from WR[0] play each other
-  const wr0=wRound1;
-  const lr0=[];
-  // pair losers: loser of match i vs loser of match (wr0.length-1-i)
-  // only need wr0.length/2 matches (each match produces one loser)
-  const halfWR0=Math.floor(wr0.length/2);
-  for(let i=0;i<halfWR0;i++) lr0.push(lMake(null,null));
-  if(wr0.length%2===1) lr0.push(lMake(null,null)); // bye match
-  lRounds.push(lr0);
-
-  // Subsequent LR rounds alternate: receive WR losers then play each other
-  let lrCount=lr0.length; // survivors from previous LR round
-  for(let wr=1;wr<wRounds.length-1;wr++){
-    // Receive round: LR survivors vs WR[wr] losers
-    const wrLosers=wRounds[wr].length;
-    const pairs=Math.min(lrCount,wrLosers);
-    const receiveRound=[];
-    for(let i=0;i<pairs;i++) receiveRound.push(lMake(null,null));
-    lRounds.push(receiveRound);
-    lrCount=receiveRound.length;
-    
-    // Play round: LR survivors play each other
-    if(lrCount>1){
-      const playRound=[];
-      for(let i=0;i<Math.floor(lrCount/2);i++) playRound.push(lMake(null,null));
-      lRounds.push(playRound);
-      lrCount=playRound.length;
-    }
-  }
+  doubleElimLoserRoundSizes(wRounds).forEach(size=>{
+    const round=[];
+    for(let i=0;i<size;i++)round.push(makeMatch(`l${lrIdx++}`,null,null,gpm,mode));
+    lRounds.push(round);
+  });
 
   const grandFinal=makeMatch("gf",null,null,gpm,mode);
   const grandFinalReset=makeMatch("gf-reset",null,null,gpm,mode);
   grandFinalReset._isReset=true;
 
-  return { type:"double", winners:wRounds, losers:lRounds, grandFinal, grandFinalReset };
+  return { type:"double", winners:wRounds, losers:lRounds, grandFinal, grandFinalReset, splitStartCount:splitCount };
+}
+
+function doubleElimLoserRoundSizes(wRounds){
+  const sizes=[];
+  const firstRoundCount=wRounds?.[0]?.length||0;
+  if(firstRoundCount>1)sizes.push(Math.floor(firstRoundCount/2));
+  for(let wr=1;wr<(wRounds?.length||0);wr++){
+    const receiveCount=wRounds[wr]?.length||0;
+    if(receiveCount>0)sizes.push(receiveCount);
+    if(receiveCount>1)sizes.push(Math.floor(receiveCount/2));
+  }
+  return sizes;
+}
+
+function matchConfigFromDoubleElim(data){
+  const sample=[...(data?.winners||[]).flat(),...(data?.losers||[]).flat(),data?.grandFinal,data?.grandFinalReset].find(Boolean);
+  return {gpm:sample?.games?.length||1,mode:sample?.matchMode||"wl"};
+}
+
+function normalizeDoubleElimData(data){
+  if(!data||data.type!=="double"||!data.winners?.length)return data;
+  const sizes=doubleElimLoserRoundSizes(data.winners);
+  const {gpm,mode}=matchConfigFromDoubleElim(data);
+  const existing=data.losers||[];
+  let changed=existing.length!==sizes.length;
+  let nextLoserIdx=Math.max(-1,...existing.flat().map(m=>{
+    const match=String(m?.id||"").match(/^l(\d+)$/);
+    return match?Number(match[1]):-1;
+  }))+1;
+  const losers=sizes.map((size,rIdx)=>{
+    const round=existing[rIdx]||[];
+    if(round.length!==size)changed=true;
+    return Array.from({length:size},(_,mIdx)=>round[mIdx]||makeMatch(`l${nextLoserIdx++}`,null,null,gpm,mode));
+  });
+  return changed?{...data,losers}:data;
+}
+
+const EMPTY_ENTRY={team:null,possible:false};
+const PENDING_ENTRY={team:null,possible:true};
+
+function winnerBracketLoserEntry(match){
+  if(!match)return EMPTY_ENTRY;
+  if(match._splitLoser)return {team:match._splitLoser,possible:true};
+  if(match._autoWinner)return EMPTY_ENTRY;
+  if(match.teamA&&match.teamB)return {team:matchResult(match).loser||null,possible:true};
+  return match.teamA||match.teamB?PENDING_ENTRY:PENDING_ENTRY;
+}
+
+function lowerAutoWinner(match,aEntry=EMPTY_ENTRY,bEntry=EMPTY_ENTRY){
+  if(match?.teamA&&!match.teamB&&!bEntry.possible)return match.teamA;
+  if(match?.teamB&&!match.teamA&&!aEntry.possible)return match.teamB;
+  return null;
+}
+
+function withLowerEntrants(match,aEntry=EMPTY_ENTRY,bEntry=EMPTY_ENTRY){
+  const next={...match,teamA:aEntry.team||null,teamB:bEntry.team||null,_autoWinner:null};
+  if(next.teamA&&next.teamB&&next.teamA.name===next.teamB.name)next.teamB=null;
+  const auto=lowerAutoWinner(next,aEntry,bEntry);
+  return auto?{...next,_autoWinner:auto}:next;
+}
+
+function lowerWinnerEntry(match,aEntry=EMPTY_ENTRY,bEntry=EMPTY_ENTRY){
+  const auto=lowerAutoWinner(match,aEntry,bEntry);
+  if(auto)return {team:auto,possible:true};
+  if(match?.teamA&&match.teamB)return {team:bracketMatchWinner(match),possible:true};
+  return aEntry.possible||bEntry.possible||match?.teamA||match?.teamB?PENDING_ENTRY:EMPTY_ENTRY;
 }
 
 // Propagate results through double elim bracket (pure function, called on every render)
 function propagateDoubleElim(data) {
   if(!data)return data;
+  data=normalizeDoubleElimData(data);
   // Deep-clone mutable parts
   const d={
     ...data,
@@ -448,7 +528,7 @@ function propagateDoubleElim(data) {
   for(let rIdx=0;rIdx<d.winners.length-1;rIdx++){
     for(let mIdx=0;mIdx<d.winners[rIdx].length;mIdx++){
       const m=d.winners[rIdx][mIdx];
-      const w=m._autoWinner||matchResult(m).winner||null;
+      const w=bracketMatchWinner(m);
       const nextIdx=Math.floor(mIdx/2);
       const slot=mIdx%2===0?"teamA":"teamB";
       if(d.winners[rIdx+1]?.[nextIdx]){
@@ -457,22 +537,14 @@ function propagateDoubleElim(data) {
     }
   }
 
-  // ── 2. Collect WR losers per round ──────────────────────────────────────────
-  // wrLosers[r] = array of losers from WR round r (null for bye matches)
-  const wrLosers=d.winners.map(round=>round.map(m=>{
-    if(m._autoWinner)return null; // bye — no loser
-    return matchResult(m).loser||null;
-  }));
+  // ── 2. Collect WR losers per fixed source slot ──────────────────────────────
+  const wrLosers=d.winners.map(round=>round.map(winnerBracketLoserEntry));
 
-  // ── 3. Fill LR[0]: WR[0] losers play each other ─────────────────────────────
-  const wr0L=wrLosers[0].filter(Boolean);
-  // Seed pairing: top vs bottom (1 vs N, 2 vs N-1, …)
-  const lr0=d.losers[0];
-  for(let i=0;i<lr0.length;i++){
-    const a=wr0L[i]||null;
-    const b=wr0L[wr0L.length-1-i]||null;
-    lr0[i]={...lr0[i],teamA:a,teamB:(a&&b&&a.name!==b.name)?b:null};
-  }
+  // ── 3. Fill LR[0]: WR[0] loser slots play mirrored slots ───────────────────
+  const wr0L=wrLosers[0]||[];
+  const lr0=d.losers[0]||[];
+  const lr0Entries=lr0.map((_,i)=>[wr0L[i]||EMPTY_ENTRY,wr0L[wr0L.length-1-i]||EMPTY_ENTRY]);
+  if(d.losers.length>0)d.losers[0]=lr0.map((m,i)=>withLowerEntrants(m,lr0Entries[i][0],lr0Entries[i][1]));
 
   // ── 4. Walk remaining LR rounds ─────────────────────────────────────────────
   // Pattern after LR[0]:
@@ -481,33 +553,35 @@ function propagateDoubleElim(data) {
   //   LR[3] = receive WR[2] losers
   //   LR[4] = play-each-other
   //   ...
-  let lrSurvivors=lr0.map(m=>matchResult(m).winner||null).filter(Boolean);
+  let lrSurvivors=d.losers[0]?.map((m,i)=>lowerWinnerEntry(m,lr0Entries[i]?.[0],lr0Entries[i]?.[1]))||[];
   let wrDropIdx=1; // next WR round to pull losers from
 
   for(let lrIdx=1;lrIdx<d.losers.length;lrIdx++){
     const round=d.losers[lrIdx];
     const isReceiveRound=(lrIdx%2===1); // odd = receive, even = play-each-other
+    const entryPairs=[];
 
     if(isReceiveRound){
       // pair each LR survivor against a WR drop-in
-      const dropIns=(wrLosers[wrDropIdx]||[]).filter(Boolean);
+      const dropIns=wrLosers[wrDropIdx]||[];
       wrDropIdx++;
       for(let i=0;i<round.length;i++){
-        round[i]={...round[i],teamA:lrSurvivors[i]||null,teamB:dropIns[i]||null};
+        entryPairs[i]=[lrSurvivors[i]||EMPTY_ENTRY,dropIns[i]||EMPTY_ENTRY];
       }
     } else {
       // survivors play each other
       for(let i=0;i<round.length;i++){
-        round[i]={...round[i],teamA:lrSurvivors[i*2]||null,teamB:lrSurvivors[i*2+1]||null};
+        entryPairs[i]=[lrSurvivors[i*2]||EMPTY_ENTRY,lrSurvivors[i*2+1]||EMPTY_ENTRY];
       }
     }
-    lrSurvivors=round.map(m=>matchResult(m).winner||null).filter(Boolean);
+    d.losers[lrIdx]=round.map((m,i)=>withLowerEntrants(m,entryPairs[i][0],entryPairs[i][1]));
+    lrSurvivors=d.losers[lrIdx].map((m,i)=>lowerWinnerEntry(m,entryPairs[i][0],entryPairs[i][1]));
   }
 
   // ── 5. Grand Final ───────────────────────────────────────────────────────────
   const wbFinal=d.winners[d.winners.length-1][0];
-  const wbWinner=wbFinal._autoWinner||matchResult(wbFinal).winner||null;
-  const lbWinner=lrSurvivors[0]||null;
+  const wbWinner=bracketMatchWinner(wbFinal);
+  const lbWinner=(lrSurvivors[0]||winnerBracketLoserEntry(wbFinal)).team||null;
   d.grandFinal={...d.grandFinal,teamA:wbWinner,teamB:lbWinner};
 
   // Grand Final Reset — always has same teams as GF (reset is only played if LB side wins)
@@ -598,7 +672,7 @@ function buildStageData(stage, teams, extra={}) {
   const shouldGroup=stage.format==="roundrobin"&&stage.groupStage&&stage.groupCount>1;
   if(shouldGroup)return {...generateGroupStage(teams,stage.groupCount,gpm,stage.matchMode),...extra};
   if(stage.format==="single")return {...generateElim(teams,gpm,stage.matchMode),teams,...extra};
-  if(stage.format==="double")return {...generateDoubleElim(teams,gpm,stage.matchMode),teams,...extra};
+  if(stage.format==="double")return {...generateDoubleElim(teams,gpm,stage.matchMode,{splitStartCount:stage.splitStart?stage.splitStartCount:0}),teams,...extra};
   return {type:"roundrobin",rounds:scheduleRoundRobin(teams,gpm,stage.matchMode),teams,...extra};
 }
 
@@ -646,6 +720,189 @@ function buildRoundRobinTiebreakRound(teams, rounds, matchMode, gpm, standingsRu
     }
   });
   return matches.length?matches:null;
+}
+
+function orderedTeams(list){
+  return uniqueTeams(list).sort((a,b)=>(a.seed??9999)-(b.seed??9999)||teamName(a).localeCompare(teamName(b)));
+}
+
+function qualificationSourceKey(kind,roundIdx,target,baseQualifiers,candidates){
+  const names=list=>orderedTeams(list).map(teamName).join(",");
+  return `${kind}-${roundIdx}-${target}-${names(baseQualifiers)}-${names(candidates)}`;
+}
+
+function survivalRoundPlan(teams,target){
+  const ordered=orderedTeams(teams);
+  const matchCount=Math.min(Math.floor(ordered.length/2),Math.max(0,ordered.length-target));
+  const byeCount=Math.max(0,ordered.length-matchCount*2);
+  const byes=ordered.slice(0,byeCount);
+  const pool=ordered.slice(byeCount);
+  const pairs=Array.from({length:matchCount},(_,idx)=>[pool[idx],pool[pool.length-1-idx]]);
+  return {byes,pairs};
+}
+
+function reconcileMatchForTeams(match,id,teamA,teamB,gpm,mode){
+  if(match&&sameTeam(match.teamA,teamA)&&sameTeam(match.teamB,teamB)){
+    return {...match,teamA,teamB,matchMode:mode,games:adjGames(match,gpm).games};
+  }
+  return makeMatch(id,teamA,teamB,gpm,mode);
+}
+
+function syncSurvivalTiebreaker(tb,gpm,mode){
+  if(!tb)return null;
+  const target=Math.max(1,Number(tb.target)||1);
+  let current=orderedTeams(tb.candidateTeams||[]);
+  const rounds=[];
+  for(let roundIdx=0;current.length>target&&roundIdx<16;roundIdx++){
+    const plan=survivalRoundPlan(current,target);
+    const existingRound=tb.rounds?.[roundIdx]||[];
+    const round=plan.pairs.map(([teamA,teamB],matchIdx)=>{
+      const id=existingRound[matchIdx]?.id||`${tb.id||"qtb"}-r${roundIdx}-${matchIdx}`;
+      return reconcileMatchForTeams(existingRound[matchIdx],id,teamA,teamB,gpm,mode);
+    });
+    rounds.push(round);
+    if(!bracketRoundResolved(round))return {...tb,target,rounds,complete:false,qualifiedTeams:[]};
+    current=orderedTeams([...plan.byes,...round.map(bracketMatchWinner).filter(Boolean)]);
+  }
+  return {...tb,target,rounds,complete:current.length<=target,qualifiedTeams:current.slice(0,target)};
+}
+
+function qualificationMatchConfig(data,stageConfig){
+  const match=[...(data?.winners||[]).flat(),...(data?.losers||[]).flat(),...(data?.qualificationTiebreaker?.rounds||[]).flat(),data?.grandFinal,data?.grandFinalReset].find(Boolean);
+  return {gpm:match?.games?.length||(stageConfig?.matchMode==="wl"?1:stageConfig?.gamesPerMatch||1),mode:match?.matchMode||stageConfig?.matchMode||"wl"};
+}
+
+function singleQualificationBaseStatus(data,stageConfig){
+  const advance=stageConfig?.advance||0;
+  let alive=orderedTeams(data?.teams||[]);
+  for(let roundIdx=0;roundIdx<(data?.winners?.length||0);roundIdx++){
+    const round=data.winners[roundIdx]||[];
+    if(!bracketRoundResolved(round))return {ready:false,pending:true,advance,aliveTeams:alive};
+    const winners=orderedTeams(round.map(bracketMatchWinner).filter(Boolean));
+    const losers=orderedTeams(round.map(bracketMatchLoser).filter(Boolean));
+    if(winners.length===advance)return {ready:true,advance,advancers:winners,aliveTeams:winners};
+    if(alive.length>advance&&winners.length<advance&&losers.length){
+      const target=advance-winners.length;
+      return {
+        ready:false,
+        needsTiebreaker:true,
+        advance,
+        aliveTeams:winners,
+        baseQualifiers:winners,
+        candidateTeams:losers,
+        target,
+        sourceKey:qualificationSourceKey("single",roundIdx,target,winners,losers)
+      };
+    }
+    alive=winners;
+  }
+  return {ready:false,pending:true,advance,aliveTeams:alive};
+}
+
+function doubleQualificationEvents(data){
+  const prop=propagateDoubleElim(data);
+  const events=[];
+  for(let wrIdx=0;wrIdx<(prop?.winners?.length||0);wrIdx++){
+    events.push({kind:"winners",roundIdx:wrIdx,round:prop.winners[wrIdx]});
+    if(wrIdx===0){
+      if(prop.losers?.[0])events.push({kind:"losers",roundIdx:0,round:prop.losers[0]});
+    } else {
+      const receiveIdx=wrIdx*2-1;
+      const playIdx=wrIdx*2;
+      if(prop.losers?.[receiveIdx])events.push({kind:"losers",roundIdx:receiveIdx,round:prop.losers[receiveIdx]});
+      if(prop.losers?.[playIdx])events.push({kind:"losers",roundIdx:playIdx,round:prop.losers[playIdx]});
+    }
+  }
+  return events;
+}
+
+function doubleQualificationBaseStatus(data,stageConfig){
+  const advance=stageConfig?.advance||0;
+  const teams=orderedTeams(data?.teams||[]);
+  const losses=new Map(teams.map(team=>[teamName(team),0]));
+  const rankedAliveTeams=()=>teams.filter(team=>(losses.get(teamName(team))||0)<2).sort((a,b)=>(losses.get(teamName(a))||0)-(losses.get(teamName(b))||0)||(a.seed??9999)-(b.seed??9999)||teamName(a).localeCompare(teamName(b)));
+  let alive=teams;
+  for(const event of doubleQualificationEvents(data)){
+    if(!bracketRoundResolved(event.round))return {ready:false,pending:true,advance,aliveTeams:alive};
+    const before=alive;
+    const eliminated=[];
+    event.round.forEach(match=>{
+      const loser=bracketMatchLoser(match);
+      if(!loser)return;
+      const name=teamName(loser);
+      const nextLoss=(losses.get(name)||0)+1;
+      losses.set(name,nextLoss);
+      if(nextLoss>=2)eliminated.push(loser);
+    });
+    alive=rankedAliveTeams();
+    if(alive.length===advance)return {ready:true,advance,advancers:alive,aliveTeams:alive};
+    if(before.length>advance&&alive.length<advance&&eliminated.length){
+      const candidates=orderedTeams(eliminated);
+      const target=advance-alive.length;
+      return {
+        ready:false,
+        needsTiebreaker:true,
+        advance,
+        aliveTeams:alive,
+        baseQualifiers:alive,
+        candidateTeams:candidates,
+        target,
+        sourceKey:qualificationSourceKey(`double-${event.kind}`,event.roundIdx,target,alive,candidates)
+      };
+    }
+  }
+  if(advance===1&&stageDataComplete(data)){
+    const propagated=propagateDoubleElim(data);
+    const gfWinner=bracketMatchWinner(propagated.grandFinal);
+    const resetWinner=bracketMatchWinner(propagated.grandFinalReset);
+    const champion=gfWinner?.name===propagated.grandFinal.teamA?.name?gfWinner:resetWinner||gfWinner||null;
+    return {ready:!!champion,advance,advancers:champion?[champion]:[],aliveTeams:champion?[champion]:alive};
+  }
+  return {ready:false,pending:true,advance,aliveTeams:alive};
+}
+
+function qualificationBaseStatus(data,stageConfig,isLast){
+  if(!data||isLast||!(data.type==="single"||data.type==="double"))return {ready:stageDataComplete(data),advance:stageConfig?.advance||0,advancers:[]};
+  if(data.type==="single")return singleQualificationBaseStatus(data,stageConfig);
+  return doubleQualificationBaseStatus(data,stageConfig);
+}
+
+function stageQualificationStatus(data,stageConfig,isLast){
+  const base=qualificationBaseStatus(data,stageConfig,isLast);
+  if(!base.needsTiebreaker)return base;
+  const current=data?.qualificationTiebreaker?.sourceKey===base.sourceKey?data.qualificationTiebreaker:null;
+  const {gpm,mode}=qualificationMatchConfig(data,stageConfig);
+  const tb=current?syncSurvivalTiebreaker(current,gpm,mode):null;
+  const tbQualifiers=tb?.complete?tb.qualifiedTeams||[]:[];
+  return {
+    ...base,
+    tiebreaker:tb,
+    ready:!!tb?.complete,
+    advancers:tb?.complete?uniqueTeams([...(base.baseQualifiers||[]),...tbQualifiers]):base.baseQualifiers||[]
+  };
+}
+
+function syncStageQualificationData(data,stageConfig,isLast){
+  if(!data||isLast||!(data.type==="single"||data.type==="double"))return data;
+  const base=qualificationBaseStatus(data,stageConfig,isLast);
+  if(!base.needsTiebreaker){
+    if(!data.qualificationTiebreaker)return data;
+    const {qualificationTiebreaker,...rest}=data;
+    return rest;
+  }
+  const {gpm,mode}=qualificationMatchConfig(data,stageConfig);
+  const existing=data.qualificationTiebreaker?.sourceKey===base.sourceKey?data.qualificationTiebreaker:null;
+  const id=`qtb-${base.sourceKey.replace(/[^a-z0-9]+/gi,"-").slice(0,54)}`;
+  const tb=syncSurvivalTiebreaker({
+    ...(existing||{}),
+    id,
+    sourceKey:base.sourceKey,
+    target:base.target,
+    baseQualifiers:base.baseQualifiers,
+    candidateTeams:base.candidateTeams,
+    rounds:existing?.rounds||[]
+  },gpm,mode);
+  return {...data,qualificationTiebreaker:tb};
 }
 
 // ─── Standings ────────────────────────────────────────────────────────────────
@@ -1052,7 +1309,9 @@ function GameSlot({game,gi,match,mode,onUpdate}){
 function MatchCard({match,onGameUpdate,statCols,onMatchUpdate,accentLabel}){
   const[open,setOpen]=useState(false);
   const ready=!!(match.teamA&&match.teamB);
-  const{wA,wB,scoreA,scoreB,winner}=ready?matchResult(match):{wA:0,wB:0,scoreA:0,scoreB:0,winner:null};
+  const result=ready?matchResult(match):{wA:0,wB:0,scoreA:0,scoreB:0,winner:null};
+  const{wA,wB,scoreA,scoreB}=result;
+  const winner=ready?bracketMatchWinner(match):null;
   const mode=match.matchMode;
 
   const TBDRow=()=><div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 24px",alignItems:"center",columnGap:6,padding:"2px 0"}}>
@@ -1303,8 +1562,9 @@ function ElimBracket({rounds,onGameUpdate,onMatchUpdate,statCols,labelPrefix}){
                   if(!nextMatch||isByeMatch(nextMatch))return null;
                   const from=slotInfo(rIdx,mIdx).mid;
                   const to=slotInfo(rIdx+1,nextIdx).mid;
-                  const stroke=matchResult(match).winner?.color||"var(--color-border-tertiary)";
-                  return <path key={match.id} d={`M0 ${from} H${CONN_W/2} V${to} H${CONN_W}`} fill="none" stroke={stroke} strokeWidth="2" opacity={matchResult(match).winner?0.85:0.35}/>;
+                  const winner=bracketMatchWinner(match);
+                  const stroke=winner?.color||"var(--color-border-tertiary)";
+                  return <path key={match.id} d={`M0 ${from} H${CONN_W/2} V${to} H${CONN_W}`} fill="none" stroke={stroke} strokeWidth="2" opacity={winner?0.85:0.35}/>;
                 })}
               </svg>
             </div>
@@ -1321,19 +1581,28 @@ function SingleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols}){
   if(!winners?.length)return null;
   const CARD_H=132,base=winners[0].length;
   const fm=winners[winners.length-1][0];
-  const champ=fm?matchResult(fm).winner:null;
+  const champ=fm?bracketMatchWinner(fm):null;
+  const tb=bracketData.qualificationTiebreaker;
   return(
     <BracketCanvas style={{overflowX:"auto",padding:"18px 14px 20px"}}>
-      <div style={{display:"flex",gap:24,alignItems:"flex-start",minWidth:"max-content"}}>
-        <ElimBracket rounds={winners} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols}/>
-        <div style={{display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0}}>
-          <div style={{fontSize:9,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:8}}>Champion</div>
-          <div style={{paddingTop:Math.max(0,(base/2-0.45)*CARD_H)+"px"}}>
-            <div style={{width:200,height:52,border:"2px solid "+(champ?"#e9c46a":"var(--color-border-tertiary)"),borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",background:champ?"rgba(233,196,106,0.08)":"var(--color-background-secondary)",fontFamily:"'Barlow Condensed',sans-serif"}}>
-              {champ?<TeamTag name={"🏆 "+champ.name} color={champ.color}/>:<span style={{fontSize:12,color:"var(--color-text-tertiary)",fontStyle:"italic"}}>TBD</span>}
+      <div style={{display:"flex",flexDirection:"column",gap:24,minWidth:"max-content"}}>
+        <div style={{display:"flex",gap:24,alignItems:"flex-start"}}>
+          <ElimBracket rounds={winners} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols}/>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0}}>
+            <div style={{fontSize:9,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:8}}>Champion</div>
+            <div style={{paddingTop:Math.max(0,(base/2-0.45)*CARD_H)+"px"}}>
+              <div style={{width:200,height:52,border:"2px solid "+(champ?"#e9c46a":"var(--color-border-tertiary)"),borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",background:champ?"rgba(233,196,106,0.08)":"var(--color-background-secondary)",fontFamily:"'Barlow Condensed',sans-serif"}}>
+                {champ?<TeamTag name={"🏆 "+champ.name} color={champ.color}/>:<span style={{fontSize:12,color:"var(--color-text-tertiary)",fontStyle:"italic"}}>TBD</span>}
+              </div>
             </div>
           </div>
         </div>
+        {tb?.rounds?.length>0&&(
+          <div style={{paddingTop:18,borderTop:"1px solid var(--color-border-tertiary)"}}>
+            <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#b8921a",marginBottom:12}}>Qualification Tiebreaker · {tb.target} slot{tb.target===1?"":"s"}</div>
+            <ElimBracket rounds={tb.rounds} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols} labelPrefix="TB"/>
+          </div>
+        )}
       </div>
     </BracketCanvas>
   );
@@ -1346,6 +1615,7 @@ function DoubleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols}){
   const wbSideWonGF=gfRes.winner&&gfRes.winner.name===propagated.grandFinal.teamA?.name;
   const resetNeeded=gfRes.winner&&gfRes.winner.name===propagated.grandFinal.teamB?.name;
   const champion=wbSideWonGF?gfRes.winner:gfrRes.winner||null;
+  const tb=bracketData.qualificationTiebreaker;
 
   // We display propagated data but use original for edits
   return(
@@ -1361,6 +1631,12 @@ function DoubleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols}){
             <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#e63946",marginBottom:12}}>Losers Bracket</div>
             {propagated.losers.length>0?<ElimBracket rounds={propagated.losers} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols} labelPrefix="LB"/>:<div style={{fontSize:12,color:"var(--color-text-tertiary)",fontStyle:"italic"}}>No losers yet</div>}
           </div>
+          {tb?.rounds?.length>0&&(
+            <div style={{paddingTop:18,borderTop:"1px solid var(--color-border-tertiary)"}}>
+              <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#b8921a",marginBottom:12}}>Qualification Tiebreaker · {tb.target} slot{tb.target===1?"":"s"}</div>
+              <ElimBracket rounds={tb.rounds} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols} labelPrefix="TB"/>
+            </div>
+          )}
         </div>
         <div style={{width:1,background:"var(--color-border-tertiary)",alignSelf:"stretch",flexShrink:0}}/>
         <div style={{flexShrink:0}}>
@@ -1793,6 +2069,8 @@ function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=
   const controlDisabled=locked;
   const aatDisabled=locked||lockAat;
   const disabledStyle={opacity:0.45,cursor:"not-allowed"};
+  const splitMax=Math.max(1,Math.floor(teamCount/2));
+  const splitCount=Math.max(1,Math.min(splitMax,stage.splitStartCount||Math.max(1,Math.floor(teamCount/4))));
 
   return(
     <div style={{background:"var(--color-background-secondary)",borderRadius:10,border:"1px solid var(--color-border-tertiary)",overflow:"hidden",opacity:locked?0.88:1}}>
@@ -1816,6 +2094,18 @@ function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=
       {stage.format==="roundrobin"&&(
         <div style={{padding:"10px 14px 0",borderBottom:"0.5px solid var(--color-border-tertiary)"}}>
           <StandingsRulesEditor rules={stage.standingsRules} onChange={standingsRules=>onChange({...stage,standingsRules})} disabled={metricRulesLocked}/>
+        </div>
+      )}
+
+      {stage.format==="double"&&(
+        <div style={{padding:"8px 14px",borderBottom:"0.5px solid var(--color-border-tertiary)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:stage.splitStart?"rgba(230,57,70,0.06)":"transparent"}}>
+          <button onClick={()=>!controlDisabled&&onChange({...stage,splitStart:!stage.splitStart,splitStartCount:splitCount})} disabled={controlDisabled} style={{...btn(!!stage.splitStart),padding:"3px 9px",fontSize:10,borderColor:stage.splitStart?"rgba(230,57,70,0.55)":"var(--color-border-tertiary)",color:stage.splitStart?"#e63946":"var(--color-text-secondary)",...(controlDisabled?disabledStyle:{})}}>Split Participants</button>
+          {stage.splitStart&&(
+            <>
+              <Stepper label="LB start" value={splitCount} min={1} max={splitMax} onChange={v=>onChange({...stage,splitStart:true,splitStartCount:v})} small disabled={controlDisabled}/>
+              <span style={{fontSize:10,color:"var(--color-text-tertiary)"}}>lower seeds / lower previous placements start in losers bracket ({Math.round(splitCount/teamCount*100)}%)</span>
+            </>
+          )}
         </div>
       )}
 
@@ -1906,8 +2196,8 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
     if(!sd)return[];
     if(sd.type==="roundrobin")return(sd.rounds||[]).flat();
     if(sd.type==="groupstage")return(sd.groups||[]).flatMap(g=>(g.rounds||[]).flat());
-    if(sd.type==="single")return(sd.winners||[]).flat();
-    if(sd.type==="double")return[...(sd.winners||[]).flat(),...(sd.losers||[]).flat(),sd.grandFinal,sd.grandFinalReset].filter(Boolean);
+    if(sd.type==="single")return[...(sd.winners||[]).flat(),...(sd.qualificationTiebreaker?.rounds||[]).flat()];
+    if(sd.type==="double")return dataMatches(sd);
     return[];
   });
 
@@ -1915,15 +2205,15 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
     if(!sd)return[];
     if(sd.type==="roundrobin")return(sd.rounds||[]).flat();
     if(sd.type==="groupstage")return(sd.groups||[]).flatMap(g=>(g.rounds||[]).flat());
-    if(sd.type==="single")return(sd.winners||[]).flat();
-    if(sd.type==="double")return[...(sd.winners||[]).flat(),...(sd.losers||[]).flat(),sd.grandFinal,sd.grandFinalReset].filter(Boolean);
+    if(sd.type==="single")return[...(sd.winners||[]).flat(),...(sd.qualificationTiebreaker?.rounds||[]).flat()];
+    if(sd.type==="double")return dataMatches(sd);
     return[];
   };
 
   const getStageTeams=(idx)=>stageData[idx]?.teams||[];
 
   const stageComplete=(idx)=>{
-    return stageDataComplete(stageData[idx]);
+    return stageQualificationStatus(stageData[idx],stages[idx],idx===stages.length-1).ready;
   };
 
   const getAdvancingTeams=(idx)=>{
@@ -1957,10 +2247,14 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
       return advancing;
     }
     if(sd.type==="single"){
+      const status=stageQualificationStatus(sd,st,idx===stages.length-1);
+      if(status.ready&&status.advancers?.length)return status.advancers.slice(0,advance);
       const standings=computeTeamStandings(stTeams,playableMatches((sd.winners||[]).flat()));
       return standings.slice(0,advance).map(r=>r.team);
     }
     if(sd.type==="double"){
+      const status=stageQualificationStatus(sd,st,idx===stages.length-1);
+      if(status.ready&&status.advancers?.length)return status.advancers.slice(0,advance);
       const prop=propagateDoubleElim(sd);
       const allM=[...(prop.winners||[]).flat(),...(prop.losers||[]).flat(),prop.grandFinal,prop.grandFinalReset].filter(Boolean);
       const gfRes=matchResult(prop.grandFinal);
@@ -2254,8 +2548,11 @@ function dataMatches(data){
   if(!data)return[];
   if(data.type==="roundrobin")return(data.rounds||[]).flat();
   if(data.type==="groupstage")return(data.groups||[]).flatMap(g=>(g.rounds||[]).flat());
-  if(data.type==="single")return(data.winners||[]).flat();
-  if(data.type==="double")return[...(data.winners||[]).flat(),...(data.losers||[]).flat(),data.grandFinal,data.grandFinalReset].filter(Boolean);
+  if(data.type==="single")return[...(data.winners||[]).flat(),...(data.qualificationTiebreaker?.rounds||[]).flat()];
+  if(data.type==="double"){
+    const propagated=propagateDoubleElim(data);
+    return[...(propagated.winners||[]).flat(),...(propagated.losers||[]).flat(),...(data.qualificationTiebreaker?.rounds||[]).flat(),propagated.grandFinal,propagated.grandFinalReset].filter(Boolean);
+  }
   return[];
 }
 
@@ -2496,12 +2793,17 @@ function requiredMultiTeams(stages){
 
 function recalcMultiStages(stages){
   return stages.map((stage,idx)=>{
-    if(idx===0)return {...stage,teamCount:Math.max(2,stage.teamCount||2),groupStage:stages.length===1?false:stage.groupStage};
+    const clampSplit=next=>{
+      if(next.format!=="double"||!next.splitStart)return {...next,splitStart:false,splitStartCount:0};
+      const max=Math.max(1,Math.floor((next.teamCount||2)/2));
+      return {...next,splitStartCount:Math.max(1,Math.min(max,next.splitStartCount||Math.max(1,Math.floor((next.teamCount||2)/4))))};
+    };
+    if(idx===0)return clampSplit({...stage,teamCount:Math.max(2,stage.teamCount||2),groupStage:stages.length===1?false:stage.groupStage});
     const isLast=idx===stages.length-1;
     const fromPrev=stages[idx-1]?.advance||2;
     const aat=stage.aat||0;
     const teamCount=Math.max(2,fromPrev+aat);
-    return {...stage,aat,teamCount,groupStage:isLast?false:stage.groupStage,advance:Math.min(stage.advance||Math.floor(teamCount/2),Math.max(1,teamCount-1))};
+    return clampSplit({...stage,aat,teamCount,groupStage:isLast?false:stage.groupStage,advance:Math.min(stage.advance||Math.floor(teamCount/2),Math.max(1,teamCount-1))});
   });
 }
 
@@ -3030,7 +3332,7 @@ export default function App(){
       if(!prev)return prev;
       const updateArr=arr=>arr.map(m=>m.id===matchId?updater(m):m);
       const updateRounds=rounds=>rounds.map(r=>updateArr(r));
-      const next={...prev};
+      let next={...(prev.type==="double"?normalizeDoubleElimData(prev):prev)};
       if(next.winners)next.winners=updateRounds(next.winners);
       if(next.losers)next.losers=updateRounds(next.losers);
       if(next.grandFinal?.id===matchId)next.grandFinal=updater(next.grandFinal);
@@ -3065,12 +3367,16 @@ export default function App(){
 
   const updateMatchInStage=(stageIdx,matchId,updater)=>{
     setStageData(prev=>{
-      const sd={...prev[stageIdx]};
+      const base=prev[stageIdx];
+      let sd={...(base?.type==="double"?normalizeDoubleElimData(base):base)};
       if(sd.type==="roundrobin")sd.rounds=sd.rounds.map(r=>r.map(m=>m.id===matchId?updater(m):m));
       else if(sd.type==="groupstage")sd.groups=sd.groups.map(g=>({...g,rounds:g.rounds.map(r=>r.map(m=>m.id===matchId?updater(m):m))}));
       else{
         if(sd.winners)sd.winners=sd.winners.map(r=>r.map(m=>m.id===matchId?updater(m):m));
         if(sd.losers)sd.losers=sd.losers.map(r=>r.map(m=>m.id===matchId?updater(m):m));
+        if(sd.qualificationTiebreaker?.rounds){
+          sd.qualificationTiebreaker={...sd.qualificationTiebreaker,rounds:sd.qualificationTiebreaker.rounds.map(r=>r.map(m=>m.id===matchId?updater(m):m))};
+        }
         if(sd.grandFinal?.id===matchId)sd.grandFinal=updater(sd.grandFinal);
         if(sd.grandFinalReset?.id===matchId)sd.grandFinalReset=updater(sd.grandFinalReset);
         // Propagate single elim (clears stale too)
@@ -3096,6 +3402,7 @@ export default function App(){
           }
         }
       }
+      sd=syncStageQualificationData(sd,stages[stageIdx],stageIdx===stages.length-1);
       return {...prev,[stageIdx]:sd};
     });
   };
@@ -3104,7 +3411,10 @@ export default function App(){
   const handleMatchUpdate=(matchId,upd)=>updateMatchInBracket(matchId,m=>({...m,...upd}));
   const handleStageGameUpdate=(stageIdx,matchId,gi,upd)=>updateMatchInStage(stageIdx,matchId,m=>({...m,games:m.games.map((g,i)=>i===gi?{...g,...upd}:g)}));
   const handleStageMatchUpdate=(stageIdx,matchId,upd)=>updateMatchInStage(stageIdx,matchId,m=>({...m,...upd}));
-  const handleStageDataUpdate=(stageIdx,updater)=>setStageData(prev=>({...prev,[stageIdx]:typeof updater==="function"?updater(prev[stageIdx]):updater}));
+  const handleStageDataUpdate=(stageIdx,updater)=>setStageData(prev=>{
+    const raw=typeof updater==="function"?updater(prev[stageIdx]):updater;
+    return {...prev,[stageIdx]:syncStageQualificationData(raw,stages[stageIdx],stageIdx===stages.length-1)};
+  });
 
   const handleAdvance=(fromStageIdx,advancing)=>{
     const nextIdx=fromStageIdx+1;
@@ -3151,7 +3461,7 @@ export default function App(){
     const ng=matchMode==="wl"?1:newG;setGamesPerMatch(newG);
     const adj=m=>adjGames(m,ng);
     if(isRR)setRrRounds(p=>p.map(r=>r.map(adj)));
-    else setBracketData(prev=>{if(!prev)return prev;const next={...prev};
+    else setBracketData(prev=>{if(!prev)return prev;const next={...(prev.type==="double"?normalizeDoubleElimData(prev):prev)};
       if(next.winners)next.winners=next.winners.map(r=>r.map(adj));
       if(next.losers)next.losers=next.losers.map(r=>r.map(adj));
       if(next.grandFinal)next.grandFinal=adj(next.grandFinal);
@@ -3163,7 +3473,7 @@ export default function App(){
   const reset=()=>{if(typeof window!=="undefined")window.localStorage.removeItem(STORAGE_KEY);setCurrentProjectId(null);setLastSavedAt(null);setSaveError(false);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setBracketTab("tournament");};
 
   const allBracketTeams=isRR?teamsWithSeed:(bracketData?teamsWithSeed:[]);
-  const allBracketMatches=playableMatches(isRR?rrRounds.flat():bracketData?(bracketData.type==="single"?(bracketData.winners||[]).flat():[...(bracketData.winners||[]).flat(),...(bracketData.losers||[]).flat(),bracketData.grandFinal,bracketData.grandFinalReset].filter(Boolean)):[]);
+  const allBracketMatches=playableMatches(isRR?rrRounds.flat():bracketData?dataMatches(bracketData):[]);
   const saveStatusText=saveError?"Save failed":supabaseConfigured?cloudMessage:lastSavedAt?`Saved ${lastSavedAt}`:"Local autosave";
   const authHint=supabaseConfigured
     ?"Projects sync online with Supabase after you log in."
@@ -3209,7 +3519,7 @@ export default function App(){
               const computedTC=idx===0?(stage.teamCount||teamCount):(stages[idx-1]?.advance||2)+(stage.aat||0);
               const displayStage={...stage,teamCount:computedTC};
               const started=!!stageData[idx];
-              const done=stageDataComplete(stageData[idx]);
+              const done=stageQualificationStatus(stageData[idx],stage,idx===stages.length-1).ready;
               return(
                 <div key={idx}>
                   <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:done?"#e63946":started?"#b8921a":"#2a9d8f",margin:"0 0 5px 2px"}}>{done?"Done - read only":started?"Started - metrics editable":"Not started - editable"}</div>
@@ -3588,8 +3898,8 @@ export default function App(){
               if(!sd)return[];
               if(sd.type==="roundrobin")return(sd.rounds||[]).flat();
               if(sd.type==="groupstage")return(sd.groups||[]).flatMap(g=>(g.rounds||[]).flat());
-              if(sd.type==="single")return(sd.winners||[]).flat();
-              if(sd.type==="double")return[...(sd.winners||[]).flat(),...(sd.losers||[]).flat(),sd.grandFinal,sd.grandFinalReset].filter(Boolean);
+              if(sd.type==="single")return[...(sd.winners||[]).flat(),...(sd.qualificationTiebreaker?.rounds||[]).flat()];
+              if(sd.type==="double")return dataMatches(sd);
               return[];
             };
             const stageMatchSets=isMulti?stages.map((_,idx)=>playableMatches(getMatchesFromStageData(stageData[idx]))):[];
