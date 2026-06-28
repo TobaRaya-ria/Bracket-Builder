@@ -12,15 +12,35 @@ const regionFlag = (region) => { if(!region)return""; const iso=COUNTRY_MAP[regi
 const palette=["#e63946","#457b9d","#2a9d8f","#e9c46a","#f4a261","#8338ec","#06d6a0","#fb8500","#118ab2","#d62828","#3a86ff","#ff006e","#219ebc","#ffb703","#c77dff","#52b788","#f77f00","#4cc9f0","#b5179e","#7209b7","#3a0ca3","#4361ee","#80b918","#e07a5f","#3d405b","#81b29a","#264653","#2b2d42","#ef233c","#06aed5"];
 
 const DEFAULT_STANDINGS_RULES={
-  pointMode:"matchWins",
+  mainMetric:"football",
+  tiebreakers:["matchWins","scoreFor","scoreDiff","none"],
+  scoringSystem:"football",
+  customPoints:{matchWin:3,matchTie:1,matchLoss:0,gameWin:0,gameTie:0,gameLoss:0},
+  pointMode:"football",
   winPoints:3,
   drawPoints:1,
   lossPoints:0,
   pointRules:[{metric:"matchWin",points:3}],
   scoreDiffBands:[],
-  criteria:["points","matchWins","gameDiff","scoreDiff"],
-  summary:"3 points per match win, then match wins, game differential, then score differential."
+  criteria:["points","matchWins","scoreFor","scoreDiff"],
+  summary:"Football system. Ranking: Points, Match wins, Pts scored, Pts difference."
 };
+
+const METRIC_MAIN_OPTIONS=[
+  ["matchWins","Match win"],
+  ["scoreFor","Pts scored"],
+  ["scoreDiff","Pts difference"],
+  ["customPoints","Custom pts"],
+  ["football","Football system"],
+  ["kitakana","Kitakana system"]
+];
+
+const METRIC_TIEBREAKER_OPTIONS=[
+  ["none","None"],
+  ["matchWins","Match win"],
+  ["scoreFor","Pts scored"],
+  ["scoreDiff","Pts difference"]
+];
 
 const POINT_RULE_METRICS=[
   ["matchWin","Match win"],
@@ -45,39 +65,106 @@ const STANDINGS_CRITERIA=[
   ["fewestLosses","Fewest losses"]
 ];
 
-function pointMetricLabel(id){
-  return POINT_RULE_METRICS.find(([key])=>key===id)?.[1]||id;
+function metricLabel(id){
+  return [...METRIC_MAIN_OPTIONS,...METRIC_TIEBREAKER_OPTIONS].find(([key])=>key===id)?.[1]||id;
+}
+
+function metricCriterion(id){
+  if(id==="football"||id==="kitakana"||id==="customPoints")return"points";
+  if(id==="scoreFor")return"scoreFor";
+  if(id==="scoreDiff")return"scoreDiff";
+  if(id==="matchWins")return"matchWins";
+  return null;
+}
+
+function criteriaFromMetricConfig(mainMetric,tiebreakers){
+  return uniqCriteria([metricCriterion(mainMetric),...(tiebreakers||[]).map(metricCriterion)].filter(Boolean));
+}
+
+function customPointsFromRules(base){
+  const fallback={...DEFAULT_STANDINGS_RULES.customPoints};
+  if(base.customPoints&&typeof base.customPoints==="object"){
+    return Object.fromEntries(Object.keys(fallback).map(key=>[key,Number.isFinite(Number(base.customPoints[key]))?Number(base.customPoints[key]):fallback[key]]));
+  }
+  const byMetric={};
+  (Array.isArray(base.pointRules)?base.pointRules:[]).forEach(rule=>{byMetric[rule.metric]=Number(rule.points);});
+  return {
+    matchWin:Number.isFinite(byMetric.matchWin)?byMetric.matchWin:(Number.isFinite(Number(base.winPoints))?Number(base.winPoints):fallback.matchWin),
+    matchTie:Number.isFinite(byMetric.matchTie)?byMetric.matchTie:(Number.isFinite(Number(base.drawPoints))?Number(base.drawPoints):fallback.matchTie),
+    matchLoss:Number.isFinite(byMetric.matchLoss)?byMetric.matchLoss:(Number.isFinite(Number(base.lossPoints))?Number(base.lossPoints):fallback.matchLoss),
+    gameWin:Number.isFinite(byMetric.gameWin)?byMetric.gameWin:fallback.gameWin,
+    gameTie:Number.isFinite(byMetric.gameTie)?byMetric.gameTie:fallback.gameTie,
+    gameLoss:Number.isFinite(byMetric.gameLoss)?byMetric.gameLoss:fallback.gameLoss
+  };
+}
+
+function pointRulesFromSystem(scoringSystem,customPoints){
+  if(scoringSystem==="custom")return [
+    {metric:"matchWin",points:customPoints.matchWin},
+    {metric:"matchTie",points:customPoints.matchTie},
+    {metric:"matchLoss",points:customPoints.matchLoss},
+    {metric:"gameWin",points:customPoints.gameWin},
+    {metric:"gameTie",points:customPoints.gameTie},
+    {metric:"gameLoss",points:customPoints.gameLoss}
+  ].filter(rule=>rule.points!==0);
+  if(scoringSystem==="kitakana")return [];
+  return [{metric:"matchWin",points:3},{metric:"matchTie",points:1}];
 }
 
 function normalizeStandingsRules(rules){
   const base={...DEFAULT_STANDINGS_RULES,...(rules||{})};
+  const mainValid=new Set(METRIC_MAIN_OPTIONS.map(([id])=>id));
+  const tiebreakerValid=new Set(METRIC_TIEBREAKER_OPTIONS.map(([id])=>id));
+  let mainMetric=mainValid.has(base.mainMetric)?base.mainMetric:null;
+  if(!mainMetric){
+    const oldPointRules=Array.isArray(base.pointRules)?base.pointRules:[];
+    const hasLegacyCustomRules=base.scoringSystem==="custom"||base.pointMode==="custom"||oldPointRules.some(rule=>{
+      const points=Number(rule.points);
+      if(["gameWin","gameTie","gameLoss","matchLoss","scoreDiff","scoreFor","scoreAgainst","scoreDiffBand"].includes(rule.metric))return Number.isFinite(points)&&points!==0;
+      if(rule.metric==="matchWin")return Number.isFinite(points)&&points!==3;
+      if(rule.metric==="matchTie")return Number.isFinite(points)&&points!==1;
+      return false;
+    });
+    const firstCriterion=Array.isArray(base.criteria)?base.criteria[0]:null;
+    mainMetric=base.scoringSystem==="kitakana"?"kitakana":hasLegacyCustomRules?"customPoints":firstCriterion==="scoreFor"?"scoreFor":firstCriterion==="scoreDiff"?"scoreDiff":firstCriterion==="matchWins"?"matchWins":"football";
+  }
+  const tiebreakers=Array.from({length:4},(_,idx)=>{
+    const value=Array.isArray(base.tiebreakers)?base.tiebreakers[idx]:null;
+    if(tiebreakerValid.has(value))return value;
+    const oldCriterion=Array.isArray(base.criteria)?base.criteria[idx+1]:null;
+    return tiebreakerValid.has(oldCriterion)?oldCriterion:"none";
+  });
+  const customPoints=customPointsFromRules(base);
+  const scoringSystem=mainMetric==="kitakana"?"kitakana":mainMetric==="customPoints"?"custom":"football";
   const valid=new Set(STANDINGS_CRITERIA.map(([id])=>id));
-  const criteria=(Array.isArray(base.criteria)?base.criteria:DEFAULT_STANDINGS_RULES.criteria).filter(id=>valid.has(id));
+  const criteria=criteriaFromMetricConfig(mainMetric,tiebreakers).filter(id=>valid.has(id));
   const metricValid=new Set(POINT_RULE_METRICS.map(([id])=>id));
   const scoreDiffBands=Array.isArray(base.scoreDiffBands)?base.scoreDiffBands.map(b=>({type:b.type==="below"?"below":"atLeast",diff:Number(b.diff)||0,points:Number(b.points)||0})):[];
-  let pointRules=Array.isArray(base.pointRules)?base.pointRules.map(rule=>({metric:rule.metric,points:Number(rule.points)})).filter(rule=>metricValid.has(rule.metric)&&Number.isFinite(rule.points)):[];
+  let pointRules=pointRulesFromSystem(scoringSystem,customPoints).filter(rule=>metricValid.has(rule.metric)&&Number.isFinite(rule.points));
   if(!pointRules.length){
-    if(base.pointMode==="scoreDiffBands"&&scoreDiffBands.length)pointRules=[{metric:"scoreDiffBand",points:1}];
-    else pointRules=[
+    pointRules=scoringSystem==="kitakana"?[]:Array.isArray(base.pointRules)?base.pointRules.map(rule=>({metric:rule.metric,points:Number(rule.points)})).filter(rule=>metricValid.has(rule.metric)&&Number.isFinite(rule.points)):[];
+    if(!pointRules.length&&scoringSystem!=="kitakana")pointRules=[
       {metric:"matchWin",points:Number.isFinite(Number(base.winPoints))?Number(base.winPoints):3},
       {metric:"matchTie",points:Number.isFinite(Number(base.drawPoints))?Number(base.drawPoints):1},
       {metric:"matchLoss",points:Number.isFinite(Number(base.lossPoints))?Number(base.lossPoints):0}
     ].filter(rule=>rule.points!==0);
   }
-  return {
+  const normalized={
     ...base,
+    mainMetric,
+    tiebreakers,
+    scoringSystem,
+    customPoints,
     winPoints:Number.isFinite(Number(base.winPoints))?Number(base.winPoints):3,
     drawPoints:Number.isFinite(Number(base.drawPoints))?Number(base.drawPoints):1,
     lossPoints:Number.isFinite(Number(base.lossPoints))?Number(base.lossPoints):0,
     pointRules,
     scoreDiffBands,
     criteria:criteria.length?criteria:DEFAULT_STANDINGS_RULES.criteria,
-    summary:base.summary||DEFAULT_STANDINGS_RULES.summary
+    summary:""
   };
-}
-
-function standingsCriterionLabel(id){
-  return STANDINGS_CRITERIA.find(([key])=>key===id)?.[1]||id;
+  normalized.summary=summarizeStandingsRules(normalized);
+  return normalized;
 }
 
 function scoreDiffPoints(diff,rules){
@@ -101,6 +188,16 @@ function pointRuleUnit(rule,ctx,rules){
 }
 
 function standingsPointsForMatch(ctx,rules){
+  if(rules.scoringSystem==="kitakana"){
+    const diff=Math.abs(ctx.scoreDiff);
+    if(ctx.matchOutcome==="tie")return 1;
+    if(ctx.matchOutcome==="win"){
+      if(diff>5)return 3;
+      if(diff===5)return 2;
+      return 1.5;
+    }
+    if(ctx.matchOutcome==="loss")return diff<5?0.5:0;
+  }
   return (rules.pointRules||[]).reduce((sum,rule)=>{
     if(rule.metric==="scoreDiffBand")return sum+pointRuleUnit(rule,ctx,rules);
     return sum+(pointRuleUnit(rule,ctx,rules)*rule.points);
@@ -141,177 +238,22 @@ function uniqCriteria(list){
   return next.length?next:DEFAULT_STANDINGS_RULES.criteria;
 }
 
-function inferStandingsCriteria(text,currentRules){
-  const lower=text.toLowerCase();
-  const hasExplicitOrder=/\b(rank|ranking|priority|prioritize|order|tie\s*break|tiebreak|first|then|after)\b/.test(lower);
-  const orderMarker=lower.match(/\b(?:ranking|rank|priority|prioritize|order|tie\s*break|tiebreak)\b\s*:?\s*/);
-  let criteriaText=orderMarker?lower.slice(orderMarker.index+orderMarker[0].length):lower;
-  if(!orderMarker&&hasExplicitOrder){
-    const orderIdx=lower.search(/\b(?:first|then|after)\b/);
-    const sentenceStart=Math.max(lower.lastIndexOf(".",orderIdx),lower.lastIndexOf("\n",orderIdx),lower.lastIndexOf(";",orderIdx))+1;
-    criteriaText=lower.slice(Math.max(0,sentenceStart));
-  }
-  const chunks=criteriaText.split(/\bthen\b|,|;|>/).map(part=>part.trim()).filter(Boolean);
-  const found=[];
-  const addFrom=(part)=>{
-    if(/pts?\s+scored|points?\s+scored|score\s+for|total\s+score/.test(part))found.push("scoreFor");
-    else if(/score\s*diff|point\s*diff|points?\s*difference|goal\s*diff/.test(part))found.push("scoreDiff");
-    else if(/game\s*diff/.test(part))found.push("gameDiff");
-    else if(/game\s*wins?/.test(part))found.push("gameWins");
-    else if(/fewest\s+loss|least\s+loss|losses/.test(part))found.push("fewestLosses");
-    else if(/match\s*wins?|wins?/.test(part))found.push("matchWins");
-    else if(/\bpts?\b|\bpoints?\b/.test(part))found.push("points");
-  };
-  chunks.forEach(addFrom);
-  if(!found.length)addFrom(criteriaText);
-  const cur=normalizeStandingsRules(currentRules);
-  if(!found.length)return uniqCriteria(cur.criteria);
-  return uniqCriteria(hasExplicitOrder?found:[...found,...cur.criteria]);
-}
-
-function inferScoreDiffBands(text){
-  const lower=text.toLowerCase();
-  const bands=[];
-  const atLeastPatterns=[
-    /(?:>=|at\s*least|over|above)?\s*(\d+)\s*(?:score|point|pts|goal)?\s*diff(?:erence)?\s*(?::|=|is|gets?|worth)?\s*(\d+)\s*(?:pts?|points?)/g,
-    /(?:win\s+by|diff(?:erence)?\s+of)\s*(\d+)[^0-9]+(\d+)\s*(?:pts?|points?)/g
-  ];
-  atLeastPatterns.forEach(pattern=>{
-    let match;
-    while((match=pattern.exec(lower))){
-      bands.push({type:"atLeast",diff:Number(match[1]),points:Number(match[2])});
-    }
-  });
-  const belowPattern=/(?:below|under|less\s+than)\s*(\d+)\D+?(\d+)\s*(?:pts?|points?)/g;
-  let below;
-  while((below=belowPattern.exec(lower))){
-    bands.push({type:"below",diff:Number(below[1]),points:Number(below[2])});
-  }
-  return bands.filter(b=>Number.isFinite(b.diff)&&Number.isFinite(b.points));
-}
-
-function inferPointRules(text){
-  const lower=text.toLowerCase();
-  const specs=[
-    ["matchWin",["match win","match won","win match"]],
-    ["matchTie",["match tie","match draw","tie match","draw match"]],
-    ["matchLoss",["match loss","match lose","lose match"]],
-    ["gameWin",["game win","game won","win game"]],
-    ["gameTie",["game tie","game draw","tie game","draw game"]],
-    ["gameLoss",["game loss","game lose","lose game"]],
-    ["scoreDiff",["score diff","score difference","point diff","points difference","total points difference"]],
-    ["scoreFor",["score for","points scored","pts scored","total score"]],
-    ["scoreAgainst",["score against","points conceded","pts conceded"]]
-  ];
-  const rules=[];
-  specs.forEach(([metric,phrases])=>{
-    phrases.forEach(phrase=>{
-      const safe=phrase.replace(/[.*+?^${}()|[\]\\]/g,"\\$&").replace(/\s+/g,"\\s+");
-      const after=new RegExp(`${safe}\\D{0,24}(-?\\d+(?:\\.\\d+)?)\\s*(?:pts?|points?)`,"i");
-      const before=new RegExp(`(-?\\d+(?:\\.\\d+)?)\\s*(?:pts?|points?)\\D{0,24}(?:per|for|from)?\\s*${safe}`,"i");
-      const match=lower.match(after)||lower.match(before);
-      if(match)rules.push({metric,points:Number(match[1])});
-    });
-  });
-  if(!rules.some(rule=>rule.metric==="matchWin")){
-    const genericWin=lower.match(/\b(?:win|winner)\D{0,14}(-?\d+(?:\.\d+)?)\s*(?:pts?|points?)\b/i);
-    if(genericWin&&!/\bgame\b/.test(lower))rules.push({metric:"matchWin",points:Number(genericWin[1])});
-  }
-  if(!rules.some(rule=>rule.metric==="matchTie")){
-    const genericTie=lower.match(/\b(?:tie|draw)\D{0,14}(-?\d+(?:\.\d+)?)\s*(?:pts?|points?)\b/i);
-    if(genericTie&&!/\bgame\b/.test(lower))rules.push({metric:"matchTie",points:Number(genericTie[1])});
-  }
-  const seen=new Set();
-  return rules.filter(rule=>{
-    const key=rule.metric;
-    if(seen.has(key))return false;
-    seen.add(key);
-    return Number.isFinite(rule.points);
-  });
-}
-
 function summarizeStandingsRules(rules){
-  const cfg=normalizeStandingsRules(rules);
-  const criteria=cfg.criteria.map(standingsCriterionLabel).join(", ");
-  const pointParts=(cfg.pointRules||[]).map(rule=>{
-    if(rule.metric==="scoreDiffBand"){
-      const bands=cfg.scoreDiffBands.map(b=>`${b.type==="below"?"below":"at least"} ${b.diff} diff = ${b.points} pts`).join("; ");
-      return bands?`score-diff bands (${bands})`:"score-diff bands";
-    }
-    return `${rule.points} pts per ${pointMetricLabel(rule.metric).toLowerCase()}`;
-  });
-  return `${pointParts.length?pointParts.join("; "):"No standings points"}. Ranking: ${criteria}.`;
-}
-
-function parseStandingsRulePrompt(text,currentRules){
-  const cur=normalizeStandingsRules(currentRules);
-  const bands=inferScoreDiffBands(text);
-  const pointRules=inferPointRules(text);
-  const next={
-    ...cur,
-    criteria:inferStandingsCriteria(text,cur)
-  };
-  const winPoints=text.match(/\bwin(?:s|ner)?\D+?(\d+)\s*(?:pts?|points?)\b/i);
-  const drawPoints=text.match(/\bdraw\D+?(\d+)\s*(?:pts?|points?)\b/i);
-  if(winPoints)next.winPoints=Number(winPoints[1]);
-  if(drawPoints)next.drawPoints=Number(drawPoints[1]);
-  if(pointRules.length)next.pointRules=pointRules;
-  if(bands.length){
-    next.pointMode="scoreDiffBands";
-    next.scoreDiffBands=uniqScoreBands(bands);
-    next.pointRules=[...(pointRules.length?pointRules:[]),{metric:"scoreDiffBand",points:1}];
-    next.criteria=["points",...next.criteria.filter(criterion=>criterion!=="points")];
+  const cfg={...DEFAULT_STANDINGS_RULES,...(rules||{})};
+  const mainMetric=cfg.mainMetric||DEFAULT_STANDINGS_RULES.mainMetric;
+  const tiebreakers=Array.from({length:4},(_,idx)=>Array.isArray(cfg.tiebreakers)?cfg.tiebreakers[idx]||"none":"none");
+  const ranking=[metricLabel(mainMetric),...tiebreakers.filter(metric=>metric&&metric!=="none").map(metricLabel)].join(", ");
+  if(mainMetric==="customPoints"){
+    const points={...DEFAULT_STANDINGS_RULES.customPoints,...(cfg.customPoints||{})};
+    return `Custom pts. Match W/T/L: ${points.matchWin}/${points.matchTie}/${points.matchLoss}; Game W/T/L: ${points.gameWin}/${points.gameTie}/${points.gameLoss}. Ranking: ${ranking}.`;
   }
-  next.summary=summarizeStandingsRules(next);
-  return normalizeStandingsRules(next);
-}
-
-function analyzeStandingsRulePrompt(text,currentRules){
-  const lower=text.toLowerCase();
-  const cur=normalizeStandingsRules(currentRules);
-  const parsed=parseStandingsRulePrompt(text,cur);
-  const pointRules=inferPointRules(text);
-  const bands=inferScoreDiffBands(text);
-  const criteria=inferStandingsCriteria(text,cur);
-  const criteriaChanged=JSON.stringify(criteria)!==JSON.stringify(cur.criteria);
-  const asksCustom=/custom|whatever|point system|pts system|points system|standings points|scoring system/.test(lower);
-  const mentionsPointValue=/\bpts?\b|\d+\s*points?\b|=|:/.test(lower);
-  const questions=[];
-  if((asksCustom||mentionsPointValue)&&!pointRules.length&&!bands.length){
-    questions.push("How many standings points should each condition receive? You can answer like: match win 3 pts, match tie 1 pt, game win 1 pt, score diff 0.1 pts per point.");
+  if(mainMetric==="football"){
+    return `Football system. Win = 3, tie = 1, loss = 0. Ranking: ${ranking}.`;
   }
-  if(/tie|draw/.test(lower)&&!/match tie|match draw|game tie|game draw/.test(lower)){
-    questions.push("When you say tie/draw, is that for the whole match, each game, or both?");
+  if(mainMetric==="kitakana"){
+    return `Kitakana system. Win by >5 = 3, win by 5 = 2, win by <5 = 1.5, tie = 1, lose by <5 = 0.5, other loss = 0. Close wins/losses count as MT in the table. Ranking: ${ranking}.`;
   }
-  if(!criteriaChanged&&!pointRules.length&&!bands.length){
-    questions.push("What should decide ranking order after points? For example: score for, match wins, game wins, score diff.");
-  }
-  return {rules:parsed,questions:[...new Set(questions)]};
-}
-
-function uniqScoreBands(bands){
-  const seen=new Set();
-  return bands.filter(b=>{
-    const key=`${b.type}-${b.diff}-${b.points}`;
-    if(seen.has(key))return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-async function requestAiStandingsRules(message,currentRules){
-  const endpoint=AI_RULES_ENDPOINT;
-  if(!endpoint)return null;
-  const response=await fetch(endpoint,{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({message,currentRules:normalizeStandingsRules(currentRules)})
-  });
-  if(!response.ok)throw new Error("AI endpoint did not return a valid response.");
-  const payload=await response.json();
-  const rules=payload.rules||payload.standingsRules||payload;
-  const questions=payload.questions||payload.clarifyingQuestions||[];
-  return {rules:normalizeStandingsRules({...rules,summary:rules.summary||summarizeStandingsRules(rules)}),questions:Array.isArray(questions)?questions:[]};
+  return `Ranking: ${ranking}. Points column uses football scoring.`;
 }
 
 // ─── Match helpers ────────────────────────────────────────────────────────────
@@ -723,7 +665,9 @@ function computeTeamStandings(teams, matches, standingsRules) {
       let matchOutcome=null;
       if(winner){
         matchOutcome=winner.name===t.name?"win":"loss";
-        if(matchOutcome==="win")mw++;
+        const kitakanaCloseDraw=rules.scoringSystem==="kitakana"&&Math.abs(forScore-againstScore)<5;
+        if(kitakanaCloseDraw)draws++;
+        else if(matchOutcome==="win")mw++;
         else ml++;
       } else if(complete){
         matchOutcome="tie";
@@ -1766,102 +1710,70 @@ function StatColsEditor({statCols,onChange}){
   );
 }
 
-function StandingsRulesAssistantModal({rules,onApply,onClose}){
-  const[input,setInput]=useState("");
-  const[busy,setBusy]=useState(false);
-  const[context,setContext]=useState("");
-  const[pendingRules,setPendingRules]=useState(null);
-  const[messages,setMessages]=useState([{role:"assistant",text:"Tell me the ranking priority or custom points system. I will ask if anything is unclear, then show a draft for confirmation before applying."}]);
-  const cfg=normalizeStandingsRules(rules);
-  const send=async()=>{
-    const text=input.trim();
-    if(!text||busy)return;
-    const fullText=context?`${context}\n${text}`:text;
-    setInput("");
-    setBusy(true);
-    setPendingRules(null);
-    setMessages(prev=>[...prev,{role:"user",text}]);
-    try{
-      let analysis=null,source="local parser";
-      try{
-        analysis=await requestAiStandingsRules(fullText,cfg);
-        if(analysis)source="AI";
-      }catch(error){
-        analysis=null;
-      }
-      if(!analysis)analysis=analyzeStandingsRulePrompt(fullText,cfg);
-      if(analysis.questions?.length){
-        setContext(fullText);
-        setMessages(prev=>[...prev,{role:"assistant",text:`I need one more detail before drafting:\n${analysis.questions.map((q,i)=>`${i+1}. ${q}`).join("\n")}`}]);
-      } else {
-        const next=normalizeStandingsRules({...analysis.rules,summary:analysis.rules.summary||summarizeStandingsRules(analysis.rules)});
-        setPendingRules(next);
-        setContext("");
-        setMessages(prev=>[...prev,{role:"assistant",text:`Draft from ${source}: ${next.summary}\nConfirm to apply this rule, or revise it in the chat.`}]);
-      }
-    }catch(error){
-      setMessages(prev=>[...prev,{role:"assistant",text:error.message||"I could not turn that into a standings rule."}]);
-    }finally{
-      setBusy(false);
-    }
-  };
-  const confirmDraft=()=>{
-    if(!pendingRules)return;
-    onApply(pendingRules);
-    setMessages(prev=>[...prev,{role:"assistant",text:`Applied: ${pendingRules.summary}`}]);
-    setPendingRules(null);
-  };
-  return(
-    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:60,background:"rgba(0,0,0,0.72)",display:"flex",alignItems:"center",justifyContent:"center",padding:18}}>
-      <div onClick={e=>e.stopPropagation()} style={{width:"min(620px,100%)",maxHeight:"86vh",display:"flex",flexDirection:"column",background:"#0b0d13",border:"1px solid rgba(255,255,255,0.22)",borderRadius:10,boxShadow:"0 24px 80px rgba(0,0,0,0.6)",fontFamily:"'Barlow Condensed',sans-serif",color:"#f8fafc","--color-text-primary":"#f8fafc","--color-text-secondary":"rgba(248,250,252,0.82)","--color-text-tertiary":"rgba(248,250,252,0.62)","--color-background-primary":"#0b0d13","--color-background-secondary":"rgba(255,255,255,0.07)","--color-border-tertiary":"rgba(255,255,255,0.2)"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,padding:"14px 16px",borderBottom:"1px solid var(--color-border-tertiary)"}}>
-          <div style={{flex:1}}>
-            <div style={{fontSize:12,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#e9c46a"}}>Metric Assistant</div>
-            <div style={{fontSize:11,color:"var(--color-text-tertiary)",fontFamily:"'Barlow',sans-serif",marginTop:3}}>{cfg.summary}</div>
-          </div>
-          <button onClick={onClose} style={{width:30,height:30,borderRadius:6,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",color:"var(--color-text-secondary)",cursor:"pointer",fontSize:18,lineHeight:1}}>×</button>
-        </div>
-        <div style={{padding:"14px 16px",overflowY:"auto",display:"flex",flexDirection:"column",gap:8}}>
-          {messages.map((message,idx)=>(
-            <div key={idx} style={{alignSelf:message.role==="user"?"flex-end":"flex-start",maxWidth:"84%",whiteSpace:"pre-line",padding:"8px 10px",borderRadius:8,background:message.role==="user"?"rgba(233,196,106,0.14)":"var(--color-background-secondary)",border:`1px solid ${message.role==="user"?"rgba(233,196,106,0.35)":"var(--color-border-tertiary)"}`,fontSize:12,lineHeight:1.35,fontFamily:"'Barlow',sans-serif",color:"var(--color-text-secondary)"}}>
-              {message.text}
-            </div>
-          ))}
-          {pendingRules&&(
-            <div style={{alignSelf:"flex-start",width:"min(440px,100%)",padding:"10px",borderRadius:8,border:"1px solid rgba(42,157,143,0.42)",background:"rgba(42,157,143,0.08)"}}>
-              <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#2a9d8f",marginBottom:5}}>Confirm Draft</div>
-              <div style={{fontSize:12,color:"var(--color-text-secondary)",fontFamily:"'Barlow',sans-serif",lineHeight:1.35,marginBottom:8}}>{pendingRules.summary}</div>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                <button onClick={confirmDraft} style={{padding:"5px 12px",borderRadius:6,border:"none",background:"#2a9d8f",color:"white",cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.05em"}}>Confirm</button>
-                <button onClick={()=>setPendingRules(null)} style={{...btn(false),padding:"5px 12px",fontSize:11}}>Revise</button>
-              </div>
-            </div>
-          )}
-        </div>
-        <div style={{display:"flex",gap:8,padding:"12px 16px",borderTop:"1px solid var(--color-border-tertiary)"}}>
-          <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")send();}} placeholder="Example: points scored first, then match wins, then score diff" style={{flex:1,minWidth:0,padding:"8px 10px",borderRadius:7,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",color:"var(--color-text-primary)",fontFamily:"'Barlow',sans-serif",fontSize:12}}/>
-          <button onClick={send} disabled={busy||!input.trim()} style={{padding:"7px 14px",borderRadius:7,border:"none",background:busy||!input.trim()?"var(--color-background-secondary)":"#e9c46a",color:busy||!input.trim()?"var(--color-text-tertiary)":"#2c2c00",cursor:busy||!input.trim()?"not-allowed":"pointer",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.05em"}}>{busy?"Working":"Review"}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function StandingsRulesEditor({rules,onChange,disabled=false}){
-  const[assistantOpen,setAssistantOpen]=useState(false);
   const cfg=normalizeStandingsRules(rules);
+  const selectStyle={width:"100%",boxSizing:"border-box",padding:"6px 8px",borderRadius:6,border:"1px solid var(--color-border-tertiary)",background:disabled?"var(--color-background-secondary)":"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.03em",opacity:disabled?0.58:1,cursor:disabled?"not-allowed":"pointer"};
+  const inputStyle={width:"100%",boxSizing:"border-box",padding:"5px 7px",borderRadius:6,border:"1px solid var(--color-border-tertiary)",background:disabled?"var(--color-background-secondary)":"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,opacity:disabled?0.58:1};
+  const labelStyle={fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:4};
+  const applyRules=next=>onChange(normalizeStandingsRules(next));
+  const updateMainMetric=mainMetric=>applyRules({...cfg,mainMetric});
+  const updateTiebreaker=(idx,value)=>{
+    const tiebreakers=[...(cfg.tiebreakers||DEFAULT_STANDINGS_RULES.tiebreakers)];
+    tiebreakers[idx]=value;
+    applyRules({...cfg,tiebreakers});
+  };
+  const updateCustomPoint=(key,value)=>{
+    const parsed=value===""?0:Number(value);
+    applyRules({...cfg,mainMetric:"customPoints",customPoints:{...cfg.customPoints,[key]:Number.isFinite(parsed)?parsed:0}});
+  };
+  const customPointRows=[
+    ["matchWin","Match win"],["matchTie","Match tie"],["matchLoss","Match loss"],
+    ["gameWin","Game win"],["gameTie","Game tie"],["gameLoss","Game loss"]
+  ];
   return(
     <div style={{marginBottom:16,padding:"12px 16px",background:"var(--color-background-secondary)",borderRadius:10,border:"0.5px solid var(--color-border-tertiary)"}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
         <span style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Metric Prioritization</span>
         <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-          {cfg.criteria.map(id=><span key={id} style={{fontSize:10,padding:"2px 7px",borderRadius:4,border:"0.5px solid rgba(233,196,106,0.35)",background:"rgba(233,196,106,0.08)",color:"#b8921a",fontWeight:700}}>{standingsCriterionLabel(id)}</span>)}
+          {[cfg.mainMetric,...cfg.tiebreakers.filter(metric=>metric&&metric!=="none")].map((id,idx)=><span key={`${id}-${idx}`} style={{fontSize:10,padding:"2px 7px",borderRadius:4,border:"0.5px solid rgba(233,196,106,0.35)",background:"rgba(233,196,106,0.08)",color:"#b8921a",fontWeight:700}}>{idx===0?"Main: ":""}{metricLabel(id)}</span>)}
         </div>
-        <button onClick={()=>setAssistantOpen(true)} disabled={disabled} style={{...btn(false),padding:"4px 10px",fontSize:11,marginLeft:"auto",opacity:disabled?0.45:1,cursor:disabled?"not-allowed":"pointer",borderColor:"rgba(69,123,157,0.45)",color:"#457b9d"}}>AI Rules</button>
-        <button onClick={()=>onChange(DEFAULT_STANDINGS_RULES)} disabled={disabled} style={{...btn(false),padding:"4px 9px",fontSize:11,opacity:disabled?0.45:1,cursor:disabled?"not-allowed":"pointer"}}>Reset</button>
+        <button onClick={()=>onChange(DEFAULT_STANDINGS_RULES)} disabled={disabled} style={{...btn(false),padding:"4px 9px",fontSize:11,marginLeft:"auto",opacity:disabled?0.45:1,cursor:disabled?"not-allowed":"pointer"}}>Reset</button>
       </div>
-      <div style={{fontSize:11,color:"var(--color-text-tertiary)",fontFamily:"'Barlow',sans-serif"}}>{cfg.summary}</div>
-      {assistantOpen&&<StandingsRulesAssistantModal rules={cfg} onApply={onChange} onClose={()=>setAssistantOpen(false)}/>}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:10}}>
+        <label>
+          <div style={labelStyle}>Main metric</div>
+          <select value={cfg.mainMetric} onChange={e=>updateMainMetric(e.target.value)} disabled={disabled} style={selectStyle}>
+            {METRIC_MAIN_OPTIONS.map(([id,label])=><option key={id} value={id}>{label}</option>)}
+          </select>
+        </label>
+        {Array.from({length:4},(_,idx)=>(
+          <label key={idx}>
+            <div style={labelStyle}>Tiebreaker {idx+1}</div>
+            <select value={cfg.tiebreakers[idx]||"none"} onChange={e=>updateTiebreaker(idx,e.target.value)} disabled={disabled} style={selectStyle}>
+              {METRIC_TIEBREAKER_OPTIONS.map(([id,label])=><option key={id} value={id}>{label}</option>)}
+            </select>
+          </label>
+        ))}
+      </div>
+      {cfg.mainMetric==="customPoints"&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(116px,1fr))",gap:8,marginBottom:10,padding:"10px",borderRadius:8,border:"1px solid rgba(42,157,143,0.28)",background:"rgba(42,157,143,0.05)"}}>
+          {customPointRows.map(([key,label])=>(
+            <label key={key}>
+              <div style={labelStyle}>{label}</div>
+              <input type="number" step="0.5" value={cfg.customPoints[key]} onChange={e=>updateCustomPoint(key,e.target.value)} disabled={disabled} style={inputStyle}/>
+            </label>
+          ))}
+        </div>
+      )}
+      {cfg.mainMetric==="football"&&(
+        <div style={{fontSize:11,color:"var(--color-text-tertiary)",fontFamily:"'Barlow',sans-serif",marginBottom:8}}>Win = 3, tie = 1, loss = 0.</div>
+      )}
+      {cfg.mainMetric==="kitakana"&&(
+        <div style={{fontSize:11,color:"var(--color-text-tertiary)",fontFamily:"'Barlow',sans-serif",marginBottom:8}}>Win by &gt;5 = 3, win by 5 = 2, win by &lt;5 = 1.5, tie = 1, close loss = 0.5.</div>
+      )}
+      <div style={{fontSize:11,color:"var(--color-text-tertiary)",fontFamily:"'Barlow',sans-serif",lineHeight:1.35}}>
+        {cfg.summary}
+      </div>
     </div>
   );
 }
@@ -2192,7 +2104,6 @@ const DEFAULT_AWARDS={weekMvps:[],stageMvps:[],finalMvps:[],finalMvpCount:1};
 const DEFAULT_STAGES=[{format:"single",teamCount:8,matchMode:"wl",gamesPerMatch:1,advance:4}];
 const SUPABASE_URL=import.meta.env.VITE_SUPABASE_URL||"";
 const SUPABASE_ANON_KEY=import.meta.env.VITE_SUPABASE_ANON_KEY||"";
-const AI_RULES_ENDPOINT=import.meta.env.VITE_AI_RULES_ENDPOINT||"";
 const supabaseConfigured=!!(SUPABASE_URL&&SUPABASE_ANON_KEY);
 const supabase=supabaseConfigured?createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
 
