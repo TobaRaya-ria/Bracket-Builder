@@ -376,6 +376,21 @@ function playableMatches(matches){
   return (matches||[]).filter(m=>m&&m.teamA&&m.teamB&&!isByeMatch(m));
 }
 
+function stageDataComplete(data){
+  if(!data)return false;
+  if(data.type==="roundrobin"||data.type==="groupstage"){
+    const matches=playableMatches(dataMatches(data));
+    return matches.length>0&&matches.every(matchIsComplete);
+  }
+  if(data.type==="single")return !!matchResult(data.winners?.[data.winners.length-1]?.[0]).winner;
+  if(data.type==="double"){
+    const propagated=propagateDoubleElim(data),gf=matchResult(propagated.grandFinal);
+    if(gf.winner?.name===propagated.grandFinal.teamA?.name)return true;
+    return !!matchResult(propagated.grandFinalReset).winner;
+  }
+  return false;
+}
+
 // ─── Seeding ──────────────────────────────────────────────────────────────────
 function buildSeededSlots(size) {
   let order=[1,2];
@@ -1857,7 +1872,7 @@ const FORMAT_LABELS={"single":"Single Elim","double":"Double Elim","roundrobin":
 // StageConfig — clean per-stage card
 // Stage 0: pick how many teams play + how many advance
 // Stage N (idx>=1): choose AAT (auto-advance teams) + how many from previous stage
-function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=false}){
+function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=false,metricRulesLocked=false}){
   const teamCount=stage.teamCount||2;
   let bracketSz=1; while(bracketSz<teamCount)bracketSz*=2;
   const bracketByes=bracketSz-teamCount;
@@ -1888,7 +1903,7 @@ function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=
 
       {stage.format==="roundrobin"&&(
         <div style={{padding:"10px 14px 0",borderBottom:"0.5px solid var(--color-border-tertiary)"}}>
-          <StandingsRulesEditor rules={stage.standingsRules} onChange={standingsRules=>onChange({...stage,standingsRules})} disabled={controlDisabled}/>
+          <StandingsRulesEditor rules={stage.standingsRules} onChange={standingsRules=>onChange({...stage,standingsRules})} disabled={metricRulesLocked}/>
         </div>
       )}
 
@@ -1996,27 +2011,7 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
   const getStageTeams=(idx)=>stageData[idx]?.teams||[];
 
   const stageComplete=(idx)=>{
-    const sd=stageData[idx];
-    if(!sd)return false;
-    if(sd.type==="roundrobin"){
-      const all=playableMatches((sd.rounds||[]).flat());
-      return all.length>0&&all.every(matchIsComplete);
-    }
-    if(sd.type==="groupstage"){
-      const all=playableMatches((sd.groups||[]).flatMap(g=>(g.rounds||[]).flat()));
-      return all.length>0&&all.every(matchIsComplete);
-    }
-    if(sd.type==="single"){
-      const finals=sd.winners?.[sd.winners.length-1]||[];
-      return finals.length===1&&!!matchResult(finals[0]).winner;
-    }
-    if(sd.type==="double"){
-      const prop=propagateDoubleElim(sd);
-      const gfRes=matchResult(prop.grandFinal);
-      if(gfRes.winner&&gfRes.winner.name===prop.grandFinal.teamA?.name)return true;
-      return !!matchResult(prop.grandFinalReset).winner;
-    }
-    return false;
+    return stageDataComplete(stageData[idx]);
   };
 
   const getAdvancingTeams=(idx)=>{
@@ -3029,6 +3024,7 @@ export default function App(){
   const currentTournamentName=projectName.trim()||(currentProjectId?projectNameFromState({formatType,teams:teamsWithSeed}):"");
   const nonMultiMatches=isRR?rrRounds.flat():bracketData?dataMatches(bracketData):[];
   const nonMultiSettingsLocked=!isMulti&&matchesHaveEntries(nonMultiMatches);
+  const nonMultiMetricRulesLocked=!isMulti&&isRR&&stageDataComplete({type:"roundrobin",rounds:rrRounds,teams:teamsWithSeed});
 
   const renameParticipant=(seed,newName)=>{
     const name=newName.trim();
@@ -3062,6 +3058,10 @@ export default function App(){
   };
 
   const updateNonMultiSettings=(updates)=>{
+    if(updates.rrStandingsRules&&Object.keys(updates).every(key=>key==="rrStandingsRules")){
+      if(!nonMultiMetricRulesLocked)setRrStandingsRules(normalizeStandingsRules(updates.rrStandingsRules));
+      return;
+    }
     if(nonMultiSettingsLocked)return;
     const nextFormat=updates.formatType||formatType;
     const nextMode=updates.matchMode||matchMode;
@@ -3069,12 +3069,16 @@ export default function App(){
     if(updates.formatType)setFormatType(updates.formatType);
     if(updates.matchMode)setMatchMode(updates.matchMode);
     if(updates.gamesPerMatch)setGamesPerMatch(updates.gamesPerMatch);
-    if(updates.rrStandingsRules)setRrStandingsRules(normalizeStandingsRules(updates.rrStandingsRules));
     rebuildNonMultiBracket(nextFormat,nextMode,nextGames);
   };
 
   const updateStageConfigFromSettings=(idx,updated)=>{
-    if(stageData[idx])return;
+    if(stageData[idx]){
+      if(!stageDataComplete(stageData[idx])&&updated.standingsRules){
+        updateMultiStages(prev=>prev.map((stage,i)=>i===idx?{...stage,standingsRules:normalizeStandingsRules(updated.standingsRules)}:stage));
+      }
+      return;
+    }
     updateMultiStages(prev=>prev.map((stage,i)=>i===idx?{...updated,aat:stage.aat}:stage));
   };
 
@@ -3260,7 +3264,7 @@ export default function App(){
         <div style={{padding:"14px 16px",borderRadius:10,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)"}}>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
             <div style={{fontSize:12,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"var(--color-text-primary)"}}>Tournament Settings</div>
-            {nonMultiSettingsLocked&&<span style={{fontSize:11,color:"#e63946",marginLeft:"auto"}}>Started - read only</span>}
+            {nonMultiSettingsLocked&&<span style={{fontSize:11,color:!nonMultiMetricRulesLocked&&formatType==="roundrobin"?"#b8921a":"#e63946",marginLeft:"auto"}}>{!nonMultiMetricRulesLocked&&formatType==="roundrobin"?"Started - metrics editable":"Started - read only"}</span>}
           </div>
           <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:10}}>Format</div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
@@ -3280,7 +3284,7 @@ export default function App(){
             ))}
             {matchMode!=="wl"&&<Stepper label="Games" value={gamesPerMatch||3} min={1} max={11} onChange={v=>updateNonMultiSettings({gamesPerMatch:v})} small disabled={nonMultiSettingsLocked}/>}
           </div>
-          {formatType==="roundrobin"&&<StandingsRulesEditor rules={rrStandingsRules} onChange={rules=>updateNonMultiSettings({rrStandingsRules:rules})} disabled={nonMultiSettingsLocked}/>}
+          {formatType==="roundrobin"&&<StandingsRulesEditor rules={rrStandingsRules} onChange={rules=>updateNonMultiSettings({rrStandingsRules:rules})} disabled={nonMultiMetricRulesLocked}/>}
         </div>
       )}
       {isMulti&&(
@@ -3294,9 +3298,10 @@ export default function App(){
               const computedTC=idx===0?(stage.teamCount||teamCount):(stages[idx-1]?.advance||2)+(stage.aat||0);
               const displayStage={...stage,teamCount:computedTC};
               const started=!!stageData[idx];
+              const done=stageDataComplete(stageData[idx]);
               return(
                 <div key={idx}>
-                  <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:started?"#e63946":"#2a9d8f",margin:"0 0 5px 2px"}}>{started?"Started - read only":"Not started - editable"}</div>
+                  <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:done?"#e63946":started?"#b8921a":"#2a9d8f",margin:"0 0 5px 2px"}}>{done?"Done - read only":started?"Started - metrics editable":"Not started - editable"}</div>
                   <StageConfig
                     stage={displayStage}
                     idx={idx}
@@ -3304,6 +3309,7 @@ export default function App(){
                     isLast={idx===stages.length-1}
                     locked={started}
                     lockAat={idx>0}
+                    metricRulesLocked={done}
                     onChange={updated=>updateStageConfigFromSettings(idx,updated)}
                   />
                 </div>
