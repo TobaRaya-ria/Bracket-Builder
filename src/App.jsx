@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { createClient } from "@supabase/supabase-js";
 import { strFromU8, strToU8, unzipSync, unzlibSync, zipSync, zlibSync } from "fflate";
 
@@ -15,10 +16,24 @@ const DEFAULT_STANDINGS_RULES={
   winPoints:3,
   drawPoints:1,
   lossPoints:0,
+  pointRules:[{metric:"matchWin",points:3}],
   scoreDiffBands:[],
   criteria:["points","matchWins","gameDiff","scoreDiff"],
   summary:"3 points per match win, then match wins, game differential, then score differential."
 };
+
+const POINT_RULE_METRICS=[
+  ["matchWin","Match win"],
+  ["matchTie","Match tie"],
+  ["matchLoss","Match loss"],
+  ["gameWin","Game win"],
+  ["gameTie","Game tie"],
+  ["gameLoss","Game loss"],
+  ["scoreDiff","Score diff"],
+  ["scoreFor","Score for"],
+  ["scoreAgainst","Score against"],
+  ["scoreDiffBand","Score-diff band"]
+];
 
 const STANDINGS_CRITERIA=[
   ["points","Points"],
@@ -30,16 +45,32 @@ const STANDINGS_CRITERIA=[
   ["fewestLosses","Fewest losses"]
 ];
 
+function pointMetricLabel(id){
+  return POINT_RULE_METRICS.find(([key])=>key===id)?.[1]||id;
+}
+
 function normalizeStandingsRules(rules){
   const base={...DEFAULT_STANDINGS_RULES,...(rules||{})};
   const valid=new Set(STANDINGS_CRITERIA.map(([id])=>id));
   const criteria=(Array.isArray(base.criteria)?base.criteria:DEFAULT_STANDINGS_RULES.criteria).filter(id=>valid.has(id));
+  const metricValid=new Set(POINT_RULE_METRICS.map(([id])=>id));
+  const scoreDiffBands=Array.isArray(base.scoreDiffBands)?base.scoreDiffBands.map(b=>({type:b.type==="below"?"below":"atLeast",diff:Number(b.diff)||0,points:Number(b.points)||0})):[];
+  let pointRules=Array.isArray(base.pointRules)?base.pointRules.map(rule=>({metric:rule.metric,points:Number(rule.points)})).filter(rule=>metricValid.has(rule.metric)&&Number.isFinite(rule.points)):[];
+  if(!pointRules.length){
+    if(base.pointMode==="scoreDiffBands"&&scoreDiffBands.length)pointRules=[{metric:"scoreDiffBand",points:1}];
+    else pointRules=[
+      {metric:"matchWin",points:Number.isFinite(Number(base.winPoints))?Number(base.winPoints):3},
+      {metric:"matchTie",points:Number.isFinite(Number(base.drawPoints))?Number(base.drawPoints):1},
+      {metric:"matchLoss",points:Number.isFinite(Number(base.lossPoints))?Number(base.lossPoints):0}
+    ].filter(rule=>rule.points!==0);
+  }
   return {
     ...base,
     winPoints:Number.isFinite(Number(base.winPoints))?Number(base.winPoints):3,
     drawPoints:Number.isFinite(Number(base.drawPoints))?Number(base.drawPoints):1,
     lossPoints:Number.isFinite(Number(base.lossPoints))?Number(base.lossPoints):0,
-    scoreDiffBands:Array.isArray(base.scoreDiffBands)?base.scoreDiffBands.map(b=>({type:b.type==="below"?"below":"atLeast",diff:Number(b.diff)||0,points:Number(b.points)||0})):[],
+    pointRules,
+    scoreDiffBands,
     criteria:criteria.length?criteria:DEFAULT_STANDINGS_RULES.criteria,
     summary:base.summary||DEFAULT_STANDINGS_RULES.summary
   };
@@ -53,6 +84,27 @@ function scoreDiffPoints(diff,rules){
   const bands=[...(rules.scoreDiffBands||[])].sort((a,b)=>a.type===b.type?b.diff-a.diff:a.type==="atLeast"?-1:1);
   const band=bands.find(b=>b.type==="below"?diff<b.diff:diff>=b.diff);
   return band?band.points:rules.winPoints;
+}
+
+function pointRuleUnit(rule,ctx,rules){
+  if(rule.metric==="matchWin")return ctx.matchOutcome==="win"?1:0;
+  if(rule.metric==="matchTie")return ctx.matchOutcome==="tie"?1:0;
+  if(rule.metric==="matchLoss")return ctx.matchOutcome==="loss"?1:0;
+  if(rule.metric==="gameWin")return ctx.gameWins;
+  if(rule.metric==="gameTie")return ctx.gameTies;
+  if(rule.metric==="gameLoss")return ctx.gameLosses;
+  if(rule.metric==="scoreDiff")return ctx.scoreDiff;
+  if(rule.metric==="scoreFor")return ctx.scoreFor;
+  if(rule.metric==="scoreAgainst")return ctx.scoreAgainst;
+  if(rule.metric==="scoreDiffBand")return ctx.matchOutcome==="win"?scoreDiffPoints(Math.max(0,ctx.scoreDiff),rules):0;
+  return 0;
+}
+
+function standingsPointsForMatch(ctx,rules){
+  return (rules.pointRules||[]).reduce((sum,rule)=>{
+    if(rule.metric==="scoreDiffBand")return sum+pointRuleUnit(rule,ctx,rules);
+    return sum+(pointRuleUnit(rule,ctx,rules)*rule.points);
+  },0);
 }
 
 function standingsValue(row,criterion){
@@ -91,7 +143,15 @@ function uniqCriteria(list){
 
 function inferStandingsCriteria(text,currentRules){
   const lower=text.toLowerCase();
-  const chunks=lower.split(/\bthen\b|,|;|>/).map(part=>part.trim()).filter(Boolean);
+  const hasExplicitOrder=/\b(rank|ranking|priority|prioritize|order|tie\s*break|tiebreak|first|then|after)\b/.test(lower);
+  const orderMarker=lower.match(/\b(?:ranking|rank|priority|prioritize|order|tie\s*break|tiebreak)\b\s*:?\s*/);
+  let criteriaText=orderMarker?lower.slice(orderMarker.index+orderMarker[0].length):lower;
+  if(!orderMarker&&hasExplicitOrder){
+    const orderIdx=lower.search(/\b(?:first|then|after)\b/);
+    const sentenceStart=Math.max(lower.lastIndexOf(".",orderIdx),lower.lastIndexOf("\n",orderIdx),lower.lastIndexOf(";",orderIdx))+1;
+    criteriaText=lower.slice(Math.max(0,sentenceStart));
+  }
+  const chunks=criteriaText.split(/\bthen\b|,|;|>/).map(part=>part.trim()).filter(Boolean);
   const found=[];
   const addFrom=(part)=>{
     if(/pts?\s+scored|points?\s+scored|score\s+for|total\s+score/.test(part))found.push("scoreFor");
@@ -103,9 +163,10 @@ function inferStandingsCriteria(text,currentRules){
     else if(/\bpts?\b|\bpoints?\b/.test(part))found.push("points");
   };
   chunks.forEach(addFrom);
-  if(!found.length)addFrom(lower);
+  if(!found.length)addFrom(criteriaText);
   const cur=normalizeStandingsRules(currentRules);
-  return uniqCriteria([...found,...cur.criteria]);
+  if(!found.length)return uniqCriteria(cur.criteria);
+  return uniqCriteria(hasExplicitOrder?found:[...found,...cur.criteria]);
 }
 
 function inferScoreDiffBands(text){
@@ -129,19 +190,63 @@ function inferScoreDiffBands(text){
   return bands.filter(b=>Number.isFinite(b.diff)&&Number.isFinite(b.points));
 }
 
+function inferPointRules(text){
+  const lower=text.toLowerCase();
+  const specs=[
+    ["matchWin",["match win","match won","win match"]],
+    ["matchTie",["match tie","match draw","tie match","draw match"]],
+    ["matchLoss",["match loss","match lose","lose match"]],
+    ["gameWin",["game win","game won","win game"]],
+    ["gameTie",["game tie","game draw","tie game","draw game"]],
+    ["gameLoss",["game loss","game lose","lose game"]],
+    ["scoreDiff",["score diff","score difference","point diff","points difference","total points difference"]],
+    ["scoreFor",["score for","points scored","pts scored","total score"]],
+    ["scoreAgainst",["score against","points conceded","pts conceded"]]
+  ];
+  const rules=[];
+  specs.forEach(([metric,phrases])=>{
+    phrases.forEach(phrase=>{
+      const safe=phrase.replace(/[.*+?^${}()|[\]\\]/g,"\\$&").replace(/\s+/g,"\\s+");
+      const after=new RegExp(`${safe}\\D{0,24}(-?\\d+(?:\\.\\d+)?)\\s*(?:pts?|points?)`,"i");
+      const before=new RegExp(`(-?\\d+(?:\\.\\d+)?)\\s*(?:pts?|points?)\\D{0,24}(?:per|for|from)?\\s*${safe}`,"i");
+      const match=lower.match(after)||lower.match(before);
+      if(match)rules.push({metric,points:Number(match[1])});
+    });
+  });
+  if(!rules.some(rule=>rule.metric==="matchWin")){
+    const genericWin=lower.match(/\b(?:win|winner)\D{0,14}(-?\d+(?:\.\d+)?)\s*(?:pts?|points?)\b/i);
+    if(genericWin&&!/\bgame\b/.test(lower))rules.push({metric:"matchWin",points:Number(genericWin[1])});
+  }
+  if(!rules.some(rule=>rule.metric==="matchTie")){
+    const genericTie=lower.match(/\b(?:tie|draw)\D{0,14}(-?\d+(?:\.\d+)?)\s*(?:pts?|points?)\b/i);
+    if(genericTie&&!/\bgame\b/.test(lower))rules.push({metric:"matchTie",points:Number(genericTie[1])});
+  }
+  const seen=new Set();
+  return rules.filter(rule=>{
+    const key=rule.metric;
+    if(seen.has(key))return false;
+    seen.add(key);
+    return Number.isFinite(rule.points);
+  });
+}
+
 function summarizeStandingsRules(rules){
   const cfg=normalizeStandingsRules(rules);
   const criteria=cfg.criteria.map(standingsCriterionLabel).join(", ");
-  if(cfg.pointMode==="scoreDiffBands"&&cfg.scoreDiffBands.length){
-    const bands=cfg.scoreDiffBands.map(b=>`${b.type==="below"?"below":"at least"} ${b.diff} diff = ${b.points} pts`).join("; ");
-    return `Custom points: ${bands}. Ranking: ${criteria}.`;
-  }
-  return `${cfg.winPoints} points per match win. Ranking: ${criteria}.`;
+  const pointParts=(cfg.pointRules||[]).map(rule=>{
+    if(rule.metric==="scoreDiffBand"){
+      const bands=cfg.scoreDiffBands.map(b=>`${b.type==="below"?"below":"at least"} ${b.diff} diff = ${b.points} pts`).join("; ");
+      return bands?`score-diff bands (${bands})`:"score-diff bands";
+    }
+    return `${rule.points} pts per ${pointMetricLabel(rule.metric).toLowerCase()}`;
+  });
+  return `${pointParts.length?pointParts.join("; "):"No standings points"}. Ranking: ${criteria}.`;
 }
 
 function parseStandingsRulePrompt(text,currentRules){
   const cur=normalizeStandingsRules(currentRules);
   const bands=inferScoreDiffBands(text);
+  const pointRules=inferPointRules(text);
   const next={
     ...cur,
     criteria:inferStandingsCriteria(text,cur)
@@ -150,13 +255,38 @@ function parseStandingsRulePrompt(text,currentRules){
   const drawPoints=text.match(/\bdraw\D+?(\d+)\s*(?:pts?|points?)\b/i);
   if(winPoints)next.winPoints=Number(winPoints[1]);
   if(drawPoints)next.drawPoints=Number(drawPoints[1]);
+  if(pointRules.length)next.pointRules=pointRules;
   if(bands.length){
     next.pointMode="scoreDiffBands";
     next.scoreDiffBands=uniqScoreBands(bands);
+    next.pointRules=[...(pointRules.length?pointRules:[]),{metric:"scoreDiffBand",points:1}];
     next.criteria=["points",...next.criteria.filter(criterion=>criterion!=="points")];
   }
   next.summary=summarizeStandingsRules(next);
   return normalizeStandingsRules(next);
+}
+
+function analyzeStandingsRulePrompt(text,currentRules){
+  const lower=text.toLowerCase();
+  const cur=normalizeStandingsRules(currentRules);
+  const parsed=parseStandingsRulePrompt(text,cur);
+  const pointRules=inferPointRules(text);
+  const bands=inferScoreDiffBands(text);
+  const criteria=inferStandingsCriteria(text,cur);
+  const criteriaChanged=JSON.stringify(criteria)!==JSON.stringify(cur.criteria);
+  const asksCustom=/custom|whatever|point system|pts system|points system|standings points|scoring system/.test(lower);
+  const mentionsPointValue=/\bpts?\b|\d+\s*points?\b|=|:/.test(lower);
+  const questions=[];
+  if((asksCustom||mentionsPointValue)&&!pointRules.length&&!bands.length){
+    questions.push("How many standings points should each condition receive? You can answer like: match win 3 pts, match tie 1 pt, game win 1 pt, score diff 0.1 pts per point.");
+  }
+  if(/tie|draw/.test(lower)&&!/match tie|match draw|game tie|game draw/.test(lower)){
+    questions.push("When you say tie/draw, is that for the whole match, each game, or both?");
+  }
+  if(!criteriaChanged&&!pointRules.length&&!bands.length){
+    questions.push("What should decide ranking order after points? For example: score for, match wins, game wins, score diff.");
+  }
+  return {rules:parsed,questions:[...new Set(questions)]};
 }
 
 function uniqScoreBands(bands){
@@ -180,32 +310,62 @@ async function requestAiStandingsRules(message,currentRules){
   if(!response.ok)throw new Error("AI endpoint did not return a valid response.");
   const payload=await response.json();
   const rules=payload.rules||payload.standingsRules||payload;
-  return normalizeStandingsRules({...rules,summary:rules.summary||summarizeStandingsRules(rules)});
+  const questions=payload.questions||payload.clarifyingQuestions||[];
+  return {rules:normalizeStandingsRules({...rules,summary:rules.summary||summarizeStandingsRules(rules)}),questions:Array.isArray(questions)?questions:[]};
 }
 
 // ─── Match helpers ────────────────────────────────────────────────────────────
 function makeMatch(id, teamA, teamB, gpm, mode) {
   return { id, teamA: teamA||null, teamB: teamB||null, matchMode: mode, mvp: null, _autoWinner: null,
-    games: Array.from({ length: gpm }, (_, i) => ({ id: i, winnerName: null, scoreA: "", scoreB: "", gameMvp: null, stats: {} })) };
+    games: Array.from({ length: gpm }, (_, i) => ({ id: i, winnerName: null, isTie: false, scoreA: "", scoreB: "", gameMvp: null, stats: {} })) };
 }
 
 function matchResult(match) {
   if (!match?.teamA || !match?.teamB) return { wA:0,wB:0,scoreA:0,scoreB:0,winner:null,loser:null };
-  const mode = match.matchMode; let wA=0,wB=0,scoreA=0,scoreB=0;
+  const mode = match.matchMode; let wA=0,wB=0,gameTies=0,scoreA=0,scoreB=0,completedGames=0;
   for (const g of match.games) {
-    if (mode==="wl"||mode==="games") { if(g.winnerName===match.teamA.name)wA++; if(g.winnerName===match.teamB.name)wB++; }
-    else if (mode==="score") { const a=parseFloat(g.scoreA)||0,b=parseFloat(g.scoreB)||0; scoreA+=a;scoreB+=b; if(a>b)wA++;else if(b>a)wB++; }
+    if (mode==="wl"||mode==="games") {
+      if(g.isTie){completedGames++;gameTies++;}
+      else if(g.winnerName){completedGames++;if(g.winnerName===match.teamA.name)wA++;if(g.winnerName===match.teamB.name)wB++;}
+    } else if (mode==="score") {
+      const hasScore=g.scoreA!==""&&g.scoreB!=="";
+      const a=parseFloat(g.scoreA)||0,b=parseFloat(g.scoreB)||0;
+      scoreA+=a;scoreB+=b;
+      if(hasScore){
+        completedGames++;
+        if(a>b)wA++;
+        else if(b>a)wB++;
+        else gameTies++;
+      }
+    }
   }
-  const needed = Math.ceil(match.games.length/2); let winner=null,loser=null;
-  if (mode==="wl") { const w=match.games[0]?.winnerName; winner=w===match.teamA.name?match.teamA:w===match.teamB.name?match.teamB:null; }
-  else if (mode==="games") { winner=wA>=needed?match.teamA:wB>=needed?match.teamB:null; }
-  else if (mode==="score") { winner=scoreA>scoreB?match.teamA:scoreB>scoreA?match.teamB:null; }
+  let winner=null,loser=null;
+  if (mode==="wl"&&match.games.length===1) { const w=match.games[0]?.winnerName; winner=w===match.teamA.name?match.teamA:w===match.teamB.name?match.teamB:null; }
+  else if (mode==="games"||mode==="wl") {
+    const hasMajority=Math.max(wA,wB)>match.games.length/2;
+    const allGamesEntered=completedGames===match.games.length;
+    if(wA>wB&&(hasMajority||allGamesEntered))winner=match.teamA;
+    else if(wB>wA&&(hasMajority||allGamesEntered))winner=match.teamB;
+  }
+  else if (mode==="score"&&completedGames===match.games.length&&match.games.length>0) { winner=scoreA>scoreB?match.teamA:scoreB>scoreA?match.teamB:null; }
   if (winner) loser=winner===match.teamA?match.teamB:match.teamA;
-  return { wA,wB,scoreA,scoreB,winner,loser };
+  return { wA,wB,gameTies,scoreA,scoreB,winner,loser };
+}
+
+function matchIsComplete(match){
+  if(!match?.teamA||!match?.teamB)return false;
+  const res=matchResult(match);
+  if(res.winner)return true;
+  if(match.matchMode==="score")return (match.games||[]).length>0&&(match.games||[]).every(g=>g.scoreA!==""&&g.scoreB!=="");
+  return (match.games||[]).length>0&&(match.games||[]).every(g=>g.winnerName||g.isTie);
+}
+
+function matchAllowsTie(match){
+  return !!match?.allowTie||/(?:^|-)rr-\d+-\d+$/.test(match?.id||"");
 }
 
 function adjGames(m, ng) {
-  return { ...m, games: Array.from({ length: ng }, (_,i) => m.games[i] || { id:i,winnerName:null,scoreA:"",scoreB:"",gameMvp:null,stats:{} }) };
+  return { ...m, games: Array.from({ length: ng }, (_,i) => m.games[i] || { id:i,winnerName:null,isTie:false,scoreA:"",scoreB:"",gameMvp:null,stats:{} }) };
 }
 
 function isByeMatch(match){
@@ -405,7 +565,10 @@ function scheduleRoundRobin(teams, gpm, mode) {
   const n=list.length,pins=[...list],rounds=[];
   for(let r=0;r<n-1;r++){
     const round=[];
-    for(let i=0;i<n/2;i++){const a=pins[i],b=pins[n-1-i];if(a&&b)round.push(makeMatch(`rr-${r}-${i}`,a,b,gpm,mode));}
+    for(let i=0;i<n/2;i++){
+      const a=pins[i],b=pins[n-1-i];
+      if(a&&b)round.push({...makeMatch(`rr-${r}-${i}`,a,b,gpm,mode),allowTie:true});
+    }
     rounds.push(round);
     const last=pins[n-1];for(let i=n-1;i>1;i--)pins[i]=pins[i-1];pins[1]=last;
   }
@@ -505,7 +668,7 @@ function buildRoundRobinTiebreakRound(teams, rounds, matchMode, gpm, standingsRu
   const regular=rounds.filter(round=>!round.some(m=>m._tiebreak));
   const existing=rounds.some(round=>round.some(m=>m._tiebreak));
   const all=regular.flat().filter(m=>m?.teamA&&m?.teamB);
-  if(existing||all.length===0||!all.every(m=>matchResult(m).winner))return null;
+  if(existing||all.length===0||!all.every(matchIsComplete))return null;
   const standings=computeTeamStandings(teams,all,standingsRules);
   const groups=new Map();
   standings.forEach(row=>{
@@ -533,28 +696,29 @@ function computeTeamStandings(teams, matches, standingsRules) {
   const rules=normalizeStandingsRules(standingsRules);
   const rows=teams.map(t=>{
     const mine=matches.filter(m=>m.teamA?.name===t.name||m.teamB?.name===t.name);
-    let mw=0,ml=0,draws=0,gw=0,gl=0,sw=0,sl=0,pts=0;
+    let mw=0,ml=0,draws=0,gw=0,gl=0,gt=0,sw=0,sl=0,pts=0;
     mine.forEach(m=>{
       const isA=m.teamA?.name===t.name;
-      const{wA,wB,scoreA,scoreB,winner}=matchResult(m);
+      const{wA,wB,gameTies:matchGameTies,scoreA,scoreB,winner}=matchResult(m);
       const forScore=isA?scoreA:scoreB;
       const againstScore=isA?scoreB:scoreA;
-      gw+=isA?wA:wB; gl+=isA?wB:wA; sw+=forScore; sl+=againstScore;
-      const hasScore=m.matchMode==="score"&&m.games?.some(g=>g.scoreA!==""&&g.scoreB!=="");
+      const gameWins=isA?wA:wB,gameLosses=isA?wB:wA;
+      gw+=gameWins; gl+=gameLosses; gt+=matchGameTies; sw+=forScore; sl+=againstScore;
+      const complete=matchIsComplete(m);
+      let matchOutcome=null;
       if(winner){
-        if(winner.name===t.name){
-          mw++;
-          pts+=rules.pointMode==="scoreDiffBands"?scoreDiffPoints(Math.max(0,forScore-againstScore),rules):rules.winPoints;
-        } else {
-          ml++;
-          pts+=rules.lossPoints;
-        }
-      } else if(hasScore){
+        matchOutcome=winner.name===t.name?"win":"loss";
+        if(matchOutcome==="win")mw++;
+        else ml++;
+      } else if(complete){
+        matchOutcome="tie";
         draws++;
-        pts+=rules.drawPoints;
+      }
+      if(matchOutcome){
+        pts+=standingsPointsForMatch({matchOutcome,gameWins,gameLosses,gameTies:matchGameTies,scoreFor:forScore,scoreAgainst:againstScore,scoreDiff:forScore-againstScore},rules);
       }
     });
-    return {team:t,played:mw+ml+draws,mw,ml,draws,gw,gl,sw,sl,pts};
+    return {team:t,played:mw+ml+draws,mw,ml,draws,mt:draws,gw,gl,gt,sw,sl,pts};
   });
   return sortStandingsRows(rows,rules);
 }
@@ -602,7 +766,7 @@ function computePlayerStandings(teams, matches, statCols, stageMatchSets=[]) {
 }
 
 // ─── MVP Awards ───────────────────────────────────────────────────────────────
-// awards = { weekMvps: [{week,players:[name]}], stageMvps: [{stage,players:[name]}], finalMvps: [name] }
+// awards keeps the legacy weekMvps key for saved data; the UI treats each entry as a round MVP.
 // Players are selected from the full player pool across all matches
 
 function getAllPlayers(teams) {
@@ -687,17 +851,17 @@ function MvpSelector({label,value,onChange,players,count,onCountChange,accent}){
   );
 }
 
-function MvpAwardsPanel({awards,onChange,allTeams,weekCount,stageCount,isMulti,activeStageIdx=0,isFinalStage=true}){
+function MvpAwardsPanel({awards,onChange,allTeams,roundCount,stageCount,isMulti,activeStageIdx=0,isFinalStage=true}){
   const players=getAllPlayers(allTeams);
 
-  const updateWeekMvp=(wIdx,val)=>{
+  const updateRoundMvp=(rIdx,val)=>{
     const next=[...(awards.weekMvps||[])];
-    next[wIdx]={...(next[wIdx]||{week:wIdx+1}),players:val};
+    next[rIdx]={...(next[rIdx]||{round:rIdx+1}),players:val};
     onChange({...awards,weekMvps:next});
   };
-  const updateWeekCount=(wIdx,cnt)=>{
+  const updateRoundCount=(rIdx,cnt)=>{
     const next=[...(awards.weekMvps||[])];
-    next[wIdx]={...(next[wIdx]||{week:wIdx+1,players:[]}),count:cnt};
+    next[rIdx]={...(next[rIdx]||{round:rIdx+1,players:[]}),count:cnt};
     onChange({...awards,weekMvps:next});
   };
   const updateStageMvp=(sIdx,val)=>{
@@ -715,15 +879,15 @@ function MvpAwardsPanel({awards,onChange,allTeams,weekCount,stageCount,isMulti,a
     <div style={{marginTop:24,padding:"16px",background:"var(--color-background-secondary)",borderRadius:12,border:"1px solid rgba(233,196,106,0.25)"}}>
       <div style={{fontSize:13,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#e9c46a",marginBottom:14,fontFamily:"'Barlow Condensed',sans-serif"}}>⭐ MVP Awards</div>
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
-        {/* Week MVPs — for RR */}
-        {weekCount>0&&Array.from({length:weekCount}).map((_,wIdx)=>(
+        {/* Round MVPs — for RR. */}
+        {roundCount>0&&Array.from({length:roundCount}).map((_,rIdx)=>(
           <MvpSelector
-            key={`week-${wIdx}`}
-            label={`Week ${wIdx+1} MVP`}
-            value={(awards.weekMvps||[])[wIdx]?.players||[]}
-            count={(awards.weekMvps||[])[wIdx]?.count||1}
-            onChange={v=>updateWeekMvp(wIdx,v)}
-            onCountChange={c=>updateWeekCount(wIdx,c)}
+            key={`round-${rIdx}`}
+            label={`Round ${rIdx+1} MVP`}
+            value={(awards.weekMvps||[])[rIdx]?.players||[]}
+            count={(awards.weekMvps||[])[rIdx]?.count||1}
+            onChange={v=>updateRoundMvp(rIdx,v)}
+            onCountChange={c=>updateRoundCount(rIdx,c)}
             players={players}
             accent="#06d6a0"
           />
@@ -870,7 +1034,10 @@ function PlayerStatPanel({match,gameIdx,statCols,onUpdate}){
 
 // ─── Match Card ───────────────────────────────────────────────────────────────
 function GameSlot({game,gi,match,mode,onUpdate}){
-  const isA=game.winnerName===match.teamA?.name,isB=game.winnerName===match.teamB?.name;
+  const isA=game.winnerName===match.teamA?.name,isB=game.winnerName===match.teamB?.name,isTie=!!game.isTie;
+  const canTie=matchAllowsTie(match);
+  const chooseWinner=(team,isSelected)=>onUpdate(gi,{winnerName:isSelected?null:team,isTie:false});
+  const toggleTie=()=>onUpdate(gi,{winnerName:null,isTie:!isTie});
   const stepScore=(side,delta)=>{
     const key=side==="A"?"scoreA":"scoreB";
     const cur=parseFloat(game[key]);
@@ -885,10 +1052,11 @@ function GameSlot({game,gi,match,mode,onUpdate}){
   );
   if(mode==="wl")return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-      <span style={{fontSize:8,color:"var(--color-text-tertiary)",fontWeight:700}}>M</span>
+      <span style={{fontSize:8,color:"var(--color-text-tertiary)",fontWeight:700}}>{match.games.length>1?`G${gi+1}`:"M"}</span>
       <div style={{display:"flex",gap:2}}>
-        <button onClick={()=>onUpdate(gi,{winnerName:isA?null:match.teamA.name})} style={{padding:"2px 6px",borderRadius:3,border:"1px solid var(--color-border-tertiary)",background:isA?match.teamA.color:"var(--color-background-secondary)",color:isA?"white":"var(--color-text-secondary)",cursor:"pointer",fontSize:9,fontWeight:700,fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase"}}>{match.teamA.name.slice(0,4)}</button>
-        <button onClick={()=>onUpdate(gi,{winnerName:isB?null:match.teamB.name})} style={{padding:"2px 6px",borderRadius:3,border:"1px solid var(--color-border-tertiary)",background:isB?match.teamB.color:"var(--color-background-secondary)",color:isB?"white":"var(--color-text-secondary)",cursor:"pointer",fontSize:9,fontWeight:700,fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase"}}>{match.teamB.name.slice(0,4)}</button>
+        <button onClick={()=>chooseWinner(match.teamA.name,isA)} style={{padding:"2px 6px",borderRadius:3,border:"1px solid var(--color-border-tertiary)",background:isA?match.teamA.color:"var(--color-background-secondary)",color:isA?"white":"var(--color-text-secondary)",cursor:"pointer",fontSize:9,fontWeight:700,fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase"}}>{match.teamA.name.slice(0,4)}</button>
+        <button onClick={()=>chooseWinner(match.teamB.name,isB)} style={{padding:"2px 6px",borderRadius:3,border:"1px solid var(--color-border-tertiary)",background:isB?match.teamB.color:"var(--color-background-secondary)",color:isB?"white":"var(--color-text-secondary)",cursor:"pointer",fontSize:9,fontWeight:700,fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase"}}>{match.teamB.name.slice(0,4)}</button>
+        {canTie&&<button onClick={toggleTie} aria-label="Mark match tie" title="Mark match tie" style={{padding:"2px 6px",borderRadius:3,border:"1px solid var(--color-border-tertiary)",background:isTie?"#e9c46a":"var(--color-background-secondary)",color:isTie?"#2c2c00":"var(--color-text-secondary)",cursor:"pointer",fontSize:9,fontWeight:800,fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase"}}>Tie</button>}
       </div>
     </div>
   );
@@ -896,8 +1064,9 @@ function GameSlot({game,gi,match,mode,onUpdate}){
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
       <span style={{fontSize:8,color:"var(--color-text-tertiary)",fontWeight:700}}>G{gi+1}</span>
       <div style={{display:"flex",gap:2}}>
-        <button onClick={()=>onUpdate(gi,{winnerName:isA?null:match.teamA.name})} style={{width:22,height:20,borderRadius:3,border:"1px solid var(--color-border-tertiary)",background:isA?match.teamA.color:"var(--color-background-secondary)",color:isA?"white":"var(--color-text-tertiary)",cursor:"pointer",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>A</button>
-        <button onClick={()=>onUpdate(gi,{winnerName:isB?null:match.teamB.name})} style={{width:22,height:20,borderRadius:3,border:"1px solid var(--color-border-tertiary)",background:isB?match.teamB.color:"var(--color-background-secondary)",color:isB?"white":"var(--color-text-tertiary)",cursor:"pointer",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>B</button>
+        <button onClick={()=>chooseWinner(match.teamA.name,isA)} style={{width:22,height:20,borderRadius:3,border:"1px solid var(--color-border-tertiary)",background:isA?match.teamA.color:"var(--color-background-secondary)",color:isA?"white":"var(--color-text-tertiary)",cursor:"pointer",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>A</button>
+        <button onClick={()=>chooseWinner(match.teamB.name,isB)} style={{width:22,height:20,borderRadius:3,border:"1px solid var(--color-border-tertiary)",background:isB?match.teamB.color:"var(--color-background-secondary)",color:isB?"white":"var(--color-text-tertiary)",cursor:"pointer",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>B</button>
+        {canTie&&<button onClick={toggleTie} aria-label="Mark game tie" title="Mark game tie" style={{width:22,height:20,borderRadius:3,border:"1px solid var(--color-border-tertiary)",background:isTie?"#e9c46a":"var(--color-background-secondary)",color:isTie?"#2c2c00":"var(--color-text-tertiary)",cursor:"pointer",fontSize:8,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>T</button>}
       </div>
     </div>
   );
@@ -961,7 +1130,7 @@ function MatchCard({match,onGameUpdate,statCols,onMatchUpdate,accentLabel}){
         {match.mvp?<span style={{marginLeft:"auto",color:"#e9c46a",fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>MVP {match.mvp}</span>:<span aria-hidden="true" style={{display:"block",height:14}}/>}
       </div>
     </div>
-    {open&&<MatchDetailsModal match={match} statCols={statCols} onClose={()=>setOpen(false)} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>}
+    {open&&typeof document!=="undefined"&&createPortal(<MatchDetailsModal match={match} statCols={statCols} onClose={()=>setOpen(false)} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>,document.body)}
     </>
   );
 }
@@ -971,8 +1140,20 @@ function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
   const ready=!!(match.teamA&&match.teamB);
   const{wA,wB,scoreA,scoreB,winner}=ready?matchResult(match):{wA:0,wB:0,scoreA:0,scoreB:0,winner:null};
   const allPlayers=ready?[...(match.teamA.players||[]).filter(p=>p.role==="player"||p.role==="substitute").map(p=>({...p,team:match.teamA})),...(match.teamB.players||[]).filter(p=>p.role==="player"||p.role==="substitute").map(p=>({...p,team:match.teamB}))]:[];
+  const activeGameIdx=Math.min(activeGame,Math.max(0,match.games.length-1));
+  const addGame=()=>{
+    const nextGame={id:match.games.length,winnerName:null,isTie:false,scoreA:"",scoreB:"",gameMvp:null,stats:{}};
+    onMatchUpdate({games:[...match.games,nextGame]});
+    setActiveGame(match.games.length);
+  };
+  const deleteGame=()=>{
+    if(match.games.length<=1)return;
+    const nextGames=match.games.filter((_,idx)=>idx!==activeGameIdx).map((game,idx)=>({...game,id:idx}));
+    onMatchUpdate({games:nextGames});
+    setActiveGame(Math.min(activeGameIdx,nextGames.length-1));
+  };
   return(
-    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:50,background:"rgba(0,0,0,0.78)",display:"flex",alignItems:"center",justifyContent:"center",padding:18}}>
+    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.78)",display:"flex",alignItems:"center",justifyContent:"center",padding:18}}>
       <div onClick={e=>e.stopPropagation()} style={{width:"min(760px,100%)",maxHeight:"88vh",overflowY:"auto",background:"#000",border:"1px solid rgba(255,255,255,0.22)",borderRadius:10,boxShadow:"0 24px 80px rgba(0,0,0,0.65)",padding:"16px 18px",fontFamily:"'Barlow Condensed',sans-serif",color:"#fff","--color-text-primary":"#fff","--color-text-secondary":"rgba(255,255,255,0.84)","--color-text-tertiary":"rgba(255,255,255,0.64)","--color-background-primary":"#000","--color-background-secondary":"#111","--color-border-tertiary":"rgba(255,255,255,0.24)","--color-border-secondary":"rgba(255,255,255,0.32)"}}>
         <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:14}}>
           <div style={{flex:1}}>
@@ -997,14 +1178,16 @@ function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
 
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
           {match.games.map((g,gi)=>(
-            <button key={gi} onClick={()=>setActiveGame(gi)} style={{...btn(activeGame===gi),padding:"4px 10px",position:"relative"}}>
+            <button key={gi} onClick={()=>setActiveGame(gi)} style={{...btn(activeGameIdx===gi),padding:"4px 10px",position:"relative"}}>
               Game {gi+1}{g.gameMvp&&<span style={{position:"absolute",top:-5,right:-5,fontSize:9}}>⭐</span>}
             </button>
           ))}
+          <button onClick={addGame} style={{...btn(false),padding:"4px 10px",borderColor:"rgba(42,157,143,0.45)",color:"#2a9d8f"}}>+ Game</button>
+          {match.games.length>1&&<button onClick={deleteGame} style={{...btn(false),padding:"4px 10px",borderColor:"rgba(230,57,70,0.5)",color:"#e63946"}}>Delete Game</button>}
         </div>
 
         <div style={{padding:"12px",borderRadius:8,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",marginBottom:12}}>
-          <GameSlot game={match.games[activeGame]} gi={activeGame} match={match} mode={match.matchMode} onUpdate={onGameUpdate}/>
+          <GameSlot game={match.games[activeGameIdx]} gi={activeGameIdx} match={match} mode={match.matchMode} onUpdate={onGameUpdate}/>
         </div>
 
         {allPlayers.length>0&&(
@@ -1017,7 +1200,7 @@ function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
           </div>
         )}
 
-        {allPlayers.length>0&&<PlayerStatPanel match={match} gameIdx={activeGame} statCols={statCols} onUpdate={onGameUpdate}/>}
+        {allPlayers.length>0&&<PlayerStatPanel match={match} gameIdx={activeGameIdx} statCols={statCols} onUpdate={onGameUpdate}/>}
       </div>
     </div>
   );
@@ -1028,8 +1211,10 @@ function TeamStandingsTable({teams,matches,title,showScore,standingsRules}){
   const realMatches=playableMatches(matches);
   const rules=normalizeStandingsRules(standingsRules);
   const st=computeTeamStandings(teams,realMatches,rules);
-  const allDone=realMatches.length>0&&realMatches.every(m=>matchResult(m).winner);
-  const showDraws=st.some(row=>row.draws>0);
+  const allDone=realMatches.length>0&&realMatches.every(matchIsComplete);
+  const tieCapable=realMatches.some(match=>matchAllowsTie(match)||match.matchMode==="score");
+  const showMatchTies=tieCapable||st.some(row=>row.mt>0);
+  const showGameTies=tieCapable||st.some(row=>row.gt>0);
   return(
     <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:10,padding:"12px 14px"}}>
       {title&&<div style={{fontSize:10,fontWeight:700,letterSpacing:"0.09em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:10}}>{title}</div>}
@@ -1037,7 +1222,7 @@ function TeamStandingsTable({teams,matches,title,showScore,standingsRules}){
       <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Barlow Condensed',sans-serif"}}>
           <thead><tr style={{borderBottom:"1.5px solid var(--color-border-tertiary)"}}>
-            {["#","Team","MP","MW","ML",...(showDraws?["D"]:[]),"GW","GL",...(showScore?["SW","SL"]:[]),"Pts"].map(h=><th key={h} style={{padding:"4px 5px",color:"var(--color-text-tertiary)",fontWeight:700,textAlign:h==="Team"?"left":"center",letterSpacing:"0.05em",fontSize:10,whiteSpace:"nowrap"}}>{h}</th>)}
+            {["#","Team","MP","MW",...(showMatchTies?["MT"]:[]),"ML","GW",...(showGameTies?["GT"]:[]),"GL",...(showScore?["SW","SL"]:[]),"Pts"].map(h=><th key={h} style={{padding:"4px 5px",color:"var(--color-text-tertiary)",fontWeight:700,textAlign:h==="Team"?"left":"center",letterSpacing:"0.05em",fontSize:10,whiteSpace:"nowrap"}}>{h}</th>)}
           </tr></thead>
           <tbody>{st.map((row,i)=>(
             <tr key={row.team.name} style={{borderBottom:"0.5px solid var(--color-border-tertiary)",background:i===0&&row.mw>0?"rgba(233,196,106,0.08)":"transparent"}}>
@@ -1045,9 +1230,10 @@ function TeamStandingsTable({teams,matches,title,showScore,standingsRules}){
               <td style={{padding:"5px 5px"}}><div style={{display:"flex",alignItems:"center",gap:4}}><TeamTag name={row.team.name} color={row.team.color} seed={row.team.seed} small/>{row.team.region&&<span style={{fontSize:9,color:"var(--color-text-tertiary)",padding:"1px 4px",borderRadius:3,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",whiteSpace:"nowrap"}}>{regionFlag(row.team.region)&&<span style={{marginRight:2}}>{regionFlag(row.team.region)}</span>}{row.team.region}</span>}</div></td>
               <td style={{padding:"5px 5px",textAlign:"center",color:"var(--color-text-secondary)"}}>{row.played}</td>
               <td style={{padding:"5px 5px",textAlign:"center",color:"#2a9d8f",fontWeight:700}}>{row.mw}</td>
+              {showMatchTies&&<td style={{padding:"5px 5px",textAlign:"center",color:"#e9c46a"}}>{row.mt}</td>}
               <td style={{padding:"5px 5px",textAlign:"center",color:"#e63946"}}>{row.ml}</td>
-              {showDraws&&<td style={{padding:"5px 5px",textAlign:"center",color:"var(--color-text-tertiary)"}}>{row.draws||"—"}</td>}
               <td style={{padding:"5px 5px",textAlign:"center",color:"#2a9d8f"}}>{row.gw}</td>
+              {showGameTies&&<td style={{padding:"5px 5px",textAlign:"center",color:"#e9c46a"}}>{row.gt}</td>}
               <td style={{padding:"5px 5px",textAlign:"center",color:"#e63946"}}>{row.gl}</td>
               {showScore&&<><td style={{padding:"5px 5px",textAlign:"center",color:"#2a9d8f"}}>{row.sw}</td><td style={{padding:"5px 5px",textAlign:"center",color:"#e63946"}}>{row.sl}</td></>}
               <td style={{padding:"5px 5px",textAlign:"center",fontWeight:800,fontSize:14}}>{row.pts}</td>
@@ -1234,25 +1420,24 @@ function DoubleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols}){
   );
 }
 
-// ─── Round Robin view with weeks ──────────────────────────────────────────────
-function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreakRound,roundsPerWeek,matchMode,statCols,standingsRules}){
-  const[activeWeek,setActiveWeek]=useState(0);
+// ─── Round Robin view with rounds ─────────────────────────────────────────────
+function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreakRound,matchMode,statCols,standingsRules}){
+  const[activeRound,setActiveRound]=useState(0);
   const[playerSort,setPlayerSort]=useState("mw");
   const[showPlayers,setShowPlayers]=useState(false);
   const total=rrRounds.length,all=rrRounds.flat();
-  const done=all.filter(m=>matchResult(m).winner).length;
+  const done=all.filter(matchIsComplete).length;
   const pct=all.length>0?Math.round(done/all.length*100):0;
 
-  const weeks=[];
-  for(let i=0;i<total;i+=roundsPerWeek)weeks.push(rrRounds.slice(i,i+roundsPerWeek));
   const gpm=rrRounds[0]?.[0]?.games?.length||1;
   const pendingTiebreak=buildRoundRobinTiebreakRound(teams,rrRounds,matchMode,gpm,standingsRules);
-  const hasTiebreak=rrRounds.some(round=>round.some(m=>m._tiebreak));
-  const curWeek=weeks[activeWeek]||[];
-  const curRounds=curWeek;
-  const matchesUpToWeek=rrRounds.slice(0,Math.min((activeWeek+1)*roundsPerWeek,total)).flat();
-  // all matches played so far (completed rounds in any week up to and including current)
-  const allMatchesPlayed=rrRounds.flat();
+  const currentRound=Math.min(activeRound,Math.max(0,total-1));
+  const curRound=rrRounds[currentRound]||[];
+  const matchesUpToRound=rrRounds.slice(0,currentRound+1).flat();
+
+  useEffect(()=>{
+    if(total>0&&activeRound>=total)setActiveRound(total-1);
+  },[activeRound,total]);
 
   return(
     <div>
@@ -1261,19 +1446,19 @@ function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreak
         <span style={{fontSize:11,color:"var(--color-text-tertiary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,whiteSpace:"nowrap"}}>{done}/{all.length} matches</span>
       </div>
       <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:16}}>
-        {weeks.map((week,wIdx)=>{
-          const allDone=week.flat().every(m=>matchResult(m).winner)&&week.flat().length>0;
-          const wNum=wIdx+1,rStart=wIdx*roundsPerWeek+1,rEnd=Math.min(rStart+roundsPerWeek-1,total);
+        {rrRounds.map((round,rIdx)=>{
+          const allDone=round.every(matchIsComplete)&&round.length>0;
+          const isTiebreak=round.some(m=>m._tiebreak);
           return(
-            <button key={wIdx} onClick={()=>setActiveWeek(wIdx)} style={{...btn(activeWeek===wIdx),padding:"5px 11px",borderRadius:6,cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:12,letterSpacing:"0.05em",textTransform:"uppercase",position:"relative"}}>
-              Wk {wNum}
-              {rStart!==rEnd&&<span style={{fontSize:9,display:"block",fontWeight:500,color:"var(--color-text-tertiary)",lineHeight:1}}>R{rStart}–R{rEnd}</span>}
+            <button key={rIdx} onClick={()=>setActiveRound(rIdx)} style={{...btn(currentRound===rIdx),padding:"5px 11px",borderRadius:6,cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:12,letterSpacing:"0.05em",textTransform:"uppercase",position:"relative"}}>
+              {isTiebreak?"TB":`R${rIdx+1}`}
+              <span style={{fontSize:9,display:"block",fontWeight:500,color:"var(--color-text-tertiary)",lineHeight:1}}>{round.length} match{round.length===1?"":"es"}</span>
               {allDone&&<span style={{position:"absolute",top:-4,right:-4,width:8,height:8,borderRadius:"50%",background:"#2a9d8f",border:"1.5px solid var(--color-background-primary)"}}/>}
             </button>
           );
         })}
         {pendingTiebreak&&onAddTiebreakRound&&(
-          <button onClick={()=>{onAddTiebreakRound(pendingTiebreak);setActiveWeek(weeks.length);}} style={{...btn(false),padding:"5px 11px",borderRadius:6,cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:12,letterSpacing:"0.05em",textTransform:"uppercase",borderColor:"rgba(233,196,106,0.55)",color:"#b8921a"}}>
+          <button onClick={()=>{onAddTiebreakRound(pendingTiebreak);setActiveRound(total);}} style={{...btn(false),padding:"5px 11px",borderRadius:6,cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:12,letterSpacing:"0.05em",textTransform:"uppercase",borderColor:"rgba(233,196,106,0.55)",color:"#b8921a"}}>
             TB
             <span style={{fontSize:9,display:"block",fontWeight:500,color:"var(--color-text-tertiary)",lineHeight:1}}>Add</span>
           </button>
@@ -1282,8 +1467,8 @@ function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreak
 
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
         <div style={{fontFamily:"'Barlow Condensed',sans-serif"}}>
-          <span style={{fontSize:17,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",color:"var(--color-text-primary)"}}>{curRounds.some(r=>r.some(m=>m._tiebreak))?"Tiebreaker Week":`Week ${activeWeek+1}`}</span>
-          <span style={{fontSize:12,color:"var(--color-text-tertiary)",marginLeft:10}}>Rounds {activeWeek*roundsPerWeek+1}–{Math.min((activeWeek+1)*roundsPerWeek,total)}</span>
+          <span style={{fontSize:17,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",color:"var(--color-text-primary)"}}>{curRound.some(m=>m._tiebreak)?"Tiebreaker Round":`Round ${currentRound+1}`}</span>
+          <span style={{fontSize:12,color:"var(--color-text-tertiary)",marginLeft:10}}>{curRound.length} match{curRound.length===1?"":"es"}</span>
         </div>
         <button onClick={()=>setShowPlayers(p=>!p)} style={{...btn(showPlayers),padding:"4px 10px"}}>
           {showPlayers?"🏆 Teams":"👤 Players"}
@@ -1291,27 +1476,22 @@ function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreak
       </div>
 
       <BracketCanvas style={{padding:"16px 14px 2px"}}>
-        {curRounds.map((round,rIdx)=>{
-          const globalRound=activeWeek*roundsPerWeek+rIdx;
-          return(
-            <div key={rIdx} style={{marginBottom:20}}>
-              <div style={{fontSize:11,fontWeight:700,color:"var(--color-text-tertiary)",letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:8,fontFamily:"'Barlow Condensed',sans-serif"}}>Round {globalRound+1}</div>
-              <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>{round.map(m=><MatchCard key={m.id} match={m} statCols={statCols} onGameUpdate={(gi,upd)=>onGameUpdate(m.id,gi,upd)} onMatchUpdate={upd=>onMatchUpdate(m.id,upd)}/>)}</div>
-            </div>
-          );
-        })}
+        <div style={{marginBottom:20}}>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--color-text-tertiary)",letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:8,fontFamily:"'Barlow Condensed',sans-serif"}}>{curRound.some(m=>m._tiebreak)?"Tiebreaker Round":`Round ${currentRound+1}`}</div>
+          <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>{curRound.map(m=><MatchCard key={m.id} match={m} statCols={statCols} onGameUpdate={(gi,upd)=>onGameUpdate(m.id,gi,upd)} onMatchUpdate={upd=>onMatchUpdate(m.id,upd)}/>)}</div>
+        </div>
       </BracketCanvas>
 
       <div style={{marginTop:24}}>
         {!showPlayers
-          ?<TeamStandingsTable teams={teams} matches={matchesUpToWeek} title={`Team Standings — through Week ${activeWeek+1}`} showScore={matchMode==="score"} standingsRules={standingsRules}/>
-          :<PlayerStandingsTable teams={teams} matches={matchesUpToWeek} statCols={statCols} title={`Player Standings — through Week ${activeWeek+1}`} sortBy={playerSort} onSortBy={setPlayerSort}/>}
+          ?<TeamStandingsTable teams={teams} matches={matchesUpToRound} title={`Team Standings — through Round ${currentRound+1}`} showScore={matchMode==="score"} standingsRules={standingsRules}/>
+          :<PlayerStandingsTable teams={teams} matches={matchesUpToRound} statCols={statCols} title={`Player Standings — through Round ${currentRound+1}`} sortBy={playerSort} onSortBy={setPlayerSort}/>}
       </div>
     </div>
   );
 }
 
-function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,roundsPerWeek,matchMode,statCols,standingsRules}){
+function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,matchMode,statCols,standingsRules}){
   const[activeGroup,setActiveGroup]=useState(0);
   const groups=data.groups||[];
   const poolChoice=data.poolChoice;
@@ -1376,7 +1556,7 @@ function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,roundsPer
 
   const group=groups[activeGroup]||groups[0];
   const allMatches=groups.flatMap(g=>(g.rounds||[]).flat());
-  const done=allMatches.filter(m=>matchResult(m).winner).length;
+  const done=allMatches.filter(matchIsComplete).length;
   const pct=allMatches.length>0?Math.round(done/allMatches.length*100):0;
 
   return(
@@ -1388,7 +1568,7 @@ function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,roundsPer
       <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:14}}>
         {groups.map((g,idx)=>{
           const matches=(g.rounds||[]).flat();
-          const complete=matches.length>0&&matches.every(m=>matchResult(m).winner);
+          const complete=matches.length>0&&matches.every(matchIsComplete);
           return(
             <button key={g.name} onClick={()=>setActiveGroup(idx)} style={{...btn(activeGroup===idx),padding:"6px 12px",fontSize:12,position:"relative"}}>
               {g.name}
@@ -1399,7 +1579,7 @@ function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,roundsPer
         })}
       </div>
 
-      {group&&<RoundRobinView rrRounds={group.rounds} teams={group.teams} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} onAddTiebreakRound={round=>onStageUpdate(d=>({...d,groups:d.groups.map((g,idx)=>idx===activeGroup?{...g,rounds:[...g.rounds,round]}:g)}))} roundsPerWeek={roundsPerWeek} matchMode={matchMode} statCols={statCols} standingsRules={standingsRules}/>}
+      {group&&<RoundRobinView rrRounds={group.rounds} teams={group.teams} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} onAddTiebreakRound={round=>onStageUpdate(d=>({...d,groups:d.groups.map((g,idx)=>idx===activeGroup?{...g,rounds:[...g.rounds,round]}:g)}))} matchMode={matchMode} statCols={statCols} standingsRules={standingsRules}/>}
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12,marginTop:20}}>
         {groups.map(g=>(
@@ -1574,30 +1754,47 @@ function StatColsEditor({statCols,onChange}){
 function StandingsRulesAssistantModal({rules,onApply,onClose}){
   const[input,setInput]=useState("");
   const[busy,setBusy]=useState(false);
-  const[messages,setMessages]=useState([{role:"assistant",text:"Tell me the ranking priority or custom points system, and I will turn it into standings rules."}]);
+  const[context,setContext]=useState("");
+  const[pendingRules,setPendingRules]=useState(null);
+  const[messages,setMessages]=useState([{role:"assistant",text:"Tell me the ranking priority or custom points system. I will ask if anything is unclear, then show a draft for confirmation before applying."}]);
   const cfg=normalizeStandingsRules(rules);
   const send=async()=>{
     const text=input.trim();
     if(!text||busy)return;
+    const fullText=context?`${context}\n${text}`:text;
     setInput("");
     setBusy(true);
+    setPendingRules(null);
     setMessages(prev=>[...prev,{role:"user",text}]);
     try{
-      let next=null,source="local parser";
+      let analysis=null,source="local parser";
       try{
-        next=await requestAiStandingsRules(text,cfg);
-        if(next)source="AI";
+        analysis=await requestAiStandingsRules(fullText,cfg);
+        if(analysis)source="AI";
       }catch(error){
-        next=null;
+        analysis=null;
       }
-      if(!next)next=parseStandingsRulePrompt(text,cfg);
-      onApply(next);
-      setMessages(prev=>[...prev,{role:"assistant",text:`Applied with ${source}: ${next.summary}`}]);
+      if(!analysis)analysis=analyzeStandingsRulePrompt(fullText,cfg);
+      if(analysis.questions?.length){
+        setContext(fullText);
+        setMessages(prev=>[...prev,{role:"assistant",text:`I need one more detail before drafting:\n${analysis.questions.map((q,i)=>`${i+1}. ${q}`).join("\n")}`}]);
+      } else {
+        const next=normalizeStandingsRules({...analysis.rules,summary:analysis.rules.summary||summarizeStandingsRules(analysis.rules)});
+        setPendingRules(next);
+        setContext("");
+        setMessages(prev=>[...prev,{role:"assistant",text:`Draft from ${source}: ${next.summary}\nConfirm to apply this rule, or revise it in the chat.`}]);
+      }
     }catch(error){
       setMessages(prev=>[...prev,{role:"assistant",text:error.message||"I could not turn that into a standings rule."}]);
     }finally{
       setBusy(false);
     }
+  };
+  const confirmDraft=()=>{
+    if(!pendingRules)return;
+    onApply(pendingRules);
+    setMessages(prev=>[...prev,{role:"assistant",text:`Applied: ${pendingRules.summary}`}]);
+    setPendingRules(null);
   };
   return(
     <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:60,background:"rgba(0,0,0,0.72)",display:"flex",alignItems:"center",justifyContent:"center",padding:18}}>
@@ -1611,14 +1808,24 @@ function StandingsRulesAssistantModal({rules,onApply,onClose}){
         </div>
         <div style={{padding:"14px 16px",overflowY:"auto",display:"flex",flexDirection:"column",gap:8}}>
           {messages.map((message,idx)=>(
-            <div key={idx} style={{alignSelf:message.role==="user"?"flex-end":"flex-start",maxWidth:"84%",padding:"8px 10px",borderRadius:8,background:message.role==="user"?"rgba(233,196,106,0.14)":"var(--color-background-secondary)",border:`1px solid ${message.role==="user"?"rgba(233,196,106,0.35)":"var(--color-border-tertiary)"}`,fontSize:12,lineHeight:1.35,fontFamily:"'Barlow',sans-serif",color:"var(--color-text-secondary)"}}>
+            <div key={idx} style={{alignSelf:message.role==="user"?"flex-end":"flex-start",maxWidth:"84%",whiteSpace:"pre-line",padding:"8px 10px",borderRadius:8,background:message.role==="user"?"rgba(233,196,106,0.14)":"var(--color-background-secondary)",border:`1px solid ${message.role==="user"?"rgba(233,196,106,0.35)":"var(--color-border-tertiary)"}`,fontSize:12,lineHeight:1.35,fontFamily:"'Barlow',sans-serif",color:"var(--color-text-secondary)"}}>
               {message.text}
             </div>
           ))}
+          {pendingRules&&(
+            <div style={{alignSelf:"flex-start",width:"min(440px,100%)",padding:"10px",borderRadius:8,border:"1px solid rgba(42,157,143,0.42)",background:"rgba(42,157,143,0.08)"}}>
+              <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#2a9d8f",marginBottom:5}}>Confirm Draft</div>
+              <div style={{fontSize:12,color:"var(--color-text-secondary)",fontFamily:"'Barlow',sans-serif",lineHeight:1.35,marginBottom:8}}>{pendingRules.summary}</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                <button onClick={confirmDraft} style={{padding:"5px 12px",borderRadius:6,border:"none",background:"#2a9d8f",color:"white",cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.05em"}}>Confirm</button>
+                <button onClick={()=>setPendingRules(null)} style={{...btn(false),padding:"5px 12px",fontSize:11}}>Revise</button>
+              </div>
+            </div>
+          )}
         </div>
         <div style={{display:"flex",gap:8,padding:"12px 16px",borderTop:"1px solid var(--color-border-tertiary)"}}>
           <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")send();}} placeholder="Example: points scored first, then match wins, then score diff" style={{flex:1,minWidth:0,padding:"8px 10px",borderRadius:7,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",color:"var(--color-text-primary)",fontFamily:"'Barlow',sans-serif",fontSize:12}}/>
-          <button onClick={send} disabled={busy||!input.trim()} style={{padding:"7px 14px",borderRadius:7,border:"none",background:busy||!input.trim()?"var(--color-background-secondary)":"#e9c46a",color:busy||!input.trim()?"var(--color-text-tertiary)":"#2c2c00",cursor:busy||!input.trim()?"not-allowed":"pointer",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.05em"}}>{busy?"Working":"Apply"}</button>
+          <button onClick={send} disabled={busy||!input.trim()} style={{padding:"7px 14px",borderRadius:7,border:"none",background:busy||!input.trim()?"var(--color-background-secondary)":"#e9c46a",color:busy||!input.trim()?"var(--color-text-tertiary)":"#2c2c00",cursor:busy||!input.trim()?"not-allowed":"pointer",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.05em"}}>{busy?"Working":"Review"}</button>
         </div>
       </div>
     </div>
@@ -1652,7 +1859,6 @@ const FORMAT_LABELS={"single":"Single Elim","double":"Double Elim","roundrobin":
 // Stage N (idx>=1): choose AAT (auto-advance teams) + how many from previous stage
 function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=false}){
   const teamCount=stage.teamCount||2;
-  const rrTotal=teamCount%2===0?teamCount-1:teamCount;
   let bracketSz=1; while(bracketSz<teamCount)bracketSz*=2;
   const bracketByes=bracketSz-teamCount;
   const aatCount=idx>0?(stage.aat||0):0;
@@ -1686,10 +1892,9 @@ function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=
         </div>
       )}
 
-      {/* ── Sub-options row: RR rounds/week, bracket info ── */}
+      {/* ── Sub-options row: group stage, bracket info ── */}
       {(stage.format==="roundrobin"||bracketByes>0)&&(
         <div style={{padding:"6px 14px",borderBottom:"0.5px solid var(--color-border-tertiary)",display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}}>
-          {stage.format==="roundrobin"&&<Stepper label="Rounds/week" value={stage.roundsPerWeek||1} min={1} max={Math.max(1,rrTotal)} onChange={v=>onChange({...stage,roundsPerWeek:v})} small disabled={controlDisabled}/>}
           {stage.format==="roundrobin"&&!isLast&&(
             <>
               <button onClick={()=>!controlDisabled&&onChange({...stage,groupStage:!stage.groupStage,groupCount:stage.groupCount||2})} disabled={controlDisabled} style={{...btn(!!stage.groupStage),padding:"3px 9px",fontSize:10,...(controlDisabled?disabledStyle:{})}}>Group Stage</button>
@@ -1795,11 +2000,11 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
     if(!sd)return false;
     if(sd.type==="roundrobin"){
       const all=playableMatches((sd.rounds||[]).flat());
-      return all.length>0&&all.every(m=>matchResult(m).winner);
+      return all.length>0&&all.every(matchIsComplete);
     }
     if(sd.type==="groupstage"){
       const all=playableMatches((sd.groups||[]).flatMap(g=>(g.rounds||[]).flat()));
-      return all.length>0&&all.every(m=>matchResult(m).winner);
+      return all.length>0&&all.every(matchIsComplete);
     }
     if(sd.type==="single"){
       const finals=sd.winners?.[sd.winners.length-1]||[];
@@ -1884,7 +2089,7 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
         })}
       </div>
 
-      {/* Player toggle - only for non-RR stages; RR has its own toggle per week */}
+      {/* Player toggle - only for non-RR stages; RR has its own toggle per round */}
       <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center",flexWrap:"wrap"}}>
         <span style={{fontSize:11,color:"var(--color-text-tertiary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>
           {FORMAT_LABELS[stages[activeStageIdx]?.format]} · {getStageTeams(activeStageIdx).length} teams
@@ -1897,8 +2102,8 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
       {data&&(
         data.type==="single"?<SingleElimView bracketData={data} statCols={statCols} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)}/>
         :data.type==="double"?<DoubleElimView bracketData={data} statCols={statCols} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)}/>
-        :data.type==="roundrobin"?<RoundRobinView rrRounds={data.rounds} teams={getStageTeams(activeStageIdx)} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)} onAddTiebreakRound={round=>onStageUpdate(activeStageIdx,d=>({...d,rounds:[...d.rounds,round]}))} roundsPerWeek={stages[activeStageIdx]?.roundsPerWeek||1} matchMode={stages[activeStageIdx]?.matchMode||"wl"} statCols={statCols} standingsRules={stages[activeStageIdx]?.standingsRules}/>
-        :data.type==="groupstage"?<GroupStageView data={data} onStageUpdate={updater=>onStageUpdate(activeStageIdx,updater)} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)} roundsPerWeek={stages[activeStageIdx]?.roundsPerWeek||1} matchMode={stages[activeStageIdx]?.matchMode||"wl"} statCols={statCols} standingsRules={stages[activeStageIdx]?.standingsRules}/>
+        :data.type==="roundrobin"?<RoundRobinView rrRounds={data.rounds} teams={getStageTeams(activeStageIdx)} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)} onAddTiebreakRound={round=>onStageUpdate(activeStageIdx,d=>({...d,rounds:[...d.rounds,round]}))} matchMode={stages[activeStageIdx]?.matchMode||"wl"} statCols={statCols} standingsRules={stages[activeStageIdx]?.standingsRules}/>
+        :data.type==="groupstage"?<GroupStageView data={data} onStageUpdate={updater=>onStageUpdate(activeStageIdx,updater)} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)} matchMode={stages[activeStageIdx]?.matchMode||"wl"} statCols={statCols} standingsRules={stages[activeStageIdx]?.standingsRules}/>
         :null
       )}
 
@@ -1989,7 +2194,7 @@ const FOLDERS_KEY="tourney:folders:v1";
 const USERS_KEY="tourney:users:v1";
 const AUTH_KEY="tourney:auth:v1";
 const DEFAULT_AWARDS={weekMvps:[],stageMvps:[],finalMvps:[],finalMvpCount:1};
-const DEFAULT_STAGES=[{format:"single",teamCount:8,matchMode:"wl",gamesPerMatch:1,roundsPerWeek:1,advance:4}];
+const DEFAULT_STAGES=[{format:"single",teamCount:8,matchMode:"wl",gamesPerMatch:1,advance:4}];
 const SUPABASE_URL=import.meta.env.VITE_SUPABASE_URL||"";
 const SUPABASE_ANON_KEY=import.meta.env.VITE_SUPABASE_ANON_KEY||"";
 const AI_RULES_ENDPOINT=import.meta.env.VITE_AI_RULES_ENDPOINT||"";
@@ -2173,7 +2378,7 @@ function tournamentIsComplete(state){
   const data=finalProjectData(state);if(!data)return false;
   if(data.type==="roundrobin"||data.type==="groupstage"){
     const matches=playableMatches(dataMatches(data));
-    return matches.length>0&&matches.every(m=>matchResult(m).winner);
+    return matches.length>0&&matches.every(matchIsComplete);
   }
   if(data.type==="single")return!!matchResult(data.winners?.[data.winners.length-1]?.[0]).winner;
   if(data.type==="double"){
@@ -2405,7 +2610,6 @@ export default function App(){
   const[step,setStep]=useState("setup");
   const[formatType,setFormatType]=useState(null); // "single"|"double"|"roundrobin"|"multi"
   const[teamCount,setTeamCount]=useState(8);
-  const[roundsPerWeek,setRoundsPerWeek]=useState(1);
   const[matchMode,setMatchMode]=useState("wl");
   const[gamesPerMatch,setGamesPerMatch]=useState(1);
   const[rrStandingsRules,setRrStandingsRules]=useState(DEFAULT_STANDINGS_RULES);
@@ -2581,7 +2785,7 @@ export default function App(){
 
   useEffect(()=>{
     if(step!=="bracket"||!currentProjectId)return;
-    const state={step,formatType,teamCount,roundsPerWeek,matchMode,gamesPerMatch,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName};
+    const state={step,formatType,teamCount,matchMode,gamesPerMatch,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName};
     const hasBracket=isMulti?Object.keys(stageData||{}).length>0:isRR?rrRounds.length>0:!!bracketData;
     if(!hasBracket)return;
     const updatedAt=new Date().toISOString();
@@ -2592,7 +2796,7 @@ export default function App(){
       return [project,...others].slice(0,20);
     });
     setLastSavedAt(new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}));
-  },[step,currentProjectId,currentFolderId,formatType,teamCount,roundsPerWeek,matchMode,gamesPerMatch,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,isMulti,isRR]);
+  },[step,currentProjectId,currentFolderId,formatType,teamCount,matchMode,gamesPerMatch,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,isMulti,isRR]);
 
   useEffect(()=>{
     if(step!=="bracket"||!qualificationLinks.length)return;
@@ -2613,7 +2817,6 @@ export default function App(){
     setStep("bracket");
     setFormatType(s.formatType||null);
     setTeamCount(s.teamCount||8);
-    setRoundsPerWeek(s.roundsPerWeek||1);
     setMatchMode(s.matchMode||"wl");
     setGamesPerMatch(s.gamesPerMatch||1);
     setRrStandingsRules(normalizeStandingsRules(s.rrStandingsRules));
@@ -2773,7 +2976,7 @@ export default function App(){
     if(folderImportRef.current)folderImportRef.current.value="";
   };
 
-  const goHome=()=>{setCurrentProjectId(null);setLastSavedAt(null);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setRoundsPerWeek(1);setGamesPerMatch(1);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setBracketTab("tournament");};
+  const goHome=()=>{setCurrentProjectId(null);setLastSavedAt(null);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setBracketTab("tournament");};
 
   const deleteProject=async(project)=>{
     if(!window.confirm(`Delete "${project.name}"? This cannot be undone.`))return;
@@ -2864,7 +3067,6 @@ export default function App(){
     const nextMode=updates.matchMode||matchMode;
     const nextGames=nextMode==="wl"?1:(updates.gamesPerMatch||gamesPerMatch||3);
     if(updates.formatType)setFormatType(updates.formatType);
-    if(updates.roundsPerWeek)setRoundsPerWeek(updates.roundsPerWeek);
     if(updates.matchMode)setMatchMode(updates.matchMode);
     if(updates.gamesPerMatch)setGamesPerMatch(updates.gamesPerMatch);
     if(updates.rrStandingsRules)setRrStandingsRules(normalizeStandingsRules(updates.rrStandingsRules));
@@ -2934,7 +3136,7 @@ export default function App(){
                   if(ni!==nextIdx)return nm;
                   const cleared={...nm,[slot]:w};
                   // If the team in this slot changed and there are games recorded, clear them
-                  if(cur?.name!==w?.name) cleared.games=cleared.games.map(g=>({...g,winnerName:null,scoreA:"",scoreB:"",gameMvp:null,stats:{}}));
+                  if(cur?.name!==w?.name) cleared.games=cleared.games.map(g=>({...g,winnerName:null,isTie:false,scoreA:"",scoreB:"",gameMvp:null,stats:{}}));
                   return cleared;
                 });
               }
@@ -2970,7 +3172,7 @@ export default function App(){
                   sd.winners[rIdx+1]=sd.winners[rIdx+1].map((nm,ni)=>{
                     if(ni!==nextIdx)return nm;
                     const cleared={...nm,[slot]:w};
-                    if(cur?.name!==w?.name) cleared.games=cleared.games.map(g=>({...g,winnerName:null,scoreA:"",scoreB:"",gameMvp:null,stats:{}}));
+                    if(cur?.name!==w?.name) cleared.games=cleared.games.map(g=>({...g,winnerName:null,isTie:false,scoreA:"",scoreB:"",gameMvp:null,stats:{}}));
                     return cleared;
                   });
                 }
@@ -2999,7 +3201,7 @@ export default function App(){
     if(tb&&(fromStage.tiebreakMode||"performance")==="stage"){
       const candidates=tb.candidates.map(c=>c.row.team);
       const tiebreakFormat=fromStage.tiebreakStageFormat||"roundrobin";
-      const tiebreakStage={format:tiebreakFormat,teamCount:candidates.length,aat:0,matchMode:fromStage.matchMode,gamesPerMatch:fromStage.gamesPerMatch,roundsPerWeek:1,advance:tb.remainder,isTiebreak:true};
+      const tiebreakStage={format:tiebreakFormat,teamCount:candidates.length,aat:0,matchMode:fromStage.matchMode,gamesPerMatch:fromStage.gamesPerMatch,advance:tb.remainder,isTiebreak:true};
       const tiebreakData=buildStageData(tiebreakStage,candidates,{carryTeamsForNext:advancing});
       setStages(prev=>[...prev.slice(0,nextIdx),tiebreakStage,...prev.slice(nextIdx)]);
       setStageData(prev=>{
@@ -3043,7 +3245,7 @@ export default function App(){
     });
   };
 
-  const reset=()=>{if(typeof window!=="undefined")window.localStorage.removeItem(STORAGE_KEY);setCurrentProjectId(null);setLastSavedAt(null);setSaveError(false);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setRoundsPerWeek(1);setGamesPerMatch(1);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setBracketTab("tournament");};
+  const reset=()=>{if(typeof window!=="undefined")window.localStorage.removeItem(STORAGE_KEY);setCurrentProjectId(null);setLastSavedAt(null);setSaveError(false);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setBracketTab("tournament");};
 
   const allBracketTeams=isRR?teamsWithSeed:(bracketData?teamsWithSeed:[]);
   const allBracketMatches=playableMatches(isRR?rrRounds.flat():bracketData?(bracketData.type==="single"?(bracketData.winners||[]).flat():[...(bracketData.winners||[]).flat(),...(bracketData.losers||[]).flat(),bracketData.grandFinal,bracketData.grandFinalReset].filter(Boolean)):[]);
@@ -3069,7 +3271,7 @@ export default function App(){
           <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
             <Stepper label="Teams" value={teamCount} min={teamCount} max={teamCount} onChange={()=>{}} disabled/>
             <span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>Participant count is locked after bracket generation.</span>
-            {formatType==="roundrobin"&&<Stepper label="Rounds/week" value={roundsPerWeek} min={1} max={rrTotalRounds} onChange={v=>updateNonMultiSettings({roundsPerWeek:v})} disabled={nonMultiSettingsLocked}/>}
+            {formatType==="roundrobin"&&<span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>{rrTotalRounds} rounds total</span>}
           </div>
           <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:10}}>Match Format</div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
@@ -3275,9 +3477,9 @@ export default function App(){
           {formatType&&!isMulti&&(<>
             <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:12}}>Participants</div>
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,padding:"14px 18px",background:"var(--color-background-secondary)",borderRadius:10,border:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap"}}>
-              <Stepper label="Teams" value={teamCount} min={3} max={64} onChange={v=>{setTeamCount(v);setRoundsPerWeek(1);}}/>
+              <Stepper label="Teams" value={teamCount} min={3} max={64} onChange={setTeamCount}/>
               {(formatType==="single"||formatType==="double")&&(()=>{let sz=1;while(sz<teamCount)sz*=2;const b=sz-teamCount;return b>0?<span style={{fontSize:12,color:"var(--color-text-tertiary)"}}>Bracket: {sz} · {b} bye{b!==1?"s":""} (top seeds)</span>:null;})()}
-              {formatType==="roundrobin"&&<><div style={{width:1,height:28,background:"var(--color-border-tertiary)"}}/><Stepper label="Rounds per week" value={roundsPerWeek} min={1} max={rrTotalRounds} onChange={setRoundsPerWeek}/><span style={{fontSize:12,color:"var(--color-text-tertiary)"}}>· {rrTotalRounds} rounds total</span></>}
+              {formatType==="roundrobin"&&<><div style={{width:1,height:28,background:"var(--color-border-tertiary)"}}/><span style={{fontSize:12,color:"var(--color-text-tertiary)"}}>{rrTotalRounds} rounds total</span></>}
             </div>
             <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:12}}>Match Format</div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
@@ -3341,7 +3543,7 @@ export default function App(){
               })}
               {stages.length<6&&<button onClick={()=>{
                 const lastAdv=stages[stages.length-1]?.advance||2;
-                updateMultiStages(p=>[...p,{format:"roundrobin",teamCount:lastAdv,aat:0,matchMode:"wl",gamesPerMatch:1,roundsPerWeek:1,advance:Math.max(1,Math.floor(lastAdv/2))}]);
+                updateMultiStages(p=>[...p,{format:"roundrobin",teamCount:lastAdv,aat:0,matchMode:"wl",gamesPerMatch:1,advance:Math.max(1,Math.floor(lastAdv/2))}]);
               }} style={{padding:"8px 16px",borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:13,textTransform:"uppercase",letterSpacing:"0.05em",background:"var(--color-background-secondary)",color:"var(--color-text-secondary)",border:"1px dashed var(--color-border-tertiary)",cursor:"pointer"}}>+ Add Stage</button>}
             </div>
             <button onClick={()=>setStep("teams")} style={{padding:"10px 28px",borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,letterSpacing:"0.07em",textTransform:"uppercase",background:"#e9c46a",color:"#2c2c00",border:"none",cursor:"pointer",marginTop:8}}>Continue →</button>
@@ -3445,7 +3647,7 @@ export default function App(){
 
           {isMulti&&<MultiStageView stages={stages} stageData={stageData} teams={teamsWithSeed} statCols={statCols} onGameUpdate={handleStageGameUpdate} onMatchUpdate={handleStageMatchUpdate} onStageUpdate={handleStageDataUpdate} onAdvance={handleAdvance} activeStageIdx={activeStageIdx} setActiveStageIdx={setActiveStageIdx}/>}
 
-          {!isMulti&&isRR&&<RoundRobinView rrRounds={rrRounds} teams={teamsWithSeed} onGameUpdate={handleGameUpdate} onMatchUpdate={handleMatchUpdate} onAddTiebreakRound={round=>setRrRounds(prev=>[...prev,round])} roundsPerWeek={roundsPerWeek} matchMode={matchMode} statCols={statCols} standingsRules={rrStandingsRules}/>}
+          {!isMulti&&isRR&&<RoundRobinView rrRounds={rrRounds} teams={teamsWithSeed} onGameUpdate={handleGameUpdate} onMatchUpdate={handleMatchUpdate} onAddTiebreakRound={round=>setRrRounds(prev=>[...prev,round])} matchMode={matchMode} statCols={statCols} standingsRules={rrStandingsRules}/>}
 
           {!isMulti&&!isRR&&bracketData&&(isDE
             ?<DoubleElimView bracketData={bracketData} onGameUpdate={handleGameUpdate} onMatchUpdate={handleMatchUpdate} statCols={statCols}/>
@@ -3463,8 +3665,7 @@ export default function App(){
 
           {/* MVP Awards Panel */}
           {showAwards&&step==="bracket"&&(()=>{
-            // Compute weekCount for RR, stageCount for multi
-            const weekCount=isRR?Math.ceil(rrRounds.length/Math.max(1,roundsPerWeek)):0;
+            const roundCount=isRR?rrRounds.length:0;
             const stageCount=isMulti?stages.length:0;
             const getMatchesFromStageData=(sd)=>{
               if(!sd)return[];
@@ -3482,7 +3683,7 @@ export default function App(){
                   awards={awards}
                   onChange={setAwards}
                   allTeams={isMulti?Object.values(stageData).flatMap(sd=>sd?.teams||[]).filter((t,i,a)=>a.findIndex(x=>x.name===t.name)===i):teamsWithSeed}
-                  weekCount={weekCount}
+                  roundCount={roundCount}
                   stageCount={stageCount}
                   isMulti={isMulti}
                   activeStageIdx={activeStageIdx}
