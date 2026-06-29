@@ -2791,6 +2791,17 @@ function requiredMultiTeams(stages){
   return starting+aat;
 }
 
+function allocateAatTeamsByStage(teams,stages){
+  const aatTeamsByStage={};
+  let cursor=0;
+  for(let i=stages.length-1;i>=1;i--){
+    const count=stages[i].aat||0;
+    aatTeamsByStage[i]=count>0?teams.slice(cursor,cursor+count):[];
+    cursor+=count;
+  }
+  return aatTeamsByStage;
+}
+
 function recalcMultiStages(stages){
   return stages.map((stage,idx)=>{
     const clampSplit=next=>{
@@ -3307,13 +3318,7 @@ export default function App(){
     if(isMulti){
       const s0=stages[0];
       const totalAat=stages.slice(1).reduce((sum,stage)=>sum+(stage.aat||0),0);
-      const aatTeamsByStage={};
-      let cursor=0;
-      for(let i=1;i<stages.length;i++){
-        const count=stages[i].aat||0;
-        aatTeamsByStage[i]=count>0?t.slice(cursor,cursor+count):[];
-        cursor+=count;
-      }
+      const aatTeamsByStage=allocateAatTeamsByStage(t,stages);
       const sg0Teams=t.slice(totalAat,totalAat+(s0.teamCount||t.length)); // non-AAT teams start in Stage 1
       // Re-seed stage 0 teams 1..N within their group
       const sg0Seeded=sg0Teams.map((tm,i)=>({...tm,seed:i+1}));
@@ -3786,7 +3791,7 @@ export default function App(){
             {isMulti&&(()=>{
               const totalAat=stages.slice(1).reduce((sum,stage)=>sum+(stage.aat||0),0);
               return totalAat>0
-                ?<span> Top <strong style={{color:"#2a9d8f"}}>{totalAat}</strong> seeds are reserved as AAT across later stages. Next <strong style={{color:"#e9c46a"}}>{stages[0]?.teamCount}</strong> teams start Stage 1.</span>
+                ?<span> Top <strong style={{color:"#2a9d8f"}}>{totalAat}</strong> seeds are reserved as AAT across later stages, with the deepest stage getting the top seeds first. Next <strong style={{color:"#e9c46a"}}>{stages[0]?.teamCount}</strong> teams start Stage 1.</span>
                 :<span> All <strong>{teamCount}</strong> teams start Stage 1.</span>;
             })()}
             {!isMulti&&(formatType==="single"||formatType==="double")&&(()=>{let sz=1;while(sz<teamCount)sz*=2;const b=sz-teamCount;return b>0?<span> Top <strong>{b}</strong> seed{b>1?"s":""} get a bye.</span>:null;})()}
