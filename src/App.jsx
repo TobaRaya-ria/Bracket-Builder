@@ -732,14 +732,25 @@ function groupAdvanceTarget(stageData,stageConfig){
   return Math.max(1,base+(remainder?1:0));
 }
 
+function groupQualificationTarget(group,stageData,stageConfig){
+  const groupCount=stageData?.groups?.length||stageConfig?.groupCount||1;
+  const advance=stageAdvanceValue(stageConfig);
+  const base=groupCount?Math.floor(advance/groupCount):advance;
+  const remainder=groupCount?advance%groupCount:0;
+  const bracketGroup=group?.type==="single"||group?.type==="double";
+  if(bracketGroup&&remainder)return Math.max(1,base);
+  return groupAdvanceTarget(stageData,stageConfig);
+}
+
 function groupPlacementRows(group,stageData,stageConfig,target=Infinity){
   const matches=playableMatches(groupMatches(group));
   const standings=computeTeamStandings(group?.teams||[],matches,stageConfig?.standingsRules);
-  if(group?.type==="single"||group?.type==="double"){
+  if((group?.type==="single"||group?.type==="double")&&Number.isFinite(Number(target))){
     const status=stageQualificationStatus(group,{...stageConfig,advance:target},false);
     if(status.ready&&status.advancers?.length){
       const byName=new Map(standings.map(row=>[row.team.name,row]));
-      const ranked=status.advancers.map(team=>byName.get(team.name)||{team,played:0,mw:0,ml:0,draws:0,mt:0,gw:0,gl:0,gt:0,sw:0,sl:0,pts:0});
+      const rankedTeams=uniqueTeams([...(status.advancers||[]),...(status.cutoffCandidates||[])]);
+      const ranked=rankedTeams.map(team=>byName.get(team.name)||{team,played:0,mw:0,ml:0,draws:0,mt:0,gw:0,gl:0,gt:0,sw:0,sl:0,pts:0});
       const rest=standings.filter(row=>!ranked.some(r=>r.team.name===row.team.name));
       return [...ranked,...rest];
     }
@@ -751,7 +762,7 @@ function groupReady(group,stageData,stageConfig,isLast=false){
   if(!group)return false;
   if(isLast)return stageDataComplete(group);
   if(group.type==="single"||group.type==="double"){
-    return stageQualificationStatus(group,{...stageConfig,advance:groupAdvanceTarget(stageData,stageConfig)},false).ready;
+    return stageQualificationStatus(group,{...stageConfig,advance:groupQualificationTarget(group,stageData,stageConfig)},false).ready;
   }
   const matches=playableMatches(groupMatches(group));
   return matches.length>0&&matches.every(matchIsComplete);
@@ -769,7 +780,10 @@ function groupTiebreakInfo(stageData, stageConfig) {
   const remainder=groupCount?advance%groupCount:0;
   if(!groupCount||!remainder)return null;
   const base=Math.floor(advance/groupCount);
-  const groupStandings=(stageData.groups||[]).map(group=>groupPlacementRows(group,stageData,stageConfig,base+1));
+  const groupStandings=(stageData.groups||[]).map(group=>{
+    const target=(group?.type==="single"||group?.type==="double")?Math.max(1,base):base+1;
+    return groupPlacementRows(group,stageData,stageConfig,target);
+  });
   const guaranteed=[];
   for(let row=0;row<base;row++){
     for(let g=0;g<groupStandings.length;g++){
@@ -777,7 +791,21 @@ function groupTiebreakInfo(stageData, stageConfig) {
       if(team)guaranteed.push(team);
     }
   }
-  const candidates=groupStandings.map((rows,idx)=>({group:idx,row:rows[base]})).filter(x=>x.row);
+  const candidates=[];
+  (stageData.groups||[]).forEach((group,idx)=>{
+    const rows=groupStandings[idx]||[];
+    if(group?.type==="single"||group?.type==="double"){
+      const status=stageQualificationStatus(group,{...stageConfig,advance:Math.max(1,base)},false);
+      const byName=new Map(rows.map(row=>[row.team.name,row]));
+      const bracketCandidates=base===0?status.advancers||[]:status.cutoffCandidates||[];
+      bracketCandidates.forEach(team=>{
+        const row=byName.get(team.name);
+        if(row&&!candidates.some(c=>c.row.team.name===row.team.name))candidates.push({group:idx,row});
+      });
+      if(bracketCandidates.length)return;
+    }
+    if(rows[base])candidates.push({group:idx,row:rows[base]});
+  });
   const byPerformance=[...candidates].sort((a,b)=>b.row.mw-a.row.mw||b.row.gw-a.row.gw||b.row.sw-a.row.sw);
   return {groupCount,advance,remainder,base,guaranteed,candidates,byPerformance};
 }
@@ -877,7 +905,7 @@ function singleQualificationBaseStatus(data,stageConfig){
     if(!bracketRoundResolved(round))return {ready:false,pending:true,advance,aliveTeams:alive};
     const winners=orderedTeams(round.map(bracketMatchWinner).filter(Boolean));
     const losers=orderedTeams(round.map(bracketMatchLoser).filter(Boolean));
-    if(winners.length===advance)return {ready:true,advance,advancers:winners,aliveTeams:winners,visibleWinnerRounds:roundIdx+1};
+    if(winners.length===advance)return {ready:true,advance,advancers:winners,aliveTeams:winners,cutoffCandidates:losers,visibleWinnerRounds:roundIdx+1};
     if(alive.length>advance&&winners.length<advance&&losers.length){
       const target=advance-winners.length;
       return {
@@ -933,7 +961,7 @@ function doubleQualificationBaseStatus(data,stageConfig){
       if(nextLoss>=2)eliminated.push(loser);
     });
     alive=rankedAliveTeams();
-    if(alive.length===advance)return {ready:true,advance,advancers:alive,aliveTeams:alive,visibleWinnerRounds:event.visibleWinnerRounds,visibleLoserRounds:event.visibleLoserRounds};
+    if(alive.length===advance)return {ready:true,advance,advancers:alive,aliveTeams:alive,cutoffCandidates:orderedTeams(eliminated),visibleWinnerRounds:event.visibleWinnerRounds,visibleLoserRounds:event.visibleLoserRounds};
     if(before.length>advance&&alive.length<advance&&eliminated.length){
       const candidates=orderedTeams(eliminated);
       const target=advance-alive.length;
@@ -1922,11 +1950,11 @@ function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,matchMode
   const allMatches=groups.flatMap(groupMatches);
   const done=allMatches.filter(matchIsComplete).length;
   const pct=allMatches.length>0?Math.round(done/allMatches.length*100):0;
-  const perGroupTarget=groupAdvanceTarget(data,cfg);
   const renderGroup=()=>{
     if(!group)return null;
-    if(group.type==="single")return <SingleElimView bracketData={group} qualificationStatus={isLast?null:stageQualificationStatus(group,{...cfg,advance:perGroupTarget},false)} statCols={statCols} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>;
-    if(group.type==="double")return <DoubleElimView bracketData={group} qualificationStatus={isLast?null:stageQualificationStatus(group,{...cfg,advance:perGroupTarget},false)} statCols={statCols} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>;
+    const groupTarget=groupQualificationTarget(group,data,cfg);
+    if(group.type==="single")return <SingleElimView bracketData={group} qualificationStatus={isLast?null:stageQualificationStatus(group,{...cfg,advance:groupTarget},false)} statCols={statCols} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>;
+    if(group.type==="double")return <DoubleElimView bracketData={group} qualificationStatus={isLast?null:stageQualificationStatus(group,{...cfg,advance:groupTarget},false)} statCols={statCols} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>;
     return <RoundRobinView rrRounds={group.rounds||[]} teams={group.teams} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} onAddTiebreakRound={round=>onStageUpdate(d=>({...d,groups:d.groups.map((g,idx)=>idx===activeGroup?{...g,rounds:[...(g.rounds||[]),round]}:g)}))} matchMode={mode} statCols={statCols} standingsRules={standingsRules}/>;
   };
 
@@ -3684,8 +3712,10 @@ export default function App(){
       const base=prev[stageIdx];
       let sd={...(base?.type==="double"?normalizeDoubleElimData(base):base)};
       if(sd.type==="groupstage"){
-        const groupConfig={...stages[stageIdx],advance:groupAdvanceTarget(sd,stages[stageIdx])};
-        sd={...sd,groups:(sd.groups||[]).map(group=>updateMatchInBracketData(group,matchId,updater,groupConfig,false))};
+        sd={...sd,groups:(sd.groups||[]).map(group=>{
+          const groupConfig={...stages[stageIdx],advance:groupQualificationTarget(group,sd,stages[stageIdx])};
+          return updateMatchInBracketData(group,matchId,updater,groupConfig,false);
+        })};
       } else {
         sd=updateMatchInBracketData(sd,matchId,updater,stages[stageIdx],stageIdx===stages.length-1);
       }
