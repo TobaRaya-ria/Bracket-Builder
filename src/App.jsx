@@ -725,7 +725,7 @@ function groupMatches(group){
 
 function groupAdvanceTarget(stageData,stageConfig){
   const groupCount=stageData?.groups?.length||stageConfig?.groupCount||1;
-  const advance=stageConfig?.advance||0;
+  const advance=stageAdvanceValue(stageConfig);
   if(!groupCount)return advance;
   const base=Math.floor(advance/groupCount);
   const remainder=advance%groupCount;
@@ -765,7 +765,7 @@ function groupStageReady(stageData,stageConfig,isLast=false){
 function groupTiebreakInfo(stageData, stageConfig) {
   if(stageData?.type!=="groupstage")return null;
   const groupCount=stageData.groups?.length||stageConfig.groupCount||0;
-  const advance=stageConfig.advance||0;
+  const advance=stageAdvanceValue(stageConfig);
   const remainder=groupCount?advance%groupCount:0;
   if(!groupCount||!remainder)return null;
   const base=Math.floor(advance/groupCount);
@@ -818,6 +818,11 @@ function orderedTeams(list){
   return uniqueTeams(list).sort((a,b)=>(a.seed??9999)-(b.seed??9999)||teamName(a).localeCompare(teamName(b)));
 }
 
+function stageAdvanceValue(stageConfig){
+  const value=Number(stageConfig?.advance);
+  return Number.isFinite(value)?Math.max(0,value):0;
+}
+
 function qualificationSourceKey(kind,roundIdx,target,baseQualifiers,candidates){
   const names=list=>orderedTeams(list).map(teamName).join(",");
   return `${kind}-${roundIdx}-${target}-${names(baseQualifiers)}-${names(candidates)}`;
@@ -865,7 +870,7 @@ function qualificationMatchConfig(data,stageConfig){
 }
 
 function singleQualificationBaseStatus(data,stageConfig){
-  const advance=stageConfig?.advance||0;
+  const advance=stageAdvanceValue(stageConfig);
   let alive=orderedTeams(data?.teams||[]);
   for(let roundIdx=0;roundIdx<(data?.winners?.length||0);roundIdx++){
     const round=data.winners[roundIdx]||[];
@@ -910,7 +915,7 @@ function doubleQualificationEvents(data){
 }
 
 function doubleQualificationBaseStatus(data,stageConfig){
-  const advance=stageConfig?.advance||0;
+  const advance=stageAdvanceValue(stageConfig);
   const teams=orderedTeams(data?.teams||[]);
   const losses=new Map(teams.map(team=>[teamName(team),0]));
   const rankedAliveTeams=()=>teams.filter(team=>(losses.get(teamName(team))||0)<2).sort((a,b)=>(losses.get(teamName(a))||0)-(losses.get(teamName(b))||0)||(a.seed??9999)-(b.seed??9999)||teamName(a).localeCompare(teamName(b)));
@@ -954,7 +959,7 @@ function doubleQualificationBaseStatus(data,stageConfig){
 }
 
 function qualificationBaseStatus(data,stageConfig,isLast){
-  if(!data||isLast||!(data.type==="single"||data.type==="double"))return {ready:stageDataComplete(data),advance:stageConfig?.advance||0,advancers:[]};
+  if(!data||isLast||!(data.type==="single"||data.type==="double"))return {ready:stageDataComplete(data),advance:stageAdvanceValue(stageConfig),advancers:[]};
   if(data.type==="single")return singleQualificationBaseStatus(data,stageConfig);
   return doubleQualificationBaseStatus(data,stageConfig);
 }
@@ -2351,7 +2356,7 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
   const getAdvancingTeams=(idx)=>{
     const sd=stageData[idx];const st=stages[idx];if(!sd||!st)return[];
     const stTeams=sd.teams||[];
-    const advance=st.advance||2;
+    const advance=stageAdvanceValue(st)||2;
     if(sd.type==="roundrobin"){
       const standings=computeTeamStandings(stTeams,playableMatches((sd.rounds||[]).flat()),st.standingsRules);
       return standings.slice(0,advance).map(r=>r.team);
