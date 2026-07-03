@@ -738,8 +738,9 @@ function groupPlacementRows(group,stageData,stageConfig,target=Infinity){
   return standings;
 }
 
-function groupReady(group,stageData,stageConfig){
+function groupReady(group,stageData,stageConfig,isLast=false){
   if(!group)return false;
+  if(isLast)return stageDataComplete(group);
   if(group.type==="single"||group.type==="double"){
     return stageQualificationStatus(group,{...stageConfig,advance:groupAdvanceTarget(stageData,stageConfig)},false).ready;
   }
@@ -747,9 +748,9 @@ function groupReady(group,stageData,stageConfig){
   return matches.length>0&&matches.every(matchIsComplete);
 }
 
-function groupStageReady(stageData,stageConfig){
+function groupStageReady(stageData,stageConfig,isLast=false){
   if(stageData?.type!=="groupstage"||!(stageData.groups||[]).length)return false;
-  return stageData.groups.every(group=>groupReady(group,stageData,stageConfig));
+  return stageData.groups.every(group=>groupReady(group,stageData,stageConfig,isLast));
 }
 
 function groupTiebreakInfo(stageData, stageConfig) {
@@ -1830,7 +1831,7 @@ function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreak
   );
 }
 
-function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,matchMode,statCols,standingsRules,stageConfig={}}){
+function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,matchMode,statCols,standingsRules,stageConfig={},isLast=false}){
   const[activeGroup,setActiveGroup]=useState(0);
   const groups=data.groups||[];
   const poolChoice=data.poolChoice;
@@ -1902,8 +1903,8 @@ function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,matchMode
   const perGroupTarget=groupAdvanceTarget(data,cfg);
   const renderGroup=()=>{
     if(!group)return null;
-    if(group.type==="single")return <SingleElimView bracketData={group} qualificationStatus={stageQualificationStatus(group,{...cfg,advance:perGroupTarget},false)} statCols={statCols} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>;
-    if(group.type==="double")return <DoubleElimView bracketData={group} qualificationStatus={stageQualificationStatus(group,{...cfg,advance:perGroupTarget},false)} statCols={statCols} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>;
+    if(group.type==="single")return <SingleElimView bracketData={group} qualificationStatus={isLast?null:stageQualificationStatus(group,{...cfg,advance:perGroupTarget},false)} statCols={statCols} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>;
+    if(group.type==="double")return <DoubleElimView bracketData={group} qualificationStatus={isLast?null:stageQualificationStatus(group,{...cfg,advance:perGroupTarget},false)} statCols={statCols} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>;
     return <RoundRobinView rrRounds={group.rounds||[]} teams={group.teams} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} onAddTiebreakRound={round=>onStageUpdate(d=>({...d,groups:d.groups.map((g,idx)=>idx===activeGroup?{...g,rounds:[...(g.rounds||[]),round]}:g)}))} matchMode={mode} statCols={statCols} standingsRules={standingsRules}/>;
   };
 
@@ -1916,7 +1917,7 @@ function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,matchMode
       <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:14}}>
         {groups.map((g,idx)=>{
           const matches=groupMatches(g);
-          const complete=groupReady(g,data,cfg);
+          const complete=groupReady(g,data,cfg,isLast);
           return(
             <button key={g.name} onClick={()=>setActiveGroup(idx)} style={{...btn(activeGroup===idx),padding:"6px 12px",fontSize:12,position:"relative"}}>
               {g.name}
@@ -2326,7 +2327,7 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
   const getStageTeams=(idx)=>stageData[idx]?.teams||[];
 
   const stageComplete=(idx)=>{
-    if(stageData[idx]?.type==="groupstage")return groupStageReady(stageData[idx],stages[idx]);
+    if(stageData[idx]?.type==="groupstage")return groupStageReady(stageData[idx],stages[idx],idx===stages.length-1);
     return stageQualificationStatus(stageData[idx],stages[idx],idx===stages.length-1).ready;
   };
 
@@ -2415,10 +2416,10 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
 
       {/* Stage content */}
       {data&&(
-        data.type==="single"?<SingleElimView bracketData={data} qualificationStatus={stageQualificationStatus(data,stages[activeStageIdx],activeStageIdx===stages.length-1)} statCols={statCols} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)}/>
-        :data.type==="double"?<DoubleElimView bracketData={data} qualificationStatus={stageQualificationStatus(data,stages[activeStageIdx],activeStageIdx===stages.length-1)} statCols={statCols} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)}/>
+        data.type==="single"?<SingleElimView bracketData={data} qualificationStatus={activeStageIdx===stages.length-1?null:stageQualificationStatus(data,stages[activeStageIdx],false)} statCols={statCols} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)}/>
+        :data.type==="double"?<DoubleElimView bracketData={data} qualificationStatus={activeStageIdx===stages.length-1?null:stageQualificationStatus(data,stages[activeStageIdx],false)} statCols={statCols} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)}/>
         :data.type==="roundrobin"?<RoundRobinView rrRounds={data.rounds} teams={getStageTeams(activeStageIdx)} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)} onAddTiebreakRound={round=>onStageUpdate(activeStageIdx,d=>({...d,rounds:[...d.rounds,round]}))} matchMode={stages[activeStageIdx]?.matchMode||"wl"} statCols={statCols} standingsRules={stages[activeStageIdx]?.standingsRules}/>
-        :data.type==="groupstage"?<GroupStageView data={data} stageConfig={stages[activeStageIdx]} onStageUpdate={updater=>onStageUpdate(activeStageIdx,updater)} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)} matchMode={stages[activeStageIdx]?.matchMode||"wl"} statCols={statCols} standingsRules={stages[activeStageIdx]?.standingsRules}/>
+        :data.type==="groupstage"?<GroupStageView data={data} stageConfig={stages[activeStageIdx]} isLast={activeStageIdx===stages.length-1} onStageUpdate={updater=>onStageUpdate(activeStageIdx,updater)} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)} matchMode={stages[activeStageIdx]?.matchMode||"wl"} statCols={statCols} standingsRules={stages[activeStageIdx]?.standingsRules}/>
         :null
       )}
 
@@ -3662,7 +3663,7 @@ export default function App(){
               const computedTC=idx===0?(stage.teamCount||teamCount):(stages[idx-1]?.advance||2)+(stage.aat||0);
               const displayStage={...stage,teamCount:computedTC};
               const started=!!stageData[idx];
-              const done=stageData[idx]?.type==="groupstage"?groupStageReady(stageData[idx],stage):stageQualificationStatus(stageData[idx],stage,idx===stages.length-1).ready;
+              const done=stageData[idx]?.type==="groupstage"?groupStageReady(stageData[idx],stage,idx===stages.length-1):stageQualificationStatus(stageData[idx],stage,idx===stages.length-1).ready;
               return(
                 <div key={idx}>
                   <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:done?"#e63946":started?"#b8921a":"#2a9d8f",margin:"0 0 5px 2px"}}>{done?"Done - read only":started?"Started - metrics editable":"Not started - editable"}</div>
