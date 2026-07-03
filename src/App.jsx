@@ -610,14 +610,44 @@ function prefixMatchIds(rounds,prefix){
   return rounds.map(round=>round.map(m=>({...m,id:`${prefix}-${m.id}`})));
 }
 
-function makeGroup(name,teams,idx,gpm,mode){
-  return {name,teams,rounds:prefixMatchIds(scheduleRoundRobin(teams,gpm,mode),`g${idx}`)};
+function prefixBracketData(data,prefix){
+  if(!data)return data;
+  const pref=m=>m?{...m,id:`${prefix}-${m.id}`}:m;
+  if(data.type==="roundrobin")return {...data,rounds:prefixMatchIds(data.rounds||[],prefix)};
+  if(data.type==="single")return {...data,winners:(data.winners||[]).map(round=>round.map(pref))};
+  if(data.type==="double")return {
+    ...data,
+    winners:(data.winners||[]).map(round=>round.map(pref)),
+    losers:(data.losers||[]).map(round=>round.map(pref)),
+    grandFinal:pref(data.grandFinal),
+    grandFinalReset:pref(data.grandFinalReset)
+  };
+  return data;
 }
 
-function makeSeededGroups(teams, groupCount, gpm, mode) {
+function splitCountForGroup(stageConfig,teamCount){
+  if(!stageConfig?.splitStart)return 0;
+  const stageTeamCount=stageConfig.teamCount||teamCount;
+  const ratio=(stageConfig.splitStartCount||0)/Math.max(1,stageTeamCount);
+  return Math.max(1,Math.min(Math.floor(teamCount/2),Math.round(teamCount*ratio)));
+}
+
+function makeGroup(name,teams,idx,gpm,mode,format="roundrobin",stageConfig={}){
+  const prefix=`g${idx}`;
+  if(format==="single"){
+    return {...prefixBracketData(generateElim(teams,gpm,mode),prefix),name,teams};
+  }
+  if(format==="double"){
+    const splitStartCount=splitCountForGroup(stageConfig,teams.length);
+    return {...prefixBracketData(generateDoubleElim(teams,gpm,mode,{splitStartCount}),prefix),name,teams};
+  }
+  return {name,type:"roundrobin",teams,rounds:prefixMatchIds(scheduleRoundRobin(teams,gpm,mode),prefix)};
+}
+
+function makeSeededGroups(teams, groupCount, gpm, mode, format="roundrobin", stageConfig={}) {
   const groups=Array.from({length:groupCount},(_,i)=>({name:`Group ${String.fromCharCode(65+i)}`,teams:[]}));
   teams.forEach((team,idx)=>groups[idx%groupCount].teams.push(team));
-  return groups.map((g,idx)=>makeGroup(g.name,g.teams,idx,gpm,mode));
+  return groups.map((g,idx)=>makeGroup(g.name,g.teams,idx,gpm,mode,format,stageConfig));
 }
 
 function makePools(teams, groupCount) {
@@ -652,28 +682,74 @@ function shuffleList(list) {
   return next;
 }
 
-function makeGroupsFromPools(pools, groupCount, gpm, mode) {
+function makeGroupsFromPools(pools, groupCount, gpm, mode, format="roundrobin", stageConfig={}) {
   const groupTeams=Array.from({length:groupCount},()=>[]);
   pools.forEach(pool=>{
     shuffleList(pool.teams).forEach((team,idx)=>{
       if(idx<groupCount)groupTeams[idx].push(team);
     });
   });
-  return groupTeams.map((teams,idx)=>makeGroup(`Group ${String.fromCharCode(65+idx)}`,teams,idx,gpm,mode));
+  return groupTeams.map((teams,idx)=>makeGroup(`Group ${String.fromCharCode(65+idx)}`,teams,idx,gpm,mode,format,stageConfig));
 }
 
-function generateGroupStage(teams, groupCount, gpm, mode) {
+function generateGroupStage(teams, groupCount, gpm, mode, format="roundrobin", stageConfig={}) {
   const count=Math.max(2,Math.min(groupCount||2,teams.length));
-  return { type:"groupstage", groups:[], teams, groupCount:count, gpm, matchMode:mode, poolChoice:null, pools:[], poolsConfirmed:false };
+  return { type:"groupstage", stageFormat:format, groups:[], teams, groupCount:count, gpm, matchMode:mode, poolChoice:null, pools:[], poolsConfirmed:false, splitStart:!!stageConfig.splitStart, splitStartCount:stageConfig.splitStartCount||0 };
 }
 
 function buildStageData(stage, teams, extra={}) {
   const gpm=stage.matchMode==="wl"?1:stage.gamesPerMatch;
-  const shouldGroup=stage.format==="roundrobin"&&stage.groupStage&&stage.groupCount>1;
-  if(shouldGroup)return {...generateGroupStage(teams,stage.groupCount,gpm,stage.matchMode),...extra};
+  const shouldGroup=stage.groupStage&&stage.groupCount>1;
+  if(shouldGroup)return {...generateGroupStage(teams,stage.groupCount,gpm,stage.matchMode,stage.format,stage),...extra};
   if(stage.format==="single")return {...generateElim(teams,gpm,stage.matchMode),teams,...extra};
   if(stage.format==="double")return {...generateDoubleElim(teams,gpm,stage.matchMode,{splitStartCount:stage.splitStart?stage.splitStartCount:0}),teams,...extra};
   return {type:"roundrobin",rounds:scheduleRoundRobin(teams,gpm,stage.matchMode),teams,...extra};
+}
+
+function groupMatches(group){
+  if(!group)return[];
+  if(group.type==="roundrobin")return(group.rounds||[]).flat();
+  if(group.type==="single")return[...(group.winners||[]).flat(),...(group.qualificationTiebreaker?.rounds||[]).flat()];
+  if(group.type==="double")return dataMatches(group);
+  return(group.rounds||[]).flat();
+}
+
+function groupAdvanceTarget(stageData,stageConfig){
+  const groupCount=stageData?.groups?.length||stageConfig?.groupCount||1;
+  const advance=stageConfig?.advance||0;
+  if(!groupCount)return advance;
+  const base=Math.floor(advance/groupCount);
+  const remainder=advance%groupCount;
+  return Math.max(1,base+(remainder?1:0));
+}
+
+function groupPlacementRows(group,stageData,stageConfig,target=Infinity){
+  const matches=playableMatches(groupMatches(group));
+  const standings=computeTeamStandings(group?.teams||[],matches,stageConfig?.standingsRules);
+  if(group?.type==="single"||group?.type==="double"){
+    const status=stageQualificationStatus(group,{...stageConfig,advance:target},false);
+    if(status.ready&&status.advancers?.length){
+      const byName=new Map(standings.map(row=>[row.team.name,row]));
+      const ranked=status.advancers.map(team=>byName.get(team.name)||{team,played:0,mw:0,ml:0,draws:0,mt:0,gw:0,gl:0,gt:0,sw:0,sl:0,pts:0});
+      const rest=standings.filter(row=>!ranked.some(r=>r.team.name===row.team.name));
+      return [...ranked,...rest];
+    }
+  }
+  return standings;
+}
+
+function groupReady(group,stageData,stageConfig){
+  if(!group)return false;
+  if(group.type==="single"||group.type==="double"){
+    return stageQualificationStatus(group,{...stageConfig,advance:groupAdvanceTarget(stageData,stageConfig)},false).ready;
+  }
+  const matches=playableMatches(groupMatches(group));
+  return matches.length>0&&matches.every(matchIsComplete);
+}
+
+function groupStageReady(stageData,stageConfig){
+  if(stageData?.type!=="groupstage"||!(stageData.groups||[]).length)return false;
+  return stageData.groups.every(group=>groupReady(group,stageData,stageConfig));
 }
 
 function groupTiebreakInfo(stageData, stageConfig) {
@@ -683,8 +759,14 @@ function groupTiebreakInfo(stageData, stageConfig) {
   const remainder=groupCount?advance%groupCount:0;
   if(!groupCount||!remainder)return null;
   const base=Math.floor(advance/groupCount);
-  const groupStandings=(stageData.groups||[]).map(group=>computeTeamStandings(group.teams,(group.rounds||[]).flat(),stageConfig.standingsRules));
-  const guaranteed=groupStandings.flatMap(rows=>rows.slice(0,base).map(r=>r.team));
+  const groupStandings=(stageData.groups||[]).map(group=>groupPlacementRows(group,stageData,stageConfig,base+1));
+  const guaranteed=[];
+  for(let row=0;row<base;row++){
+    for(let g=0;g<groupStandings.length;g++){
+      const team=groupStandings[g][row]?.team;
+      if(team)guaranteed.push(team);
+    }
+  }
   const candidates=groupStandings.map((rows,idx)=>({group:idx,row:rows[base]})).filter(x=>x.row);
   const byPerformance=[...candidates].sort((a,b)=>b.row.mw-a.row.mw||b.row.gw-a.row.gw||b.row.sw-a.row.sw);
   return {groupCount,advance,remainder,base,guaranteed,candidates,byPerformance};
@@ -780,7 +862,7 @@ function singleQualificationBaseStatus(data,stageConfig){
     if(!bracketRoundResolved(round))return {ready:false,pending:true,advance,aliveTeams:alive};
     const winners=orderedTeams(round.map(bracketMatchWinner).filter(Boolean));
     const losers=orderedTeams(round.map(bracketMatchLoser).filter(Boolean));
-    if(winners.length===advance)return {ready:true,advance,advancers:winners,aliveTeams:winners};
+    if(winners.length===advance)return {ready:true,advance,advancers:winners,aliveTeams:winners,visibleWinnerRounds:roundIdx+1};
     if(alive.length>advance&&winners.length<advance&&losers.length){
       const target=advance-winners.length;
       return {
@@ -791,6 +873,7 @@ function singleQualificationBaseStatus(data,stageConfig){
         baseQualifiers:winners,
         candidateTeams:losers,
         target,
+        visibleWinnerRounds:roundIdx+1,
         sourceKey:qualificationSourceKey("single",roundIdx,target,winners,losers)
       };
     }
@@ -803,14 +886,14 @@ function doubleQualificationEvents(data){
   const prop=propagateDoubleElim(data);
   const events=[];
   for(let wrIdx=0;wrIdx<(prop?.winners?.length||0);wrIdx++){
-    events.push({kind:"winners",roundIdx:wrIdx,round:prop.winners[wrIdx]});
+    events.push({kind:"winners",roundIdx:wrIdx,round:prop.winners[wrIdx],visibleWinnerRounds:wrIdx+1,visibleLoserRounds:wrIdx===0?0:Math.min(prop.losers?.length||0,wrIdx*2-1)});
     if(wrIdx===0){
-      if(prop.losers?.[0])events.push({kind:"losers",roundIdx:0,round:prop.losers[0]});
+      if(prop.losers?.[0])events.push({kind:"losers",roundIdx:0,round:prop.losers[0],visibleWinnerRounds:1,visibleLoserRounds:1});
     } else {
       const receiveIdx=wrIdx*2-1;
       const playIdx=wrIdx*2;
-      if(prop.losers?.[receiveIdx])events.push({kind:"losers",roundIdx:receiveIdx,round:prop.losers[receiveIdx]});
-      if(prop.losers?.[playIdx])events.push({kind:"losers",roundIdx:playIdx,round:prop.losers[playIdx]});
+      if(prop.losers?.[receiveIdx])events.push({kind:"losers",roundIdx:receiveIdx,round:prop.losers[receiveIdx],visibleWinnerRounds:wrIdx+1,visibleLoserRounds:receiveIdx+1});
+      if(prop.losers?.[playIdx])events.push({kind:"losers",roundIdx:playIdx,round:prop.losers[playIdx],visibleWinnerRounds:wrIdx+1,visibleLoserRounds:playIdx+1});
     }
   }
   return events;
@@ -835,7 +918,7 @@ function doubleQualificationBaseStatus(data,stageConfig){
       if(nextLoss>=2)eliminated.push(loser);
     });
     alive=rankedAliveTeams();
-    if(alive.length===advance)return {ready:true,advance,advancers:alive,aliveTeams:alive};
+    if(alive.length===advance)return {ready:true,advance,advancers:alive,aliveTeams:alive,visibleWinnerRounds:event.visibleWinnerRounds,visibleLoserRounds:event.visibleLoserRounds};
     if(before.length>advance&&alive.length<advance&&eliminated.length){
       const candidates=orderedTeams(eliminated);
       const target=advance-alive.length;
@@ -847,6 +930,8 @@ function doubleQualificationBaseStatus(data,stageConfig){
         baseQualifiers:alive,
         candidateTeams:candidates,
         target,
+        visibleWinnerRounds:event.visibleWinnerRounds,
+        visibleLoserRounds:event.visibleLoserRounds,
         sourceKey:qualificationSourceKey(`double-${event.kind}`,event.roundIdx,target,alive,candidates)
       };
     }
@@ -1576,26 +1661,35 @@ function ElimBracket({rounds,onGameUpdate,onMatchUpdate,statCols,labelPrefix}){
   );
 }
 
-function SingleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols}){
+function SingleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualificationStatus=null}){
+  const[showFull,setShowFull]=useState(false);
   const{winners}=bracketData;
   if(!winners?.length)return null;
   const CARD_H=132,base=winners[0].length;
   const fm=winners[winners.length-1][0];
   const champ=fm?bracketMatchWinner(fm):null;
   const tb=bracketData.qualificationTiebreaker;
+  const compact=qualificationStatus&&!showFull&&(qualificationStatus.ready||qualificationStatus.needsTiebreaker);
+  const displayWinners=compact?winners.slice(0,qualificationStatus.visibleWinnerRounds||winners.length):winners;
   return(
     <BracketCanvas style={{overflowX:"auto",padding:"18px 14px 20px"}}>
       <div style={{display:"flex",flexDirection:"column",gap:24,minWidth:"max-content"}}>
+        {qualificationStatus&&(qualificationStatus.ready||qualificationStatus.needsTiebreaker)&&(
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#2a9d8f"}}>Qualification cutoff reached</span>
+            <button onClick={()=>setShowFull(v=>!v)} style={{...btn(showFull),padding:"4px 10px",fontSize:11}}>{showFull?"Hide Future Rounds":"Show Full Bracket"}</button>
+          </div>
+        )}
         <div style={{display:"flex",gap:24,alignItems:"flex-start"}}>
-          <ElimBracket rounds={winners} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols}/>
-          <div style={{display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0}}>
+          <ElimBracket rounds={displayWinners} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols}/>
+          {(!compact||showFull)&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0}}>
             <div style={{fontSize:9,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:8}}>Champion</div>
             <div style={{paddingTop:Math.max(0,(base/2-0.45)*CARD_H)+"px"}}>
               <div style={{width:200,height:52,border:"2px solid "+(champ?"#e9c46a":"var(--color-border-tertiary)"),borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",background:champ?"rgba(233,196,106,0.08)":"var(--color-background-secondary)",fontFamily:"'Barlow Condensed',sans-serif"}}>
                 {champ?<TeamTag name={"🏆 "+champ.name} color={champ.color}/>:<span style={{fontSize:12,color:"var(--color-text-tertiary)",fontStyle:"italic"}}>TBD</span>}
               </div>
             </div>
-          </div>
+          </div>}
         </div>
         {tb?.rounds?.length>0&&(
           <div style={{paddingTop:18,borderTop:"1px solid var(--color-border-tertiary)"}}>
@@ -1608,7 +1702,8 @@ function SingleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols}){
   );
 }
 
-function DoubleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols}){
+function DoubleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualificationStatus=null}){
+  const[showFull,setShowFull]=useState(false);
   const propagated=propagateDoubleElim(bracketData);
   const gfRes=matchResult(propagated.grandFinal);
   const gfrRes=matchResult(propagated.grandFinalReset);
@@ -1616,20 +1711,29 @@ function DoubleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols}){
   const resetNeeded=gfRes.winner&&gfRes.winner.name===propagated.grandFinal.teamB?.name;
   const champion=wbSideWonGF?gfRes.winner:gfrRes.winner||null;
   const tb=bracketData.qualificationTiebreaker;
+  const compact=qualificationStatus&&!showFull&&(qualificationStatus.ready||qualificationStatus.needsTiebreaker);
+  const displayWinners=compact?propagated.winners.slice(0,qualificationStatus.visibleWinnerRounds||propagated.winners.length):propagated.winners;
+  const displayLosers=compact?propagated.losers.slice(0,qualificationStatus.visibleLoserRounds||0):propagated.losers;
 
   // We display propagated data but use original for edits
   return(
     <BracketCanvas style={{overflowX:"auto",padding:"18px 14px 20px"}}>
       <div style={{display:"flex",gap:28,alignItems:"flex-start",minWidth:"max-content"}}>
         <div style={{display:"flex",flexDirection:"column",gap:24}}>
+          {qualificationStatus&&(qualificationStatus.ready||qualificationStatus.needsTiebreaker)&&(
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#2a9d8f"}}>Qualification cutoff reached</span>
+              <button onClick={()=>setShowFull(v=>!v)} style={{...btn(showFull),padding:"4px 10px",fontSize:11}}>{showFull?"Hide Future Rounds":"Show Full Bracket"}</button>
+            </div>
+          )}
           <div>
             <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#2a9d8f",marginBottom:12}}>Winners Bracket</div>
-            <ElimBracket rounds={propagated.winners} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols}/>
+            <ElimBracket rounds={displayWinners} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols}/>
           </div>
           <div style={{height:1,background:"var(--color-border-tertiary)",width:"100%"}}/>
           <div>
             <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#e63946",marginBottom:12}}>Losers Bracket</div>
-            {propagated.losers.length>0?<ElimBracket rounds={propagated.losers} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols} labelPrefix="LB"/>:<div style={{fontSize:12,color:"var(--color-text-tertiary)",fontStyle:"italic"}}>No losers yet</div>}
+            {displayLosers.length>0?<ElimBracket rounds={displayLosers} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols} labelPrefix="LB"/>:<div style={{fontSize:12,color:"var(--color-text-tertiary)",fontStyle:"italic"}}>No losers yet</div>}
           </div>
           {tb?.rounds?.length>0&&(
             <div style={{paddingTop:18,borderTop:"1px solid var(--color-border-tertiary)"}}>
@@ -1638,7 +1742,7 @@ function DoubleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols}){
             </div>
           )}
         </div>
-        <div style={{width:1,background:"var(--color-border-tertiary)",alignSelf:"stretch",flexShrink:0}}/>
+        {(!compact||showFull)&&<><div style={{width:1,background:"var(--color-border-tertiary)",alignSelf:"stretch",flexShrink:0}}/>
         <div style={{flexShrink:0}}>
           <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#e9c46a",marginBottom:12}}>Grand Final</div>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -1649,7 +1753,7 @@ function DoubleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols}){
             </div>
             {champion&&<div style={{marginTop:8,padding:"10px 14px",borderRadius:8,border:"2px solid #e9c46a",background:"rgba(233,196,106,0.07)",display:"flex",alignItems:"center",gap:8,fontFamily:"'Barlow Condensed',sans-serif"}}><span style={{fontSize:16}}>🏆</span><TeamTag name={champion.name} color={champion.color}/></div>}
           </div>
-        </div>
+        </div></>}
       </div>
     </BracketCanvas>
   );
@@ -1726,7 +1830,7 @@ function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreak
   );
 }
 
-function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,matchMode,statCols,standingsRules}){
+function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,matchMode,statCols,standingsRules,stageConfig={}}){
   const[activeGroup,setActiveGroup]=useState(0);
   const groups=data.groups||[];
   const poolChoice=data.poolChoice;
@@ -1734,18 +1838,20 @@ function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,matchMode
   const groupCount=data.groupCount||Math.max(2,groups.length||2);
   const gpm=data.gpm||1;
   const mode=data.matchMode||matchMode;
+  const format=data.stageFormat||stageConfig.format||"roundrobin";
+  const cfg={...stageConfig,format,matchMode:mode,gamesPerMatch:gpm,groupCount,teamCount:data.teams?.length||stageConfig.teamCount};
 
   const choosePools=()=>{
     onStageUpdate(d=>({...d,poolChoice:true,pools:makePools(d.teams||[],d.groupCount||2),poolsConfirmed:false,groups:[]}));
   };
   const skipPools=()=>{
-    onStageUpdate(d=>({...d,poolChoice:false,pools:[],poolsConfirmed:true,groups:makeSeededGroups(d.teams||[],d.groupCount||2,d.gpm||1,d.matchMode||matchMode)}));
+    onStageUpdate(d=>({...d,poolChoice:false,pools:[],poolsConfirmed:true,groups:makeSeededGroups(d.teams||[],d.groupCount||2,d.gpm||1,d.matchMode||matchMode,d.stageFormat||format,cfg)}));
   };
   const moveTeam=(poolIdx,teamIdx,delta)=>{
     onStageUpdate(d=>({...d,pools:movePooledTeam(d.pools||[],poolIdx,teamIdx,delta,d.groupCount||2)}));
   };
   const randomizeFromPools=()=>{
-    onStageUpdate(d=>({...d,poolsConfirmed:true,groups:makeGroupsFromPools(d.pools||[],d.groupCount||2,d.gpm||1,d.matchMode||matchMode)}));
+    onStageUpdate(d=>({...d,poolsConfirmed:true,groups:makeGroupsFromPools(d.pools||[],d.groupCount||2,d.gpm||1,d.matchMode||matchMode,d.stageFormat||format,cfg)}));
   };
 
   if(!data.poolsConfirmed&&groups.length===0){
@@ -1790,9 +1896,16 @@ function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,matchMode
   }
 
   const group=groups[activeGroup]||groups[0];
-  const allMatches=groups.flatMap(g=>(g.rounds||[]).flat());
+  const allMatches=groups.flatMap(groupMatches);
   const done=allMatches.filter(matchIsComplete).length;
   const pct=allMatches.length>0?Math.round(done/allMatches.length*100):0;
+  const perGroupTarget=groupAdvanceTarget(data,cfg);
+  const renderGroup=()=>{
+    if(!group)return null;
+    if(group.type==="single")return <SingleElimView bracketData={group} qualificationStatus={stageQualificationStatus(group,{...cfg,advance:perGroupTarget},false)} statCols={statCols} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>;
+    if(group.type==="double")return <DoubleElimView bracketData={group} qualificationStatus={stageQualificationStatus(group,{...cfg,advance:perGroupTarget},false)} statCols={statCols} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>;
+    return <RoundRobinView rrRounds={group.rounds||[]} teams={group.teams} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} onAddTiebreakRound={round=>onStageUpdate(d=>({...d,groups:d.groups.map((g,idx)=>idx===activeGroup?{...g,rounds:[...(g.rounds||[]),round]}:g)}))} matchMode={mode} statCols={statCols} standingsRules={standingsRules}/>;
+  };
 
   return(
     <div>
@@ -1802,23 +1915,23 @@ function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,matchMode
       </div>
       <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:14}}>
         {groups.map((g,idx)=>{
-          const matches=(g.rounds||[]).flat();
-          const complete=matches.length>0&&matches.every(matchIsComplete);
+          const matches=groupMatches(g);
+          const complete=groupReady(g,data,cfg);
           return(
             <button key={g.name} onClick={()=>setActiveGroup(idx)} style={{...btn(activeGroup===idx),padding:"6px 12px",fontSize:12,position:"relative"}}>
               {g.name}
-              <span style={{display:"block",fontSize:9,fontWeight:500,color:"var(--color-text-tertiary)"}}>{g.teams.length}T</span>
+              <span style={{display:"block",fontSize:9,fontWeight:500,color:"var(--color-text-tertiary)"}}>{g.teams.length}T · {matches.filter(matchIsComplete).length}/{matches.length}</span>
               {complete&&<span style={{position:"absolute",top:-4,right:-4,width:8,height:8,borderRadius:"50%",background:"#2a9d8f",border:"1.5px solid var(--color-background-primary)"}}/>}
             </button>
           );
         })}
       </div>
 
-      {group&&<RoundRobinView rrRounds={group.rounds} teams={group.teams} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} onAddTiebreakRound={round=>onStageUpdate(d=>({...d,groups:d.groups.map((g,idx)=>idx===activeGroup?{...g,rounds:[...g.rounds,round]}:g)}))} matchMode={matchMode} statCols={statCols} standingsRules={standingsRules}/>}
+      {renderGroup()}
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12,marginTop:20}}>
         {groups.map(g=>(
-          <TeamStandingsTable key={g.name} teams={g.teams} matches={(g.rounds||[]).flat()} title={`${g.name} Standings`} showScore={matchMode==="score"} standingsRules={standingsRules}/>
+          <TeamStandingsTable key={g.name} teams={g.teams} matches={groupMatches(g)} title={`${g.name} Standings`} showScore={matchMode==="score"} standingsRules={standingsRules}/>
         ))}
       </div>
     </div>
@@ -2110,9 +2223,9 @@ function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=
       )}
 
       {/* ── Sub-options row: group stage, bracket info ── */}
-      {(stage.format==="roundrobin"||bracketByes>0)&&(
+      {(!isLast||bracketByes>0)&&(
         <div style={{padding:"6px 14px",borderBottom:"0.5px solid var(--color-border-tertiary)",display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}}>
-          {stage.format==="roundrobin"&&!isLast&&(
+          {!isLast&&(
             <>
               <button onClick={()=>!controlDisabled&&onChange({...stage,groupStage:!stage.groupStage,groupCount:stage.groupCount||2})} disabled={controlDisabled} style={{...btn(!!stage.groupStage),padding:"3px 9px",fontSize:10,...(controlDisabled?disabledStyle:{})}}>Group Stage</button>
               {stage.groupStage&&<Stepper label="Groups" value={stage.groupCount||2} min={2} max={Math.max(2,Math.min(16,teamCount))} onChange={v=>onChange({...stage,groupStage:true,groupCount:v})} small disabled={controlDisabled}/>}
@@ -2121,7 +2234,7 @@ function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=
           {(stage.format==="single"||stage.format==="double")&&bracketByes>0&&<span style={{fontSize:10,color:"var(--color-text-tertiary)"}}>Bracket: {bracketSz} ({bracketByes} internal bye{bracketByes>1?"s":""})</span>}
         </div>
       )}
-      {stage.format==="roundrobin"&&stage.groupStage&&!isLast&&(stage.advance||0)%(stage.groupCount||2)!==0&&(
+      {stage.groupStage&&!isLast&&(stage.advance||0)%(stage.groupCount||2)!==0&&(
         <div style={{padding:"8px 14px",borderBottom:"0.5px solid var(--color-border-tertiary)",background:"rgba(233,196,106,0.08)",display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
           <span style={{fontSize:11,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:"#b8921a"}}>Tiebreak needed</span>
           <span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>{stage.advance||0} advancing is not divisible by {stage.groupCount||2} groups.</span>
@@ -2195,7 +2308,7 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
   const allMatches=Object.values(stageData).flatMap(sd=>{
     if(!sd)return[];
     if(sd.type==="roundrobin")return(sd.rounds||[]).flat();
-    if(sd.type==="groupstage")return(sd.groups||[]).flatMap(g=>(g.rounds||[]).flat());
+    if(sd.type==="groupstage")return dataMatches(sd);
     if(sd.type==="single")return[...(sd.winners||[]).flat(),...(sd.qualificationTiebreaker?.rounds||[]).flat()];
     if(sd.type==="double")return dataMatches(sd);
     return[];
@@ -2204,7 +2317,7 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
   const getStageMatches=(sd)=>{
     if(!sd)return[];
     if(sd.type==="roundrobin")return(sd.rounds||[]).flat();
-    if(sd.type==="groupstage")return(sd.groups||[]).flatMap(g=>(g.rounds||[]).flat());
+    if(sd.type==="groupstage")return dataMatches(sd);
     if(sd.type==="single")return[...(sd.winners||[]).flat(),...(sd.qualificationTiebreaker?.rounds||[]).flat()];
     if(sd.type==="double")return dataMatches(sd);
     return[];
@@ -2213,6 +2326,7 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
   const getStageTeams=(idx)=>stageData[idx]?.teams||[];
 
   const stageComplete=(idx)=>{
+    if(stageData[idx]?.type==="groupstage")return groupStageReady(stageData[idx],stages[idx]);
     return stageQualificationStatus(stageData[idx],stages[idx],idx===stages.length-1).ready;
   };
 
@@ -2235,7 +2349,7 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
         if(mode==="stage")return tb.guaranteed;
         return [...tb.guaranteed,...tb.byPerformance.slice(0,tb.remainder).map(c=>c.row.team)].slice(0,advance);
       }
-      const groupStandings=(sd.groups||[]).map(g=>computeTeamStandings(g.teams,(g.rounds||[]).flat(),st.standingsRules));
+      const groupStandings=(sd.groups||[]).map(g=>groupPlacementRows(g,sd,st,groupAdvanceTarget(sd,st)));
       const advancing=[];
       const maxRows=Math.max(0,...groupStandings.map(st=>st.length));
       for(let row=0;row<maxRows&&advancing.length<advance;row++){
@@ -2301,10 +2415,10 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
 
       {/* Stage content */}
       {data&&(
-        data.type==="single"?<SingleElimView bracketData={data} statCols={statCols} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)}/>
-        :data.type==="double"?<DoubleElimView bracketData={data} statCols={statCols} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)}/>
+        data.type==="single"?<SingleElimView bracketData={data} qualificationStatus={stageQualificationStatus(data,stages[activeStageIdx],activeStageIdx===stages.length-1)} statCols={statCols} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)}/>
+        :data.type==="double"?<DoubleElimView bracketData={data} qualificationStatus={stageQualificationStatus(data,stages[activeStageIdx],activeStageIdx===stages.length-1)} statCols={statCols} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)}/>
         :data.type==="roundrobin"?<RoundRobinView rrRounds={data.rounds} teams={getStageTeams(activeStageIdx)} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)} onAddTiebreakRound={round=>onStageUpdate(activeStageIdx,d=>({...d,rounds:[...d.rounds,round]}))} matchMode={stages[activeStageIdx]?.matchMode||"wl"} statCols={statCols} standingsRules={stages[activeStageIdx]?.standingsRules}/>
-        :data.type==="groupstage"?<GroupStageView data={data} onStageUpdate={updater=>onStageUpdate(activeStageIdx,updater)} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)} matchMode={stages[activeStageIdx]?.matchMode||"wl"} statCols={statCols} standingsRules={stages[activeStageIdx]?.standingsRules}/>
+        :data.type==="groupstage"?<GroupStageView data={data} stageConfig={stages[activeStageIdx]} onStageUpdate={updater=>onStageUpdate(activeStageIdx,updater)} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)} matchMode={stages[activeStageIdx]?.matchMode||"wl"} statCols={statCols} standingsRules={stages[activeStageIdx]?.standingsRules}/>
         :null
       )}
 
@@ -2547,7 +2661,7 @@ function loadSavedFolders(user=null){
 function dataMatches(data){
   if(!data)return[];
   if(data.type==="roundrobin")return(data.rounds||[]).flat();
-  if(data.type==="groupstage")return(data.groups||[]).flatMap(g=>(g.rounds||[]).flat());
+  if(data.type==="groupstage")return(data.groups||[]).flatMap(groupMatches);
   if(data.type==="single")return[...(data.winners||[]).flat(),...(data.qualificationTiebreaker?.rounds||[]).flat()];
   if(data.type==="double"){
     const propagated=propagateDoubleElim(data);
@@ -2599,7 +2713,9 @@ function projectPlacements(project){
   const teams=data.teams||matchTeams.length&&matchTeams||state.teams||[];
   const standingsRules=state?.formatType==="roundrobin"?state.rrStandingsRules:null;
   if(data.type==="groupstage"){
-    return(data.groups||[]).flatMap(g=>computeTeamStandings(g.teams,(g.rounds||[]).flat(),standingsRules).map(r=>r.team)).filter((t,i,a)=>a.findIndex(x=>x.name===t.name)===i);
+    const stageIdx=state?.formatType==="multi"?Math.max(...Object.keys(state.stageData||{}).map(Number).filter(Number.isFinite)):null;
+    const stageConfig=Number.isFinite(stageIdx)?state.stages?.[stageIdx]||{}:{standingsRules};
+    return(data.groups||[]).flatMap(g=>groupPlacementRows(g,data,stageConfig,groupAdvanceTarget(data,stageConfig)).map(r=>r.team)).filter((t,i,a)=>a.findIndex(x=>x.name===t.name)===i);
   }
   const ranked=computeTeamStandings(teams,matches,standingsRules).map(r=>r.team);
   if(data.type==="single"){
@@ -2651,6 +2767,49 @@ function renameTeamRefs(value,oldName,newName){
   });
   const looksLikeTeam=next.name===oldName&&(Array.isArray(next.players)||"color" in next||"seed" in next||"region" in next||"_qualificationLinkId" in next);
   return looksLikeTeam?{...next,name:newName}:next;
+}
+
+function propagateSingleElimData(data){
+  if(data?.type!=="single"||!data.winners)return data;
+  const sd={...data,winners:data.winners.map(round=>round.map(match=>({...match})))};
+  for(let rIdx=0;rIdx<sd.winners.length-1;rIdx++){
+    for(let mIdx=0;mIdx<sd.winners[rIdx].length;mIdx++){
+      const m=sd.winners[rIdx][mIdx];
+      const w=bracketMatchWinner(m);
+      const nextIdx=Math.floor(mIdx/2);
+      const slot=mIdx%2===0?"teamA":"teamB";
+      if(sd.winners[rIdx+1]?.[nextIdx]){
+        const cur=sd.winners[rIdx+1][nextIdx][slot];
+        if(cur?.name!==(w?.name||null)){
+          sd.winners[rIdx+1]=sd.winners[rIdx+1].map((nm,ni)=>{
+            if(ni!==nextIdx)return nm;
+            const cleared={...nm,[slot]:w};
+            if(cur?.name!==w?.name)cleared.games=cleared.games.map(g=>({...g,winnerName:null,isTie:false,scoreA:"",scoreB:"",gameMvp:null,stats:{}}));
+            return cleared;
+          });
+        }
+      }
+    }
+  }
+  return sd;
+}
+
+function updateMatchInBracketData(data,matchId,updater,stageConfig,isLast=false){
+  if(!data)return data;
+  let sd={...(data.type==="double"?normalizeDoubleElimData(data):data)};
+  if(sd.type==="roundrobin"){
+    sd={...sd,rounds:(sd.rounds||[]).map(r=>r.map(m=>m.id===matchId?updater(m):m))};
+  } else {
+    if(sd.winners)sd.winners=sd.winners.map(r=>r.map(m=>m.id===matchId?updater(m):m));
+    if(sd.losers)sd.losers=sd.losers.map(r=>r.map(m=>m.id===matchId?updater(m):m));
+    if(sd.qualificationTiebreaker?.rounds){
+      sd.qualificationTiebreaker={...sd.qualificationTiebreaker,rounds:sd.qualificationTiebreaker.rounds.map(r=>r.map(m=>m.id===matchId?updater(m):m))};
+    }
+    if(sd.grandFinal?.id===matchId)sd.grandFinal=updater(sd.grandFinal);
+    if(sd.grandFinalReset?.id===matchId)sd.grandFinalReset=updater(sd.grandFinalReset);
+    sd=propagateSingleElimData(sd);
+  }
+  return syncStageQualificationData(sd,stageConfig,isLast);
 }
 
 function loadSavedProjects(user=null){
@@ -2800,6 +2959,13 @@ function allocateAatTeamsByStage(teams,stages){
     cursor+=count;
   }
   return aatTeamsByStage;
+}
+
+function orderStageEntrants(stage,aatTeams=[],carryTeams=[],advancing=[]){
+  const directEntrants=[...carryTeams,...advancing];
+  const aatEntrants=[...aatTeams];
+  const aatStartsLower=stage?.format==="double"&&stage?.splitStart&&aatEntrants.length>0;
+  return aatStartsLower?[...directEntrants,...aatEntrants]:[...aatEntrants,...directEntrants];
 }
 
 function recalcMultiStages(stages){
@@ -3374,40 +3540,12 @@ export default function App(){
     setStageData(prev=>{
       const base=prev[stageIdx];
       let sd={...(base?.type==="double"?normalizeDoubleElimData(base):base)};
-      if(sd.type==="roundrobin")sd.rounds=sd.rounds.map(r=>r.map(m=>m.id===matchId?updater(m):m));
-      else if(sd.type==="groupstage")sd.groups=sd.groups.map(g=>({...g,rounds:g.rounds.map(r=>r.map(m=>m.id===matchId?updater(m):m))}));
-      else{
-        if(sd.winners)sd.winners=sd.winners.map(r=>r.map(m=>m.id===matchId?updater(m):m));
-        if(sd.losers)sd.losers=sd.losers.map(r=>r.map(m=>m.id===matchId?updater(m):m));
-        if(sd.qualificationTiebreaker?.rounds){
-          sd.qualificationTiebreaker={...sd.qualificationTiebreaker,rounds:sd.qualificationTiebreaker.rounds.map(r=>r.map(m=>m.id===matchId?updater(m):m))};
-        }
-        if(sd.grandFinal?.id===matchId)sd.grandFinal=updater(sd.grandFinal);
-        if(sd.grandFinalReset?.id===matchId)sd.grandFinalReset=updater(sd.grandFinalReset);
-        // Propagate single elim (clears stale too)
-        if(sd.type==="single"&&sd.winners){
-          for(let rIdx=0;rIdx<sd.winners.length-1;rIdx++){
-            for(let mIdx=0;mIdx<sd.winners[rIdx].length;mIdx++){
-              const m=sd.winners[rIdx][mIdx];
-              const w=m._autoWinner||matchResult(m).winner||null;
-              const nextIdx=Math.floor(mIdx/2);
-              const slot=mIdx%2===0?"teamA":"teamB";
-              if(sd.winners[rIdx+1]?.[nextIdx]){
-                const cur=sd.winners[rIdx+1][nextIdx][slot];
-                if(cur?.name!==(w?.name||null)){
-                  sd.winners[rIdx+1]=sd.winners[rIdx+1].map((nm,ni)=>{
-                    if(ni!==nextIdx)return nm;
-                    const cleared={...nm,[slot]:w};
-                    if(cur?.name!==w?.name) cleared.games=cleared.games.map(g=>({...g,winnerName:null,isTie:false,scoreA:"",scoreB:"",gameMvp:null,stats:{}}));
-                    return cleared;
-                  });
-                }
-              }
-            }
-          }
-        }
+      if(sd.type==="groupstage"){
+        const groupConfig={...stages[stageIdx],advance:groupAdvanceTarget(sd,stages[stageIdx])};
+        sd={...sd,groups:(sd.groups||[]).map(group=>updateMatchInBracketData(group,matchId,updater,groupConfig,false))};
+      } else {
+        sd=updateMatchInBracketData(sd,matchId,updater,stages[stageIdx],stageIdx===stages.length-1);
       }
-      sd=syncStageQualificationData(sd,stages[stageIdx],stageIdx===stages.length-1);
       return {...prev,[stageIdx]:sd};
     });
   };
@@ -3456,7 +3594,7 @@ export default function App(){
     }
     const aatTeams=stageData[0]?.aatTeamsByStage?.[nextIdx]||(nextIdx===1?stageData[0]?.byeTeams||[]:[]);
     const carryTeams=stageData[fromStageIdx]?.carryTeamsForNext||[];
-    const combined=[...aatTeams,...carryTeams,...advancing].map((tm,i)=>({...tm,seed:i+1}));
+    const combined=orderStageEntrants(st,aatTeams,carryTeams,advancing).map((tm,i)=>({...tm,seed:i+1}));
     const sd=buildStageData(st,combined);
     setStageData(prev=>({...prev,[nextIdx]:sd}));
     setActiveStageIdx(nextIdx);
@@ -3524,7 +3662,7 @@ export default function App(){
               const computedTC=idx===0?(stage.teamCount||teamCount):(stages[idx-1]?.advance||2)+(stage.aat||0);
               const displayStage={...stage,teamCount:computedTC};
               const started=!!stageData[idx];
-              const done=stageQualificationStatus(stageData[idx],stage,idx===stages.length-1).ready;
+              const done=stageData[idx]?.type==="groupstage"?groupStageReady(stageData[idx],stage):stageQualificationStatus(stageData[idx],stage,idx===stages.length-1).ready;
               return(
                 <div key={idx}>
                   <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:done?"#e63946":started?"#b8921a":"#2a9d8f",margin:"0 0 5px 2px"}}>{done?"Done - read only":started?"Started - metrics editable":"Not started - editable"}</div>
@@ -3902,7 +4040,7 @@ export default function App(){
             const getMatchesFromStageData=(sd)=>{
               if(!sd)return[];
               if(sd.type==="roundrobin")return(sd.rounds||[]).flat();
-              if(sd.type==="groupstage")return(sd.groups||[]).flatMap(g=>(g.rounds||[]).flat());
+              if(sd.type==="groupstage")return dataMatches(sd);
               if(sd.type==="single")return[...(sd.winners||[]).flat(),...(sd.qualificationTiebreaker?.rounds||[]).flat()];
               if(sd.type==="double")return dataMatches(sd);
               return[];
