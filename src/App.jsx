@@ -25,6 +25,21 @@ const DEFAULT_STANDINGS_RULES={
   criteria:["points","matchWins","scoreFor","scoreDiff"],
   summary:"Football system. Ranking: Points, Match wins, Pts scored, Pts difference."
 };
+const RR_LEG_MAX=12;
+
+function normalizeRoundRobinLegs(value){
+  const parsed=Math.floor(Number(value));
+  return Math.max(1,Math.min(RR_LEG_MAX,Number.isFinite(parsed)?parsed:1));
+}
+
+function roundRobinBaseRoundCount(teamCount){
+  const count=Math.max(0,Number(teamCount)||0);
+  return count%2===0?Math.max(0,count-1):count;
+}
+
+function roundRobinTotalRounds(teamCount,legs=1){
+  return roundRobinBaseRoundCount(teamCount)*normalizeRoundRobinLegs(legs);
+}
 
 const METRIC_MAIN_OPTIONS=[
   ["matchWins","Match win"],
@@ -608,17 +623,24 @@ function doubleElimFinalState(data){
 }
 
 // ─── Round Robin ──────────────────────────────────────────────────────────────
-function scheduleRoundRobin(teams, gpm, mode) {
+function scheduleRoundRobin(teams, gpm, mode, legs=1) {
   const list=[...teams]; if(list.length%2!==0)list.push(null);
-  const n=list.length,pins=[...list],rounds=[];
-  for(let r=0;r<n-1;r++){
-    const round=[];
-    for(let i=0;i<n/2;i++){
-      const a=pins[i],b=pins[n-1-i];
-      if(a&&b)round.push({...makeMatch(`rr-${r}-${i}`,a,b,gpm,mode),allowTie:true});
+  const n=list.length,rounds=[],legCount=normalizeRoundRobinLegs(legs),baseRounds=Math.max(0,n-1);
+  for(let leg=0;leg<legCount;leg++){
+    const pins=[...list];
+    for(let r=0;r<baseRounds;r++){
+      const round=[];
+      for(let i=0;i<n/2;i++){
+        const a=pins[i],b=pins[n-1-i];
+        if(a&&b){
+          const flip=leg%2===1;
+          const teamA=flip?b:a,teamB=flip?a:b;
+          round.push({...makeMatch(`rr-${leg*baseRounds+r}-${i}`,teamA,teamB,gpm,mode),allowTie:true,leg:leg+1,roundInLeg:r});
+        }
+      }
+      rounds.push(round);
+      const last=pins[n-1];for(let i=n-1;i>1;i--)pins[i]=pins[i-1];pins[1]=last;
     }
-    rounds.push(round);
-    const last=pins[n-1];for(let i=n-1;i>1;i--)pins[i]=pins[i-1];pins[1]=last;
   }
   return rounds;
 }
@@ -658,7 +680,7 @@ function makeGroup(name,teams,idx,gpm,mode,format="roundrobin",stageConfig={}){
     const splitStartCount=splitCountForGroup(stageConfig,teams.length);
     return {...prefixBracketData(generateDoubleElim(teams,gpm,mode,{splitStartCount}),prefix),name,teams};
   }
-  return {name,type:"roundrobin",teams,rounds:prefixMatchIds(scheduleRoundRobin(teams,gpm,mode),prefix)};
+  return {name,type:"roundrobin",teams,rrLegs:normalizeRoundRobinLegs(stageConfig.rrLegs),rounds:prefixMatchIds(scheduleRoundRobin(teams,gpm,mode,stageConfig.rrLegs),prefix)};
 }
 
 function makeSeededGroups(teams, groupCount, gpm, mode, format="roundrobin", stageConfig={}) {
@@ -711,7 +733,7 @@ function makeGroupsFromPools(pools, groupCount, gpm, mode, format="roundrobin", 
 
 function generateGroupStage(teams, groupCount, gpm, mode, format="roundrobin", stageConfig={}) {
   const count=Math.max(2,Math.min(groupCount||2,teams.length));
-  return { type:"groupstage", stageFormat:format, groups:[], teams, groupCount:count, gpm, matchMode:mode, poolChoice:null, pools:[], poolsConfirmed:false, splitStart:!!stageConfig.splitStart, splitStartCount:stageConfig.splitStartCount||0 };
+  return { type:"groupstage", stageFormat:format, groups:[], teams, groupCount:count, gpm, matchMode:mode, rrLegs:normalizeRoundRobinLegs(stageConfig.rrLegs), poolChoice:null, pools:[], poolsConfirmed:false, splitStart:!!stageConfig.splitStart, splitStartCount:stageConfig.splitStartCount||0 };
 }
 
 function buildStageData(stage, teams, extra={}) {
@@ -720,7 +742,7 @@ function buildStageData(stage, teams, extra={}) {
   if(shouldGroup)return {...generateGroupStage(teams,stage.groupCount,gpm,stage.matchMode,stage.format,stage),...extra};
   if(stage.format==="single")return {...generateElim(teams,gpm,stage.matchMode),teams,...extra};
   if(stage.format==="double")return {...generateDoubleElim(teams,gpm,stage.matchMode,{splitStartCount:stage.splitStart?stage.splitStartCount:0}),teams,...extra};
-  return {type:"roundrobin",rounds:scheduleRoundRobin(teams,gpm,stage.matchMode),teams,...extra};
+  return {type:"roundrobin",rrLegs:normalizeRoundRobinLegs(stage.rrLegs),rounds:scheduleRoundRobin(teams,gpm,stage.matchMode,stage.rrLegs),teams,...extra};
 }
 
 function groupMatches(group){
@@ -1558,7 +1580,16 @@ function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
 }
 
 // ─── Standings tables ─────────────────────────────────────────────────────────
-function TeamStandingsTable({teams,matches,title,showScore,standingsRules}){
+function formatStandingValue(value){
+  const num=Number(value)||0;
+  return Number.isInteger(num)?String(num):String(Number(num.toFixed(2)));
+}
+
+function standingRecord(values){
+  return values.map(formatStandingValue).join("-");
+}
+
+function TeamStandingsTable({teams,matches,title,showScore,standingsRules,compactRecords=false}){
   const realMatches=playableMatches(matches);
   const rules=normalizeStandingsRules(standingsRules);
   const st=computeTeamStandings(teams,realMatches,rules);
@@ -1572,27 +1603,56 @@ function TeamStandingsTable({teams,matches,title,showScore,standingsRules}){
       {standingsRules&&<div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:8,fontFamily:"'Barlow',sans-serif"}}>{rules.summary}</div>}
       <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Barlow Condensed',sans-serif"}}>
-          <thead><tr style={{borderBottom:"1.5px solid var(--color-border-tertiary)"}}>
-            {["#","Team","MP","MW",...(showMatchTies?["MT"]:[]),"ML","GW",...(showGameTies?["GT"]:[]),"GL",...(showScore?["SW","SL"]:[]),"Pts"].map(h=><th key={h} style={{padding:"4px 5px",color:"var(--color-text-tertiary)",fontWeight:700,textAlign:h==="Team"?"left":"center",letterSpacing:"0.05em",fontSize:10,whiteSpace:"nowrap"}}>{h}</th>)}
-          </tr></thead>
-          <tbody>{st.map((row,i)=>(
-            <tr key={row.team.name} style={{borderBottom:"0.5px solid var(--color-border-tertiary)",background:i===0&&row.mw>0?"rgba(233,196,106,0.08)":"transparent"}}>
-              <td style={{padding:"5px 5px",textAlign:"center",color:i===0&&row.mw>0?"#e9c46a":"var(--color-text-tertiary)",fontWeight:700,fontSize:11}}>{i+1}</td>
-              <td style={{padding:"5px 5px"}}><div style={{display:"flex",alignItems:"center",gap:4}}><TeamTag name={row.team.name} color={row.team.color} seed={row.team.seed} small/>{row.team.region&&<span style={{fontSize:9,color:"var(--color-text-tertiary)",padding:"1px 4px",borderRadius:3,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",whiteSpace:"nowrap"}}>{regionFlag(row.team.region)&&<span style={{marginRight:2}}>{regionFlag(row.team.region)}</span>}{row.team.region}</span>}</div></td>
-              <td style={{padding:"5px 5px",textAlign:"center",color:"var(--color-text-secondary)"}}>{row.played}</td>
-              <td style={{padding:"5px 5px",textAlign:"center",color:"#2a9d8f",fontWeight:700}}>{row.mw}</td>
-              {showMatchTies&&<td style={{padding:"5px 5px",textAlign:"center",color:"#e9c46a"}}>{row.mt}</td>}
-              <td style={{padding:"5px 5px",textAlign:"center",color:"#e63946"}}>{row.ml}</td>
-              <td style={{padding:"5px 5px",textAlign:"center",color:"#2a9d8f"}}>{row.gw}</td>
-              {showGameTies&&<td style={{padding:"5px 5px",textAlign:"center",color:"#e9c46a"}}>{row.gt}</td>}
-              <td style={{padding:"5px 5px",textAlign:"center",color:"#e63946"}}>{row.gl}</td>
-              {showScore&&<><td style={{padding:"5px 5px",textAlign:"center",color:"#2a9d8f"}}>{row.sw}</td><td style={{padding:"5px 5px",textAlign:"center",color:"#e63946"}}>{row.sl}</td></>}
-              <td style={{padding:"5px 5px",textAlign:"center",fontWeight:800,fontSize:14}}>{row.pts}</td>
-            </tr>
-          ))}</tbody>
+          {compactRecords?(
+            <>
+              <thead><tr style={{borderBottom:"1.5px solid var(--color-border-tertiary)"}}>
+                {[
+                  ["#",""],
+                  ["Team",""],
+                  ["Match","(W-T-L)"],
+                  ["Game","(W-T-L)"],
+                  ["Score","(F-A)"],
+                  ["Points",""]
+                ].map(([h,sub])=><th key={h} style={{padding:"4px 6px",color:"var(--color-text-tertiary)",fontWeight:700,textAlign:h==="Team"?"left":"center",letterSpacing:"0.05em",fontSize:10,whiteSpace:"nowrap"}}>
+                  <span>{h}</span>{sub&&<span style={{display:"block",fontSize:8,fontWeight:600,letterSpacing:"0.04em",color:"var(--color-text-tertiary)"}}>{sub}</span>}
+                </th>)}
+              </tr></thead>
+              <tbody>{st.map((row,i)=>(
+                <tr key={row.team.name} style={{borderBottom:"0.5px solid var(--color-border-tertiary)",background:i===0&&row.played>0?"rgba(233,196,106,0.08)":"transparent"}}>
+                  <td style={{padding:"5px 6px",textAlign:"center",color:i===0&&row.played>0?"#e9c46a":"var(--color-text-tertiary)",fontWeight:700,fontSize:11}}>{i+1}</td>
+                  <td style={{padding:"5px 6px"}}><div style={{display:"flex",alignItems:"center",gap:4}}><TeamTag name={row.team.name} color={row.team.color} seed={row.team.seed} small/>{row.team.region&&<span style={{fontSize:9,color:"var(--color-text-tertiary)",padding:"1px 4px",borderRadius:3,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",whiteSpace:"nowrap"}}>{regionFlag(row.team.region)&&<span style={{marginRight:2}}>{regionFlag(row.team.region)}</span>}{row.team.region}</span>}</div></td>
+                  <td style={{padding:"5px 6px",textAlign:"center",fontWeight:800,color:"var(--color-text-secondary)",fontVariantNumeric:"tabular-nums"}}>{standingRecord([row.mw,row.mt,row.ml])}</td>
+                  <td style={{padding:"5px 6px",textAlign:"center",fontWeight:700,color:"var(--color-text-secondary)",fontVariantNumeric:"tabular-nums"}}>{standingRecord([row.gw,row.gt,row.gl])}</td>
+                  <td style={{padding:"5px 6px",textAlign:"center",color:"var(--color-text-secondary)",fontVariantNumeric:"tabular-nums"}}>{standingRecord([row.sw,row.sl])}</td>
+                  <td style={{padding:"5px 6px",textAlign:"center",fontWeight:800,fontSize:14,fontVariantNumeric:"tabular-nums"}}>{formatStandingValue(row.pts)}</td>
+                </tr>
+              ))}</tbody>
+            </>
+          ):(
+            <>
+              <thead><tr style={{borderBottom:"1.5px solid var(--color-border-tertiary)"}}>
+                {["#","Team","MP","MW",...(showMatchTies?["MT"]:[]),"ML","GW",...(showGameTies?["GT"]:[]),"GL",...(showScore?["SW","SL"]:[]),"Pts"].map(h=><th key={h} style={{padding:"4px 5px",color:"var(--color-text-tertiary)",fontWeight:700,textAlign:h==="Team"?"left":"center",letterSpacing:"0.05em",fontSize:10,whiteSpace:"nowrap"}}>{h}</th>)}
+              </tr></thead>
+              <tbody>{st.map((row,i)=>(
+                <tr key={row.team.name} style={{borderBottom:"0.5px solid var(--color-border-tertiary)",background:i===0&&row.mw>0?"rgba(233,196,106,0.08)":"transparent"}}>
+                  <td style={{padding:"5px 5px",textAlign:"center",color:i===0&&row.mw>0?"#e9c46a":"var(--color-text-tertiary)",fontWeight:700,fontSize:11}}>{i+1}</td>
+                  <td style={{padding:"5px 5px"}}><div style={{display:"flex",alignItems:"center",gap:4}}><TeamTag name={row.team.name} color={row.team.color} seed={row.team.seed} small/>{row.team.region&&<span style={{fontSize:9,color:"var(--color-text-tertiary)",padding:"1px 4px",borderRadius:3,background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",whiteSpace:"nowrap"}}>{regionFlag(row.team.region)&&<span style={{marginRight:2}}>{regionFlag(row.team.region)}</span>}{row.team.region}</span>}</div></td>
+                  <td style={{padding:"5px 5px",textAlign:"center",color:"var(--color-text-secondary)"}}>{row.played}</td>
+                  <td style={{padding:"5px 5px",textAlign:"center",color:"#2a9d8f",fontWeight:700}}>{row.mw}</td>
+                  {showMatchTies&&<td style={{padding:"5px 5px",textAlign:"center",color:"#e9c46a"}}>{row.mt}</td>}
+                  <td style={{padding:"5px 5px",textAlign:"center",color:"#e63946"}}>{row.ml}</td>
+                  <td style={{padding:"5px 5px",textAlign:"center",color:"#2a9d8f"}}>{row.gw}</td>
+                  {showGameTies&&<td style={{padding:"5px 5px",textAlign:"center",color:"#e9c46a"}}>{row.gt}</td>}
+                  <td style={{padding:"5px 5px",textAlign:"center",color:"#e63946"}}>{row.gl}</td>
+                  {showScore&&<><td style={{padding:"5px 5px",textAlign:"center",color:"#2a9d8f"}}>{row.sw}</td><td style={{padding:"5px 5px",textAlign:"center",color:"#e63946"}}>{row.sl}</td></>}
+                  <td style={{padding:"5px 5px",textAlign:"center",fontWeight:800,fontSize:14}}>{row.pts}</td>
+                </tr>
+              ))}</tbody>
+            </>
+          )}
         </table>
       </div>
-      {allDone&&st[0]?.mw>0&&<div style={{marginTop:8,fontSize:12,display:"flex",alignItems:"center",gap:5,fontFamily:"'Barlow Condensed',sans-serif"}}><span style={{color:"#e9c46a"}}>🏆</span><TeamTag name={st[0].team.name} color={st[0].team.color} small/><span style={{color:"var(--color-text-tertiary)"}}>· {st[0].pts} pts</span></div>}
+      {allDone&&st[0]?.played>0&&<div style={{marginTop:8,fontSize:12,display:"flex",alignItems:"center",gap:5,fontFamily:"'Barlow Condensed',sans-serif"}}><span style={{color:"#e9c46a"}}>🏆</span><TeamTag name={st[0].team.name} color={st[0].team.color} small/><span style={{color:"var(--color-text-tertiary)"}}>· {formatStandingValue(st[0].pts)} pts</span></div>}
     </div>
   );
 }
@@ -1876,6 +1936,13 @@ function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreak
   const currentRound=Math.min(activeRound,Math.max(0,total-1));
   const curRound=rrRounds[currentRound]||[];
   const matchesUpToRound=rrRounds.slice(0,currentRound+1).flat();
+  const roundLabel=(round,rIdx)=>{
+    if(round.some(m=>m._tiebreak))return "TB";
+    const sample=round.find(Boolean);
+    if(sample?.leg)return `L${sample.leg} R${(sample.roundInLeg??rIdx)+1}`;
+    return `R${rIdx+1}`;
+  };
+  const currentRoundLabel=roundLabel(curRound,currentRound);
 
   useEffect(()=>{
     if(total>0&&activeRound>=total)setActiveRound(total-1);
@@ -1893,7 +1960,7 @@ function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreak
           const isTiebreak=round.some(m=>m._tiebreak);
           return(
             <button key={rIdx} onClick={()=>setActiveRound(rIdx)} style={{...btn(currentRound===rIdx),padding:"5px 11px",borderRadius:6,cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:12,letterSpacing:"0.05em",textTransform:"uppercase",position:"relative"}}>
-              {isTiebreak?"TB":`R${rIdx+1}`}
+              {isTiebreak?"TB":roundLabel(round,rIdx)}
               <span style={{fontSize:9,display:"block",fontWeight:500,color:"var(--color-text-tertiary)",lineHeight:1}}>{round.length} match{round.length===1?"":"es"}</span>
               {allDone&&<span style={{position:"absolute",top:-4,right:-4,width:8,height:8,borderRadius:"50%",background:"#2a9d8f",border:"1.5px solid var(--color-background-primary)"}}/>}
             </button>
@@ -1909,7 +1976,7 @@ function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreak
 
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
         <div style={{fontFamily:"'Barlow Condensed',sans-serif"}}>
-          <span style={{fontSize:17,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",color:"var(--color-text-primary)"}}>{curRound.some(m=>m._tiebreak)?"Tiebreaker Round":`Round ${currentRound+1}`}</span>
+          <span style={{fontSize:17,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",color:"var(--color-text-primary)"}}>{curRound.some(m=>m._tiebreak)?"Tiebreaker Round":currentRoundLabel}</span>
           <span style={{fontSize:12,color:"var(--color-text-tertiary)",marginLeft:10}}>{curRound.length} match{curRound.length===1?"":"es"}</span>
         </div>
         <button onClick={()=>setShowPlayers(p=>!p)} style={{...btn(showPlayers),padding:"4px 10px"}}>
@@ -1919,15 +1986,15 @@ function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreak
 
       <BracketCanvas style={{padding:"16px 14px 2px"}}>
         <div style={{marginBottom:20}}>
-          <div style={{fontSize:11,fontWeight:700,color:"var(--color-text-tertiary)",letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:8,fontFamily:"'Barlow Condensed',sans-serif"}}>{curRound.some(m=>m._tiebreak)?"Tiebreaker Round":`Round ${currentRound+1}`}</div>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--color-text-tertiary)",letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:8,fontFamily:"'Barlow Condensed',sans-serif"}}>{curRound.some(m=>m._tiebreak)?"Tiebreaker Round":currentRoundLabel}</div>
           <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>{curRound.map(m=><MatchCard key={m.id} match={m} statCols={statCols} onGameUpdate={(gi,upd)=>onGameUpdate(m.id,gi,upd)} onMatchUpdate={upd=>onMatchUpdate(m.id,upd)}/>)}</div>
         </div>
       </BracketCanvas>
 
       <div style={{marginTop:24}}>
         {!showPlayers
-          ?<TeamStandingsTable teams={teams} matches={matchesUpToRound} title={`Team Standings — through Round ${currentRound+1}`} showScore={matchMode==="score"} standingsRules={standingsRules}/>
-          :<PlayerStandingsTable teams={teams} matches={matchesUpToRound} statCols={statCols} title={`Player Standings — through Round ${currentRound+1}`} sortBy={playerSort} onSortBy={setPlayerSort}/>}
+          ?<TeamStandingsTable teams={teams} matches={matchesUpToRound} title={`Team Standings — through ${currentRoundLabel}`} showScore={matchMode==="score"} standingsRules={standingsRules} compactRecords/>
+          :<PlayerStandingsTable teams={teams} matches={matchesUpToRound} statCols={statCols} title={`Player Standings — through ${currentRoundLabel}`} sortBy={playerSort} onSortBy={setPlayerSort}/>}
       </div>
     </div>
   );
@@ -2034,7 +2101,7 @@ function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,matchMode
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12,marginTop:20}}>
         {groups.map(g=>(
-          <TeamStandingsTable key={g.name} teams={g.teams} matches={groupMatches(g)} title={`${g.name} Standings`} showScore={matchMode==="score"} standingsRules={standingsRules}/>
+          <TeamStandingsTable key={g.name} teams={g.teams} matches={groupMatches(g)} title={`${g.name} Standings`} showScore={matchMode==="score"} standingsRules={standingsRules} compactRecords={g.type==="roundrobin"}/>
         ))}
       </div>
     </div>
@@ -2287,6 +2354,7 @@ function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=
   const disabledStyle={opacity:0.45,cursor:"not-allowed"};
   const splitMax=Math.max(1,Math.floor(teamCount/2));
   const splitCount=Math.max(1,Math.min(splitMax,stage.splitStartCount||Math.max(1,Math.floor(teamCount/4))));
+  const rrLegCount=normalizeRoundRobinLegs(stage.rrLegs);
 
   return(
     <div style={{background:"var(--color-background-secondary)",borderRadius:10,border:"1px solid var(--color-border-tertiary)",overflow:"hidden",opacity:locked?0.88:1}}>
@@ -2309,6 +2377,10 @@ function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=
 
       {stage.format==="roundrobin"&&(
         <div style={{padding:"10px 14px 0",borderBottom:"0.5px solid var(--color-border-tertiary)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10}}>
+            <Stepper label="Legs" value={rrLegCount} min={1} max={RR_LEG_MAX} onChange={v=>onChange({...stage,rrLegs:v})} small disabled={controlDisabled}/>
+            <span style={{fontSize:10,color:"var(--color-text-tertiary)"}}>each pair plays {rrLegCount} time{rrLegCount===1?"":"s"} · {roundRobinTotalRounds(teamCount,rrLegCount)} rounds</span>
+          </div>
           <StandingsRulesEditor rules={stage.standingsRules} onChange={standingsRules=>onChange({...stage,standingsRules})} disabled={metricRulesLocked}/>
         </div>
       )}
@@ -3342,6 +3414,7 @@ export default function App(){
   const[teamCount,setTeamCount]=useState(8);
   const[matchMode,setMatchMode]=useState("wl");
   const[gamesPerMatch,setGamesPerMatch]=useState(1);
+  const[rrLegs,setRrLegs]=useState(1);
   const[rrStandingsRules,setRrStandingsRules]=useState(DEFAULT_STANDINGS_RULES);
   const[statCols,setStatCols]=useState(["Score"]);
   const[teams,setTeams]=useState([]);
@@ -3389,7 +3462,7 @@ export default function App(){
   const isRR=formatType==="roundrobin";
   const isDE=formatType==="double";
   const isMulti=formatType==="multi";
-  const rrTotalRounds=teamCount%2===0?teamCount-1:teamCount;
+  const rrTotalRounds=roundRobinTotalRounds(teamCount,rrLegs);
   const teamsWithSeed=materializeTeams(teams,qualificationLinks,savedProjects,teamCount);
   const unresolvedQualificationLinks=qualificationLinks.filter(link=>!resolveQualificationLink(link,savedProjects).team);
   const currentFolder=savedFolders.find(f=>f.id===currentFolderId)||null;
@@ -3518,7 +3591,7 @@ export default function App(){
 
   useEffect(()=>{
     if(step!=="bracket"||!currentProjectId)return;
-    const state={step,formatType,teamCount,matchMode,gamesPerMatch,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks};
+    const state={step,formatType,teamCount,matchMode,gamesPerMatch,rrLegs,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks};
     const hasBracket=isMulti?Object.keys(stageData||{}).length>0:isRR?rrRounds.length>0:!!bracketData;
     if(!hasBracket)return;
     const updatedAt=new Date().toISOString();
@@ -3529,7 +3602,7 @@ export default function App(){
       return [project,...others].slice(0,20);
     });
     setLastSavedAt(new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}));
-  },[step,currentProjectId,currentFolderId,formatType,teamCount,matchMode,gamesPerMatch,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks,isMulti,isRR]);
+  },[step,currentProjectId,currentFolderId,formatType,teamCount,matchMode,gamesPerMatch,rrLegs,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks,isMulti,isRR]);
 
   useEffect(()=>{
     if(step!=="bracket"||!qualificationLinks.length)return;
@@ -3554,6 +3627,7 @@ export default function App(){
     setTeamCount(s.teamCount||8);
     setMatchMode(s.matchMode||"wl");
     setGamesPerMatch(s.gamesPerMatch||1);
+    setRrLegs(normalizeRoundRobinLegs(s.rrLegs));
     setRrStandingsRules(normalizeStandingsRules(s.rrStandingsRules));
     setStatCols(s.statCols||["Score"]);
     setTeams(s.teams||[]);
@@ -3714,7 +3788,7 @@ export default function App(){
     if(folderImportRef.current)folderImportRef.current.value="";
   };
 
-  const goHome=()=>{setCurrentProjectId(null);setLastSavedAt(null);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setPlacementTiebreaks([]);setBracketTab("tournament");};
+  const goHome=()=>{setCurrentProjectId(null);setLastSavedAt(null);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setRrLegs(1);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setPlacementTiebreaks([]);setBracketTab("tournament");};
 
   const deleteProject=async(project)=>{
     if(!window.confirm(`Delete "${project.name}"? This cannot be undone.`))return;
@@ -3787,11 +3861,11 @@ export default function App(){
     setPlacementTiebreaks(prev=>prev.length?renameTeamRefs(prev,oldName,name):prev);
   };
 
-  const rebuildNonMultiBracket=(nextFormat,nextMode,nextGames)=>{
+  const rebuildNonMultiBracket=(nextFormat,nextMode,nextGames,nextLegs=rrLegs)=>{
     const g=nextMode==="wl"?1:nextGames;
     const t=teamsWithSeed;
     if(nextFormat==="roundrobin"){
-      setRrRounds(scheduleRoundRobin(t,g,nextMode));
+      setRrRounds(scheduleRoundRobin(t,g,nextMode,nextLegs));
       setBracketData(null);
     } else if(nextFormat==="double"){
       setBracketData(generateDoubleElim(t,g,nextMode));
@@ -3811,10 +3885,12 @@ export default function App(){
     const nextFormat=updates.formatType||formatType;
     const nextMode=updates.matchMode||matchMode;
     const nextGames=nextMode==="wl"?1:(updates.gamesPerMatch||gamesPerMatch||3);
+    const nextLegs=normalizeRoundRobinLegs(updates.rrLegs??rrLegs);
     if(updates.formatType)setFormatType(updates.formatType);
     if(updates.matchMode)setMatchMode(updates.matchMode);
     if(updates.gamesPerMatch)setGamesPerMatch(updates.gamesPerMatch);
-    rebuildNonMultiBracket(nextFormat,nextMode,nextGames);
+    if(updates.rrLegs!=null)setRrLegs(nextLegs);
+    rebuildNonMultiBracket(nextFormat,nextMode,nextGames,nextLegs);
   };
 
   const updateStageConfigFromSettings=(idx,updated)=>{
@@ -3848,7 +3924,7 @@ export default function App(){
       const sg0Seeded=sg0Teams.map((tm,i)=>({...tm,seed:i+1}));
       const sd=buildStageData(s0,sg0Seeded,{aatTeamsByStage});
       setStageData({0:sd});setActiveStageIdx(0);
-    } else if(isRR){setRrRounds(scheduleRoundRobin(t,effectiveGames,matchMode));}
+    } else if(isRR){setRrRounds(scheduleRoundRobin(t,effectiveGames,matchMode,rrLegs));}
     else if(isDE){setBracketData(generateDoubleElim(t,effectiveGames,matchMode));}
     else{setBracketData(generateElim(t,effectiveGames,matchMode));}
     setStep("bracket");
@@ -3929,7 +4005,7 @@ export default function App(){
     if(tb&&(fromStage.tiebreakMode||"performance")==="stage"){
       const candidates=tb.candidates.map(c=>c.row.team);
       const tiebreakFormat=fromStage.tiebreakStageFormat||"roundrobin";
-      const tiebreakStage={format:tiebreakFormat,teamCount:candidates.length,aat:0,matchMode:fromStage.matchMode,gamesPerMatch:fromStage.gamesPerMatch,advance:tb.remainder,isTiebreak:true};
+      const tiebreakStage={format:tiebreakFormat,teamCount:candidates.length,aat:0,matchMode:fromStage.matchMode,gamesPerMatch:fromStage.gamesPerMatch,rrLegs:fromStage.rrLegs||1,advance:tb.remainder,isTiebreak:true};
       const tiebreakData=buildStageData(tiebreakStage,candidates,{carryTeamsForNext:advancing});
       setStages(prev=>[...prev.slice(0,nextIdx),tiebreakStage,...prev.slice(nextIdx)]);
       setStageData(prev=>{
@@ -3973,7 +4049,7 @@ export default function App(){
     });
   };
 
-  const reset=()=>{if(typeof window!=="undefined")window.localStorage.removeItem(STORAGE_KEY);setCurrentProjectId(null);setLastSavedAt(null);setSaveError(false);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setPlacementTiebreaks([]);setBracketTab("tournament");};
+  const reset=()=>{if(typeof window!=="undefined")window.localStorage.removeItem(STORAGE_KEY);setCurrentProjectId(null);setLastSavedAt(null);setSaveError(false);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setRrLegs(1);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setPlacementTiebreaks([]);setBracketTab("tournament");};
 
   const allBracketTeams=isRR?teamsWithSeed:(bracketData?teamsWithSeed:[]);
   const allBracketMatches=playableMatches(isRR?rrRounds.flat():bracketData?dataMatches(bracketData):[]);
@@ -3981,7 +4057,7 @@ export default function App(){
   const authHint=supabaseConfigured
     ?"Projects sync online with Supabase after you log in."
     :"Local browser mode. Add Supabase env vars in Vercel for real online accounts.";
-  const liveTournamentState={step,formatType,teamCount,matchMode,gamesPerMatch,rrStandingsRules,statCols,teams:teamsWithSeed,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks};
+  const liveTournamentState={step,formatType,teamCount,matchMode,gamesPerMatch,rrLegs,rrStandingsRules,statCols,teams:teamsWithSeed,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks};
   const currentTournamentComplete=step==="bracket"&&tournamentIsComplete(liveTournamentState);
   const canEndTournament=currentTournamentComplete&&!tournamentEnded;
 
@@ -4133,7 +4209,10 @@ export default function App(){
           <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
             <Stepper label="Teams" value={teamCount} min={teamCount} max={teamCount} onChange={()=>{}} disabled/>
             <span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>Participant count is locked after bracket generation.</span>
-            {formatType==="roundrobin"&&<span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>{rrTotalRounds} rounds total</span>}
+            {formatType==="roundrobin"&&<>
+              <Stepper label="Legs" value={normalizeRoundRobinLegs(rrLegs)} min={1} max={RR_LEG_MAX} onChange={v=>updateNonMultiSettings({rrLegs:v})} small disabled={nonMultiSettingsLocked}/>
+              <span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>{rrTotalRounds} rounds total · each pair plays {normalizeRoundRobinLegs(rrLegs)} time{normalizeRoundRobinLegs(rrLegs)===1?"":"s"}</span>
+            </>}
           </div>
           <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:10}}>Match Format</div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
@@ -4246,7 +4325,7 @@ export default function App(){
             <p style={{margin:"4px 0 0",fontSize:13,color:"var(--color-text-tertiary)",fontFamily:"'Barlow',sans-serif"}}>
               {step==="setup"&&"Choose your format and match settings"}
               {step==="teams"&&`Seed your teams · ${teamsWithSeed.length}/${isMulti?stages[0].teamCount:teamCount} added`}
-              {step==="bracket"&&!isMulti&&`${formatType==="single"?"Single Elim":formatType==="double"?"Double Elim":"Round Robin"} · ${teamsWithSeed.length} teams · ${matchMode==="wl"?"Win/Lose":matchMode==="games"?`Best of ${gamesPerMatch}`:`Score`}`}
+              {step==="bracket"&&!isMulti&&`${formatType==="single"?"Single Elim":formatType==="double"?"Double Elim":"Round Robin"} · ${teamsWithSeed.length} teams · ${matchMode==="wl"?"Win/Lose":matchMode==="games"?`Best of ${gamesPerMatch}`:`Score`}${isRR?` · ${normalizeRoundRobinLegs(rrLegs)} leg${normalizeRoundRobinLegs(rrLegs)===1?"":"s"}`:""}`}
               {step==="bracket"&&isMulti&&`Multi-Stage · ${stages.length} stages · ${teamsWithSeed.length} teams`}
             </p>
           </div>
@@ -4343,7 +4422,11 @@ export default function App(){
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,padding:"14px 18px",background:"var(--color-background-secondary)",borderRadius:10,border:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap"}}>
               <Stepper label="Teams" value={teamCount} min={3} max={64} onChange={setTeamCount}/>
               {(formatType==="single"||formatType==="double")&&(()=>{let sz=1;while(sz<teamCount)sz*=2;const b=sz-teamCount;return b>0?<span style={{fontSize:12,color:"var(--color-text-tertiary)"}}>Bracket: {sz} · {b} bye{b!==1?"s":""} (top seeds)</span>:null;})()}
-              {formatType==="roundrobin"&&<><div style={{width:1,height:28,background:"var(--color-border-tertiary)"}}/><span style={{fontSize:12,color:"var(--color-text-tertiary)"}}>{rrTotalRounds} rounds total</span></>}
+              {formatType==="roundrobin"&&<>
+                <div style={{width:1,height:28,background:"var(--color-border-tertiary)"}}/>
+                <Stepper label="Legs" value={rrLegs} min={1} max={RR_LEG_MAX} onChange={setRrLegs}/>
+                <span style={{fontSize:12,color:"var(--color-text-tertiary)"}}>{rrTotalRounds} rounds total · each pair plays {normalizeRoundRobinLegs(rrLegs)} time{normalizeRoundRobinLegs(rrLegs)===1?"":"s"}</span>
+              </>}
             </div>
             <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:12}}>Match Format</div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
@@ -4407,7 +4490,7 @@ export default function App(){
               })}
               {stages.length<6&&<button onClick={()=>{
                 const lastAdv=stages[stages.length-1]?.advance||2;
-                updateMultiStages(p=>[...p,{format:"roundrobin",teamCount:lastAdv,aat:0,matchMode:"wl",gamesPerMatch:1,advance:Math.max(1,Math.floor(lastAdv/2))}]);
+                updateMultiStages(p=>[...p,{format:"roundrobin",teamCount:lastAdv,aat:0,matchMode:"wl",gamesPerMatch:1,rrLegs:1,advance:Math.max(1,Math.floor(lastAdv/2))}]);
               }} style={{padding:"8px 16px",borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:13,textTransform:"uppercase",letterSpacing:"0.05em",background:"var(--color-background-secondary)",color:"var(--color-text-secondary)",border:"1px dashed var(--color-border-tertiary)",cursor:"pointer"}}>+ Add Stage</button>}
             </div>
             <button onClick={()=>setStep("teams")} style={{padding:"10px 28px",borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,letterSpacing:"0.07em",textTransform:"uppercase",background:"#e9c46a",color:"#2c2c00",border:"none",cursor:"pointer",marginTop:8}}>Continue →</button>
