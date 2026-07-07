@@ -341,6 +341,14 @@ function matchIsComplete(match){
   return (match.games||[]).length>0&&(match.games||[]).every(g=>g.winnerName||g.isTie);
 }
 
+function clearMatchResult(match){
+  return {
+    ...match,
+    mvp:null,
+    games:(match.games||[]).map(g=>({...g,winnerName:null,isTie:false,scoreA:"",scoreB:"",gameMvp:null,stats:{}}))
+  };
+}
+
 function matchAllowsTie(match){
   return !!match?.allowTie||/(?:^|-)rr-\d+-\d+$/.test(match?.id||"");
 }
@@ -1701,6 +1709,50 @@ function ElimBracket({rounds,onGameUpdate,onMatchUpdate,statCols,labelPrefix}){
   );
 }
 
+function PlacementTiebreakView({tiebreak,onGameUpdate,onMatchUpdate,statCols}){
+  const synced=syncPlacementTiebreak(tiebreak);
+  const finalTeams=placementTiebreakFinalTeams(synced);
+  return(
+    <div style={{border:"1px solid rgba(42,157,143,0.35)",borderRadius:10,background:"rgba(42,157,143,0.045)",padding:"12px 14px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+        <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"#2a9d8f"}}>Placement Bracket · Rank {resultRankLabel(synced)}</div>
+        {finalTeams&&<span style={{fontSize:11,fontWeight:800,color:"#b8921a",letterSpacing:"0.07em",textTransform:"uppercase"}}>Applied</span>}
+      </div>
+      <BracketCanvas style={{overflowX:"auto",padding:"12px 8px 14px",borderRadius:8}}>
+        <div style={{display:"flex",gap:18,alignItems:"flex-start",minWidth:"max-content"}}>
+          {(synced.rounds||[]).map((round,rIdx)=>(
+            <div key={rIdx} style={{width:230,flexShrink:0}}>
+              <div style={{fontSize:9,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:8}}>Placement R{rIdx+1}</div>
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                {round.map(match=>(
+                  <MatchCard
+                    key={match.id}
+                    match={match}
+                    statCols={statCols}
+                    accentLabel={match.teamA&&match.teamB?"Placement":"Waiting"}
+                    onGameUpdate={(gi,upd)=>onGameUpdate(match.id,gi,upd)}
+                    onMatchUpdate={upd=>onMatchUpdate(match.id,upd)}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </BracketCanvas>
+      {finalTeams&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:6,marginTop:10}}>
+          {finalTeams.map((team,idx)=>(
+            <div key={team.name} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",borderRadius:7,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-primary)"}}>
+              <span style={{fontSize:11,fontWeight:800,color:"#2a9d8f",fontFamily:"'Barlow Condensed',sans-serif"}}>Place {synced.rankFrom+idx}</span>
+              <TeamTag name={team.name} color={team.color} seed={team.seed} small/>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SingleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualificationStatus=null}){
   const[showFull,setShowFull]=useState(false);
   const{winners}=bracketData;
@@ -2870,6 +2922,136 @@ function resultPlacementsFromState(state){
   return resultPlacementsFromGroups(standingsResultGroups(teamsFromData(data,state),dataMatches(data),standingsRules));
 }
 
+function finalMatchConfigForState(state){
+  const data=finalProjectData(state);
+  const match=dataMatches(data).find(m=>m?.matchMode||m?.games?.length);
+  const stage=finalStageConfig(state);
+  const mode=match?.matchMode||stage?.matchMode||state?.matchMode||"wl";
+  const gpm=match?.games?.length||(mode==="wl"?1:(stage?.gamesPerMatch||state?.gamesPerMatch||1));
+  return {gpm,mode};
+}
+
+function placementTiebreakKey(rankFrom,rankTo){
+  return `${rankFrom}-${rankTo}`;
+}
+
+function addPlacementPlanMatch(ctx,roundIdx,sourceA,sourceB){
+  const id=`${ctx.prefix}-m${ctx.matchIndex++}`;
+  const match={...makeMatch(id,null,null,ctx.gpm,ctx.mode),_placementMatch:true,_sourceA:sourceA,_sourceB:sourceB};
+  if(!ctx.rounds[roundIdx])ctx.rounds[roundIdx]=[];
+  ctx.rounds[roundIdx].push(match);
+  return id;
+}
+
+function buildPlacementPlan(sources,ctx,roundIdx=0){
+  if(sources.length<=1)return sources;
+  if(sources.length===2){
+    const id=addPlacementPlanMatch(ctx,roundIdx,sources[0],sources[1]);
+    return [{kind:"winner",matchId:id},{kind:"loser",matchId:id}];
+  }
+  let size=1;
+  while(size<sources.length)size*=2;
+  const slots=buildSeededSlots(size).map(seed=>seed<=sources.length?sources[seed-1]:null);
+  const winners=[],losers=[];
+  for(let idx=0;idx<size;idx+=2){
+    const sourceA=slots[idx],sourceB=slots[idx+1];
+    if(sourceA&&sourceB){
+      const id=addPlacementPlanMatch(ctx,roundIdx,sourceA,sourceB);
+      winners.push({kind:"winner",matchId:id});
+      losers.push({kind:"loser",matchId:id});
+    } else if(sourceA||sourceB){
+      winners.push(sourceA||sourceB);
+    }
+  }
+  return [
+    ...buildPlacementPlan(winners,ctx,roundIdx+1),
+    ...buildPlacementPlan(losers,ctx,roundIdx+1)
+  ];
+}
+
+function resolvePlacementSource(source,tiebreak,matchMap){
+  if(!source)return null;
+  if(source.kind==="team")return tiebreak.teams?.[source.index]||null;
+  const match=matchMap.get(source.matchId);
+  if(source.kind==="winner")return bracketMatchWinner(match);
+  if(source.kind==="loser")return bracketMatchLoser(match);
+  return null;
+}
+
+function syncPlacementTiebreak(tiebreak){
+  if(!tiebreak?.rounds)return tiebreak;
+  const gpm=tiebreak.gamesPerMatch||1;
+  const mode=tiebreak.matchMode||"wl";
+  const matchMap=new Map((tiebreak.rounds||[]).flat().map(match=>[match.id,{...match}]));
+  const rounds=(tiebreak.rounds||[]).map(round=>round.map(match=>{
+    let next={...match,matchMode:mode,games:adjGames(match,gpm).games};
+    const teamA=resolvePlacementSource(next._sourceA,tiebreak,matchMap);
+    const teamB=resolvePlacementSource(next._sourceB,tiebreak,matchMap);
+    const changed=!sameTeam(next.teamA,teamA)||!sameTeam(next.teamB,teamB);
+    next=changed?clearMatchResult({...next,teamA,teamB}):{...next,teamA,teamB};
+    matchMap.set(next.id,next);
+    return next;
+  }));
+  return {...tiebreak,rounds};
+}
+
+function buildPlacementTiebreak(rankFrom,rankTo,teams,matchConfig){
+  const cleanTeams=uniqueTeams(teams).filter(Boolean);
+  const key=placementTiebreakKey(rankFrom,rankTo);
+  const prefix=`ptb-${key}-${Date.now()}`;
+  const ctx={prefix,rounds:[],matchIndex:0,gpm:matchConfig.gpm||1,mode:matchConfig.mode||"wl"};
+  const placementSources=buildPlacementPlan(cleanTeams.map((_,index)=>({kind:"team",index})),ctx,0);
+  return syncPlacementTiebreak({
+    type:"placement",
+    id:prefix,
+    key,
+    rankFrom,
+    rankTo,
+    teams:cleanTeams,
+    placementSources,
+    rounds:ctx.rounds.filter(Boolean),
+    gamesPerMatch:ctx.gpm,
+    matchMode:ctx.mode
+  });
+}
+
+function placementTiebreakFinalTeams(tiebreak){
+  const synced=syncPlacementTiebreak(tiebreak);
+  const matchMap=new Map((synced?.rounds||[]).flat().map(match=>[match.id,match]));
+  const finalTeams=(synced?.placementSources||[]).map(source=>resolvePlacementSource(source,synced,matchMap));
+  if(!finalTeams.length||finalTeams.some(team=>!team))return null;
+  const unique=uniqueTeams(finalTeams);
+  return unique.length===(synced.teams||[]).length?unique:null;
+}
+
+function applyPlacementTiebreakToPlacements(placements,tiebreak){
+  const finalTeams=placementTiebreakFinalTeams(tiebreak);
+  if(!finalTeams)return placements;
+  const from=Number(tiebreak.rankFrom),to=Number(tiebreak.rankTo);
+  let indexes=placements.map((item,idx)=>item.rankFrom===from&&item.rankTo===to?idx:-1).filter(idx=>idx>=0);
+  if(!indexes.length){
+    indexes=placements.map((item,idx)=>item.rankFrom===item.rankTo&&item.rankFrom>=from&&item.rankTo<=to?idx:-1).filter(idx=>idx>=0);
+  }
+  if(indexes.length!==finalTeams.length)return placements;
+  const allowed=new Set(indexes.map(idx=>teamName(placements[idx].team)));
+  const ordered=finalTeams.filter(team=>allowed.has(teamName(team)));
+  if(ordered.length!==indexes.length)return placements;
+  let changed=false;
+  const next=[...placements];
+  indexes.forEach((idx,offset)=>{
+    const rank=from+offset;
+    const current=next[idx];
+    const team=ordered[offset];
+    if(teamName(current.team)!==teamName(team)||current.rankFrom!==rank||current.rankTo!==rank)changed=true;
+    next[idx]={...current,team,rankFrom:rank,rankTo:rank};
+  });
+  return changed?next:placements;
+}
+
+function applyPlacementTiebreaksToPlacements(placements,tiebreaks){
+  return (tiebreaks||[]).reduce((next,tiebreak)=>applyPlacementTiebreakToPlacements(next,tiebreak),placements);
+}
+
 function projectPlacements(project){
   const state=project?.state,data=finalProjectData(state);if(!data)return[];
   if(state?.tournamentEnded&&Array.isArray(state.resultPlacements)&&state.resultPlacements.length){
@@ -3188,6 +3370,7 @@ export default function App(){
   const[bracketTab,setBracketTab]=useState("tournament");
   const[tournamentEnded,setTournamentEnded]=useState(false);
   const[resultPlacements,setResultPlacements]=useState([]);
+  const[placementTiebreaks,setPlacementTiebreaks]=useState([]);
   const[currentFolderId,setCurrentFolderId]=useState(null);
   const[folderNameInput,setFolderNameInput]=useState("");
   const[currentProjectId,setCurrentProjectId]=useState(null);
@@ -3335,7 +3518,7 @@ export default function App(){
 
   useEffect(()=>{
     if(step!=="bracket"||!currentProjectId)return;
-    const state={step,formatType,teamCount,matchMode,gamesPerMatch,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements};
+    const state={step,formatType,teamCount,matchMode,gamesPerMatch,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks};
     const hasBracket=isMulti?Object.keys(stageData||{}).length>0:isRR?rrRounds.length>0:!!bracketData;
     if(!hasBracket)return;
     const updatedAt=new Date().toISOString();
@@ -3346,7 +3529,7 @@ export default function App(){
       return [project,...others].slice(0,20);
     });
     setLastSavedAt(new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}));
-  },[step,currentProjectId,currentFolderId,formatType,teamCount,matchMode,gamesPerMatch,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,isMulti,isRR]);
+  },[step,currentProjectId,currentFolderId,formatType,teamCount,matchMode,gamesPerMatch,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks,isMulti,isRR]);
 
   useEffect(()=>{
     if(step!=="bracket"||!qualificationLinks.length)return;
@@ -3359,6 +3542,7 @@ export default function App(){
     setRrRounds(prev=>prev.length?rebindQualifiedTeams(prev,resolvedById):prev);
     setStageData(prev=>Object.keys(prev).length?rebindQualifiedTeams(prev,resolvedById):prev);
     setResultPlacements(prev=>prev.length?rebindQualifiedTeams(prev,resolvedById):prev);
+    setPlacementTiebreaks(prev=>prev.length?rebindQualifiedTeams(prev,resolvedById):prev);
   },[step,qualificationLinks,savedProjects]);
 
   const loadProject=(project)=>{
@@ -3388,6 +3572,7 @@ export default function App(){
     setProjectName(s.projectName||project.name||projectNameFromState(s));
     setTournamentEnded(!!s.tournamentEnded);
     setResultPlacements(Array.isArray(s.resultPlacements)&&s.resultPlacements.length?s.resultPlacements:s.tournamentEnded?resultPlacementsFromState(s):[]);
+    setPlacementTiebreaks(Array.isArray(s.placementTiebreaks)?s.placementTiebreaks.map(syncPlacementTiebreak):[]);
     setBracketTab("tournament");
     setCurrentFolderId(project.shared?null:project.folderId||null);
     setLastSavedAt(new Date(project.updatedAt||Date.now()).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}));
@@ -3529,7 +3714,7 @@ export default function App(){
     if(folderImportRef.current)folderImportRef.current.value="";
   };
 
-  const goHome=()=>{setCurrentProjectId(null);setLastSavedAt(null);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setBracketTab("tournament");};
+  const goHome=()=>{setCurrentProjectId(null);setLastSavedAt(null);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setPlacementTiebreaks([]);setBracketTab("tournament");};
 
   const deleteProject=async(project)=>{
     if(!window.confirm(`Delete "${project.name}"? This cannot be undone.`))return;
@@ -3599,6 +3784,7 @@ export default function App(){
     setRrRounds(prev=>prev.length?renameTeamRefs(prev,oldName,name):prev);
     setStageData(prev=>Object.keys(prev||{}).length?renameTeamRefs(prev,oldName,name):prev);
     setResultPlacements(prev=>prev.length?renameTeamRefs(prev,oldName,name):prev);
+    setPlacementTiebreaks(prev=>prev.length?renameTeamRefs(prev,oldName,name):prev);
   };
 
   const rebuildNonMultiBracket=(nextFormat,nextMode,nextGames)=>{
@@ -3649,6 +3835,7 @@ export default function App(){
     setBracketTab("tournament");
     setTournamentEnded(false);
     setResultPlacements([]);
+    setPlacementTiebreaks([]);
     if(currentFolderId)setSavedFolders(prev=>prev.map(f=>f.id===currentFolderId?{...f,projectIds:[projectId,...(f.projectIds||[]).filter(id=>id!==projectId)],updatedAt:new Date().toISOString()}:f));
     setShowAwards(true);
     const t=teamsWithSeed;
@@ -3786,7 +3973,7 @@ export default function App(){
     });
   };
 
-  const reset=()=>{if(typeof window!=="undefined")window.localStorage.removeItem(STORAGE_KEY);setCurrentProjectId(null);setLastSavedAt(null);setSaveError(false);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setBracketTab("tournament");};
+  const reset=()=>{if(typeof window!=="undefined")window.localStorage.removeItem(STORAGE_KEY);setCurrentProjectId(null);setLastSavedAt(null);setSaveError(false);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setPlacementTiebreaks([]);setBracketTab("tournament");};
 
   const allBracketTeams=isRR?teamsWithSeed:(bracketData?teamsWithSeed:[]);
   const allBracketMatches=playableMatches(isRR?rrRounds.flat():bracketData?dataMatches(bracketData):[]);
@@ -3794,7 +3981,7 @@ export default function App(){
   const authHint=supabaseConfigured
     ?"Projects sync online with Supabase after you log in."
     :"Local browser mode. Add Supabase env vars in Vercel for real online accounts.";
-  const liveTournamentState={step,formatType,teamCount,matchMode,gamesPerMatch,rrStandingsRules,statCols,teams:teamsWithSeed,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements};
+  const liveTournamentState={step,formatType,teamCount,matchMode,gamesPerMatch,rrStandingsRules,statCols,teams:teamsWithSeed,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks};
   const currentTournamentComplete=step==="bracket"&&tournamentIsComplete(liveTournamentState);
   const canEndTournament=currentTournamentComplete&&!tournamentEnded;
 
@@ -3802,6 +3989,7 @@ export default function App(){
     const placements=resultPlacementsFromState(liveTournamentState);
     if(!placements.length)return;
     setResultPlacements(placements);
+    setPlacementTiebreaks([]);
     setTournamentEnded(true);
     setBracketTab("result");
   };
@@ -3817,34 +4005,116 @@ export default function App(){
     });
   };
 
-  const renderResultTab=()=>(
-    <div style={{display:"flex",flexDirection:"column",gap:14}}>
-      <div style={{padding:"14px 16px",borderRadius:10,border:"1px solid rgba(233,196,106,0.45)",background:"rgba(233,196,106,0.07)"}}>
-        <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"#b8921a",marginBottom:8}}>Winner</div>
-        {resultPlacements[0]?.team?<TeamTag name={resultPlacements[0].team.name} color={resultPlacements[0].team.color} seed={resultPlacements[0].team.seed}/>:<span style={{fontSize:12,color:"var(--color-text-tertiary)"}}>No winner recorded</span>}
-      </div>
-      <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:10,padding:"12px 14px"}}>
-        <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:10}}>Final Results</div>
-        <div style={{display:"flex",flexDirection:"column",gap:6}}>
-          {resultPlacements.map((item,idx)=>{
-            const canUp=sameResultRank(item,resultPlacements[idx-1]);
-            const canDown=sameResultRank(item,resultPlacements[idx+1]);
-            return(
-              <div key={`${item.team?.name||"team"}-${idx}`} style={{display:"grid",gridTemplateColumns:"58px 72px minmax(0,1fr) 62px",alignItems:"center",gap:8,padding:"7px 9px",borderRadius:7,border:"0.5px solid var(--color-border-tertiary)",background:idx===0?"rgba(233,196,106,0.08)":"var(--color-background-secondary)"}}>
-                <span style={{fontSize:12,fontWeight:800,color:"#2a9d8f",fontFamily:"'Barlow Condensed',sans-serif"}}>Place {idx+1}</span>
-                <span style={{fontSize:11,fontWeight:800,color:item.rankFrom===item.rankTo?"var(--color-text-tertiary)":"#b8921a",fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase"}}>Rank {resultRankLabel(item)}</span>
-                <TeamTag name={item.team?.name||"TBD"} color={item.team?.color} seed={item.team?.seed} small/>
-                <div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
-                  <button onClick={()=>moveResultPlacement(idx,-1)} disabled={!canUp} style={{width:24,height:24,borderRadius:5,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-secondary)",cursor:canUp?"pointer":"not-allowed",opacity:canUp?1:0.3}}>↑</button>
-                  <button onClick={()=>moveResultPlacement(idx,1)} disabled={!canDown} style={{width:24,height:24,borderRadius:5,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-secondary)",cursor:canDown?"pointer":"not-allowed",opacity:canDown?1:0.3}}>↓</button>
-                </div>
-              </div>
-            );
-          })}
+  useEffect(()=>{
+    if(!tournamentEnded||!placementTiebreaks.length)return;
+    setResultPlacements(prev=>applyPlacementTiebreaksToPlacements(prev,placementTiebreaks));
+  },[tournamentEnded,placementTiebreaks]);
+
+  const resultTieGroups=()=>{
+    const groups=[];
+    let idx=0;
+    while(idx<resultPlacements.length){
+      const item=resultPlacements[idx];
+      const teams=[];
+      let end=idx;
+      while(end<resultPlacements.length&&sameResultRank(item,resultPlacements[end])){
+        teams.push(resultPlacements[end].team);
+        end++;
+      }
+      if(item?.rankFrom<item?.rankTo&&teams.length>1){
+        groups.push({rankFrom:item.rankFrom,rankTo:item.rankTo,key:placementTiebreakKey(item.rankFrom,item.rankTo),teams:teams.filter(Boolean)});
+      }
+      idx=end;
+    }
+    return groups;
+  };
+
+  const createPlacementTiebreakForRange=(group)=>{
+    if(!group?.teams?.length||group.teams.length<2)return;
+    const tiebreak=buildPlacementTiebreak(group.rankFrom,group.rankTo,group.teams,finalMatchConfigForState(liveTournamentState));
+    setPlacementTiebreaks(prev=>[...prev.filter(item=>item.key!==tiebreak.key),tiebreak]);
+  };
+
+  const updatePlacementTiebreakMatch=(tiebreakId,matchId,updater)=>{
+    setPlacementTiebreaks(prev=>prev.map(tiebreak=>{
+      if(tiebreak.id!==tiebreakId)return tiebreak;
+      return syncPlacementTiebreak({
+        ...tiebreak,
+        rounds:(tiebreak.rounds||[]).map(round=>round.map(match=>match.id===matchId?updater(match):match))
+      });
+    }));
+  };
+
+  const handlePlacementGameUpdate=(tiebreakId,matchId,gi,upd)=>updatePlacementTiebreakMatch(tiebreakId,matchId,match=>({...match,games:match.games.map((game,idx)=>idx===gi?{...game,...upd}:game)}));
+  const handlePlacementMatchUpdate=(tiebreakId,matchId,upd)=>updatePlacementTiebreakMatch(tiebreakId,matchId,match=>({...match,...upd}));
+
+  const renderResultTab=()=>{
+    const tiedGroups=resultTieGroups();
+    const tiedKeys=new Set(tiedGroups.map(group=>group.key));
+    const bracketSections=[
+      ...tiedGroups.map(group=>({key:group.key,group,tiebreak:placementTiebreaks.find(item=>item.key===group.key)})),
+      ...placementTiebreaks.filter(item=>!tiedKeys.has(item.key)).map(item=>({key:item.key||item.id,group:null,tiebreak:item}))
+    ];
+    return(
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{padding:"14px 16px",borderRadius:10,border:"1px solid rgba(233,196,106,0.45)",background:"rgba(233,196,106,0.07)"}}>
+          <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"#b8921a",marginBottom:8}}>Winner</div>
+          {resultPlacements[0]?.team?<TeamTag name={resultPlacements[0].team.name} color={resultPlacements[0].team.color} seed={resultPlacements[0].team.seed}/>:<span style={{fontSize:12,color:"var(--color-text-tertiary)"}}>No winner recorded</span>}
         </div>
+        <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:10,padding:"12px 14px"}}>
+          <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:10}}>Final Results</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {resultPlacements.map((item,idx)=>{
+              const canUp=sameResultRank(item,resultPlacements[idx-1]);
+              const canDown=sameResultRank(item,resultPlacements[idx+1]);
+              return(
+                <div key={`${item.team?.name||"team"}-${idx}`} style={{display:"grid",gridTemplateColumns:"58px 72px minmax(0,1fr) 62px",alignItems:"center",gap:8,padding:"7px 9px",borderRadius:7,border:"0.5px solid var(--color-border-tertiary)",background:idx===0?"rgba(233,196,106,0.08)":"var(--color-background-secondary)"}}>
+                  <span style={{fontSize:12,fontWeight:800,color:"#2a9d8f",fontFamily:"'Barlow Condensed',sans-serif"}}>Place {idx+1}</span>
+                  <span style={{fontSize:11,fontWeight:800,color:item.rankFrom===item.rankTo?"var(--color-text-tertiary)":"#b8921a",fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase"}}>Rank {resultRankLabel(item)}</span>
+                  <TeamTag name={item.team?.name||"TBD"} color={item.team?.color} seed={item.team?.seed} small/>
+                  <div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
+                    <button onClick={()=>moveResultPlacement(idx,-1)} disabled={!canUp} style={{width:24,height:24,borderRadius:5,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-secondary)",cursor:canUp?"pointer":"not-allowed",opacity:canUp?1:0.3}}>↑</button>
+                    <button onClick={()=>moveResultPlacement(idx,1)} disabled={!canDown} style={{width:24,height:24,borderRadius:5,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-secondary)",cursor:canDown?"pointer":"not-allowed",opacity:canDown?1:0.3}}>↓</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        {bracketSections.length>0&&(
+          <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:10,padding:"12px 14px"}}>
+            <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:10}}>Placement Brackets</div>
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              {bracketSections.map(({key,group,tiebreak})=>{
+                const range=group||tiebreak;
+                const finalTeams=tiebreak?placementTiebreakFinalTeams(tiebreak):null;
+                const teams=group?.teams||finalTeams||tiebreak?.teams||[];
+                return(
+                  <div key={key} style={{border:"0.5px solid var(--color-border-tertiary)",borderRadius:8,padding:"10px",background:"var(--color-background-secondary)"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+                      <span style={{fontSize:11,fontWeight:800,color:"#2a9d8f",letterSpacing:"0.08em",textTransform:"uppercase"}}>Rank {resultRankLabel(range)}</span>
+                      <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                        {teams.map(team=><TeamTag key={team.name} name={team.name} color={team.color} seed={team.seed} small/>)}
+                      </div>
+                      {!tiebreak&&<button onClick={()=>createPlacementTiebreakForRange(group)} style={{...btn(false),padding:"5px 10px",fontSize:11,borderColor:"rgba(42,157,143,0.45)",color:"#2a9d8f",marginLeft:"auto"}}>Add Placement Bracket</button>}
+                    </div>
+                    {tiebreak
+                      ?<PlacementTiebreakView
+                        tiebreak={tiebreak}
+                        statCols={statCols}
+                        onGameUpdate={(matchId,gi,upd)=>handlePlacementGameUpdate(tiebreak.id,matchId,gi,upd)}
+                        onMatchUpdate={(matchId,upd)=>handlePlacementMatchUpdate(tiebreak.id,matchId,upd)}
+                      />
+                      :<div style={{fontSize:11,color:"var(--color-text-tertiary)",fontStyle:"italic"}}>Optional placement bracket not generated.</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderSettingsTab=()=>(
     <div>

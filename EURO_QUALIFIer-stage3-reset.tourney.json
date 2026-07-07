@@ -1,0 +1,5746 @@
+{
+  "schema": "tourney-tournament",
+  "version": 1,
+  "exportedAt": "2026-07-01T04:35:42.402Z",
+  "project": {
+    "id": "project-1782633220742",
+    "name": "EURO_QUALIFIer",
+    "formatType": "multi",
+    "teamCount": 55,
+    "updatedAt": "2026-07-01T04:35:42.402Z",
+    "state": {
+      "step": "bracket",
+      "formatType": "multi",
+      "teamCount": 55,
+      "matchMode": "wl",
+      "gamesPerMatch": 1,
+      "rrStandingsRules": {
+        "mainMetric": "football",
+        "tiebreakers": [
+          "matchWins",
+          "scoreFor",
+          "scoreDiff",
+          "none"
+        ],
+        "scoringSystem": "football",
+        "customPoints": {
+          "matchWin": 3,
+          "matchTie": 1,
+          "matchLoss": 0,
+          "gameWin": 0,
+          "gameTie": 0,
+          "gameLoss": 0
+        },
+        "pointMode": "football",
+        "winPoints": 3,
+        "drawPoints": 1,
+        "lossPoints": 0,
+        "pointRules": [
+          {
+            "metric": "matchWin",
+            "points": 3
+          },
+          {
+            "metric": "matchTie",
+            "points": 1
+          }
+        ],
+        "scoreDiffBands": [],
+        "criteria": [
+          "points",
+          "matchWins",
+          "scoreFor",
+          "scoreDiff"
+        ],
+        "summary": "Football system. Win = 3, tie = 1, loss = 0. Ranking: Football system, Match win, Pts scored, Pts difference."
+      },
+      "statCols": [
+        "Score"
+      ],
+      "teams": [
+        {
+          "name": "Germany",
+          "color": "#e63946",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "France",
+          "color": "#457b9d",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Spain",
+          "color": "#2a9d8f",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "England",
+          "color": "#e9c46a",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Portugal",
+          "color": "#f4a261",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Netherlands",
+          "color": "#8338ec",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Turkey",
+          "color": "#06d6a0",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Croatia",
+          "color": "#fb8500",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Denmark",
+          "color": "#118ab2",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Italy",
+          "color": "#d62828",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Serbia",
+          "color": "#3a86ff",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Scotland",
+          "color": "#ff006e",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Switzerland",
+          "color": "#219ebc",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Republic Of Ireland",
+          "color": "#ffb703",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Poland",
+          "color": "#c77dff",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Hungary",
+          "color": "#52b788",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Belgium",
+          "color": "#f77f00",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Russia",
+          "color": "#4cc9f0",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Romania",
+          "color": "#b5179e",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Norway",
+          "color": "#7209b7",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Sweden",
+          "color": "#3a0ca3",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Austria",
+          "color": "#4361ee",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Georgia",
+          "color": "#80b918",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Ukraine",
+          "color": "#e07a5f",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Czech Republic",
+          "color": "#3d405b",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Lithuania",
+          "color": "#81b29a",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Latvia",
+          "color": "#264653",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Greece",
+          "color": "#2b2d42",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Slovenia",
+          "color": "#ef233c",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Wales",
+          "color": "#06aed5",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Finland",
+          "color": "#e63946",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Israel",
+          "color": "#457b9d",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Belarus",
+          "color": "#2a9d8f",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Bulgaria",
+          "color": "#e9c46a",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Kazakhstan",
+          "color": "#f4a261",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Slovakia",
+          "color": "#8338ec",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Armenia",
+          "color": "#06d6a0",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Azerbaijan",
+          "color": "#fb8500",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Cyprus",
+          "color": "#118ab2",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Albania",
+          "color": "#d62828",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Bosnia And Herzegovina",
+          "color": "#3a86ff",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "North Macedonia",
+          "color": "#ff006e",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Iceland",
+          "color": "#219ebc",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Luxembourg",
+          "color": "#ffb703",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Montenegro",
+          "color": "#c77dff",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Kosovo",
+          "color": "#52b788",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Estonia",
+          "color": "#f77f00",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Malta",
+          "color": "#4cc9f0",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Northern Ireland",
+          "color": "#b5179e",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Moldova",
+          "color": "#7209b7",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Liechtenstein",
+          "color": "#3a0ca3",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Faroe Islands",
+          "color": "#4361ee",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Andorra",
+          "color": "#80b918",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "Gibraltar",
+          "color": "#e07a5f",
+          "region": "",
+          "players": []
+        },
+        {
+          "name": "San Marino",
+          "color": "#3d405b",
+          "region": "",
+          "players": []
+        }
+      ],
+      "deletedTeams": [],
+      "teamInput": "",
+      "bracketData": null,
+      "rrRounds": [],
+      "playerSort": "mw",
+      "showPlayers": false,
+      "awards": {
+        "weekMvps": [],
+        "finalMvps": [],
+        "stageMvps": [],
+        "finalMvpCount": 1
+      },
+      "showAwards": false,
+      "stages": [
+        {
+          "format": "double",
+          "advance": 6,
+          "matchMode": "score",
+          "teamCount": 29,
+          "groupCount": 6,
+          "groupStage": true,
+          "splitStart": false,
+          "gamesPerMatch": 2,
+          "standingsRules": {
+            "summary": "Kitakana system. Win by >5 = 3, win by 5 = 2, win by <5 = 1.5, tie = 1, lose by <5 = 0.5, other loss = 0. Close wins/losses count as MT in the table. Ranking: Kitakana system, Match win, Pts difference, Pts scored.",
+            "criteria": [
+              "points",
+              "matchWins",
+              "scoreDiff",
+              "scoreFor"
+            ],
+            "pointMode": "football",
+            "winPoints": 3,
+            "drawPoints": 1,
+            "lossPoints": 0,
+            "mainMetric": "kitakana",
+            "pointRules": [],
+            "tiebreakers": [
+              "matchWins",
+              "scoreDiff",
+              "scoreFor",
+              "none"
+            ],
+            "customPoints": {
+              "gameTie": 0,
+              "gameWin": 0,
+              "gameLoss": 0,
+              "matchTie": 1,
+              "matchWin": 3,
+              "matchLoss": 0
+            },
+            "scoringSystem": "kitakana",
+            "scoreDiffBands": []
+          },
+          "splitStartCount": 0
+        },
+        {
+          "aat": 22,
+          "format": "roundrobin",
+          "advance": 12,
+          "matchMode": "score",
+          "teamCount": 28,
+          "groupCount": 5,
+          "groupStage": true,
+          "splitStart": false,
+          "tiebreakMode": "performance",
+          "gamesPerMatch": 1,
+          "standingsRules": {
+            "summary": "Kitakana system. Win by >5 = 3, win by 5 = 2, win by <5 = 1.5, tie = 1, lose by <5 = 0.5, other loss = 0. Close wins/losses count as MT in the table. Ranking: Kitakana system, Match win, Pts difference, Pts scored.",
+            "criteria": [
+              "points",
+              "matchWins",
+              "scoreDiff",
+              "scoreFor"
+            ],
+            "pointMode": "football",
+            "winPoints": 3,
+            "drawPoints": 1,
+            "lossPoints": 0,
+            "mainMetric": "kitakana",
+            "pointRules": [],
+            "tiebreakers": [
+              "matchWins",
+              "scoreDiff",
+              "scoreFor",
+              "none"
+            ],
+            "customPoints": {
+              "gameTie": 0,
+              "gameWin": 0,
+              "gameLoss": 0,
+              "matchTie": 1,
+              "matchWin": 3,
+              "matchLoss": 0
+            },
+            "scoringSystem": "kitakana",
+            "scoreDiffBands": []
+          },
+          "splitStartCount": 0
+        },
+        {
+          "aat": 4,
+          "format": "double",
+          "advance": 1,
+          "matchMode": "score",
+          "teamCount": 16,
+          "groupStage": false,
+          "splitStart": true,
+          "gamesPerMatch": 1,
+          "splitStartCount": 8
+        }
+      ],
+      "stageData": {
+        "0": {
+          "type": "double",
+          "teams": [
+            {
+              "name": "Latvia",
+              "seed": 1,
+              "color": "#264653",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Greece",
+              "seed": 2,
+              "color": "#2b2d42",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Slovenia",
+              "seed": 3,
+              "color": "#ef233c",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Wales",
+              "seed": 4,
+              "color": "#06aed5",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Finland",
+              "seed": 5,
+              "color": "#e63946",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Israel",
+              "seed": 6,
+              "color": "#457b9d",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Belarus",
+              "seed": 7,
+              "color": "#2a9d8f",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Bulgaria",
+              "seed": 8,
+              "color": "#e9c46a",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Kazakhstan",
+              "seed": 9,
+              "color": "#f4a261",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Slovakia",
+              "seed": 10,
+              "color": "#8338ec",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Armenia",
+              "seed": 11,
+              "color": "#06d6a0",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Azerbaijan",
+              "seed": 12,
+              "color": "#fb8500",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Cyprus",
+              "seed": 13,
+              "color": "#118ab2",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Albania",
+              "seed": 14,
+              "color": "#d62828",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Bosnia And Herzegovina",
+              "seed": 15,
+              "color": "#3a86ff",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "North Macedonia",
+              "seed": 16,
+              "color": "#ff006e",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Iceland",
+              "seed": 17,
+              "color": "#219ebc",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Luxembourg",
+              "seed": 18,
+              "color": "#ffb703",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Montenegro",
+              "seed": 19,
+              "color": "#c77dff",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Kosovo",
+              "seed": 20,
+              "color": "#52b788",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Estonia",
+              "seed": 21,
+              "color": "#f77f00",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Malta",
+              "seed": 22,
+              "color": "#4cc9f0",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Northern Ireland",
+              "seed": 23,
+              "color": "#b5179e",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Moldova",
+              "seed": 24,
+              "color": "#7209b7",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Liechtenstein",
+              "seed": 25,
+              "color": "#3a0ca3",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Faroe Islands",
+              "seed": 26,
+              "color": "#4361ee",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Andorra",
+              "seed": 27,
+              "color": "#80b918",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Gibraltar",
+              "seed": 28,
+              "color": "#e07a5f",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "San Marino",
+              "seed": 29,
+              "color": "#3d405b",
+              "region": "",
+              "players": []
+            }
+          ],
+          "losers": [
+            [
+              {
+                "id": "l0",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "6",
+                    "scoreB": "4",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "2",
+                    "scoreB": "1",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l1",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "3",
+                    "scoreB": "3",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "2",
+                    "scoreB": "2",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 2,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "1",
+                    "scoreB": "0",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l2",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "1",
+                    "scoreB": "8",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l3",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "0",
+                    "scoreB": "4",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "0",
+                    "scoreB": "1",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l4",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "1",
+                    "scoreB": "3",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "1",
+                    "scoreB": "1",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l5",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "1",
+                    "scoreB": "1",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "0",
+                    "scoreB": "5",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l6",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "9",
+                    "scoreB": "4",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l7",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "5",
+                    "scoreB": "1",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "1",
+                    "scoreB": "0",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              }
+            ],
+            [
+              {
+                "id": "l8",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "9",
+                    "scoreB": "6",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "0",
+                    "scoreB": "8",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l9",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "5",
+                    "scoreB": "5",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "1",
+                    "scoreB": "6",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l10",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "2",
+                    "scoreB": "6",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "0",
+                    "scoreB": "1",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l11",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "1",
+                    "scoreB": "6",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l12",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "2",
+                    "scoreB": "8",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l13",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "6",
+                    "scoreB": "6",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "4",
+                    "scoreB": "4",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 2,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "1",
+                    "scoreB": "0",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l14",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "3",
+                    "scoreB": "10",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l15",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "7",
+                    "scoreB": "1",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              }
+            ],
+            [
+              {
+                "id": "l16",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "3",
+                    "scoreB": "7",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "0",
+                    "scoreB": "1",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l17",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "9",
+                    "scoreB": "3",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l18",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "4",
+                    "scoreB": "8",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "5",
+                    "scoreB": "2",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l19",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "6",
+                    "scoreB": "3",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "4",
+                    "scoreB": "5",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              }
+            ],
+            [
+              {
+                "id": "l20",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "4",
+                    "scoreB": "8",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "5",
+                    "scoreB": "4",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l21",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "2",
+                    "scoreB": "7",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l22",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "2",
+                    "scoreB": "6",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "7",
+                    "scoreB": "2",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l23",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "2",
+                    "scoreB": "8",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              }
+            ],
+            [
+              {
+                "id": "l24",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "9",
+                    "scoreB": "5",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "1",
+                    "scoreB": "5",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 2,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "1",
+                    "scoreB": "0",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l25",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "3",
+                    "scoreB": "10",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              }
+            ],
+            [
+              {
+                "id": "l26",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "l27",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              }
+            ],
+            [
+              {
+                "id": "l28",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              }
+            ],
+            [
+              {
+                "id": "l29",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              }
+            ]
+          ],
+          "winners": [
+            [
+              {
+                "id": "w0-0",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "Latvia",
+                  "seed": 1,
+                  "color": "#264653",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": {
+                  "name": "Latvia",
+                  "seed": 1,
+                  "color": "#264653",
+                  "region": "",
+                  "players": []
+                }
+              },
+              {
+                "id": "w0-1",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "8",
+                    "scoreB": "5",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "North Macedonia",
+                  "seed": 16,
+                  "color": "#ff006e",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": {
+                  "name": "Iceland",
+                  "seed": 17,
+                  "color": "#219ebc",
+                  "region": "",
+                  "players": []
+                },
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w0-2",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "9",
+                    "scoreB": "1",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "Bulgaria",
+                  "seed": 8,
+                  "color": "#e9c46a",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": {
+                  "name": "Liechtenstein",
+                  "seed": 25,
+                  "color": "#3a0ca3",
+                  "region": "",
+                  "players": []
+                },
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w0-3",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "5",
+                    "scoreB": "1",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "1",
+                    "scoreB": "0",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "Kazakhstan",
+                  "seed": 9,
+                  "color": "#f4a261",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": {
+                  "name": "Moldova",
+                  "seed": 24,
+                  "color": "#7209b7",
+                  "region": "",
+                  "players": []
+                },
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w0-4",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "5",
+                    "scoreB": "4",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "4",
+                    "scoreB": "0",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "Wales",
+                  "seed": 4,
+                  "color": "#06aed5",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": {
+                  "name": "San Marino",
+                  "seed": 29,
+                  "color": "#3d405b",
+                  "region": "",
+                  "players": []
+                },
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w0-5",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "9",
+                    "scoreB": "3",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "0",
+                    "scoreB": "0",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "Cyprus",
+                  "seed": 13,
+                  "color": "#118ab2",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": {
+                  "name": "Kosovo",
+                  "seed": 20,
+                  "color": "#52b788",
+                  "region": "",
+                  "players": []
+                },
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w0-6",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "9",
+                    "scoreB": "4",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "Finland",
+                  "seed": 5,
+                  "color": "#e63946",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": {
+                  "name": "Gibraltar",
+                  "seed": 28,
+                  "color": "#e07a5f",
+                  "region": "",
+                  "players": []
+                },
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w0-7",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "8",
+                    "scoreB": "4",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "0",
+                    "scoreB": "4",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 2,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "00",
+                    "scoreB": "1",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "Azerbaijan",
+                  "seed": 12,
+                  "color": "#fb8500",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": {
+                  "name": "Estonia",
+                  "seed": 21,
+                  "color": "#f77f00",
+                  "region": "",
+                  "players": []
+                },
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w0-8",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "Greece",
+                  "seed": 2,
+                  "color": "#2b2d42",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": {
+                  "name": "Greece",
+                  "seed": 2,
+                  "color": "#2b2d42",
+                  "region": "",
+                  "players": []
+                }
+              },
+              {
+                "id": "w0-9",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "7",
+                    "scoreB": "0",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "Bosnia And Herzegovina",
+                  "seed": 15,
+                  "color": "#3a86ff",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": {
+                  "name": "Luxembourg",
+                  "seed": 18,
+                  "color": "#ffb703",
+                  "region": "",
+                  "players": []
+                },
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w0-10",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "6",
+                    "scoreB": "5",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "3",
+                    "scoreB": "0",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "Belarus",
+                  "seed": 7,
+                  "color": "#2a9d8f",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": {
+                  "name": "Faroe Islands",
+                  "seed": 26,
+                  "color": "#4361ee",
+                  "region": "",
+                  "players": []
+                },
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w0-11",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "3",
+                    "scoreB": "2",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "4",
+                    "scoreB": "1",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "Slovakia",
+                  "seed": 10,
+                  "color": "#8338ec",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": {
+                  "name": "Northern Ireland",
+                  "seed": 23,
+                  "color": "#b5179e",
+                  "region": "",
+                  "players": []
+                },
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w0-12",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "Slovenia",
+                  "seed": 3,
+                  "color": "#ef233c",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": {
+                  "name": "Slovenia",
+                  "seed": 3,
+                  "color": "#ef233c",
+                  "region": "",
+                  "players": []
+                }
+              },
+              {
+                "id": "w0-13",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "9",
+                    "scoreB": "0",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "Albania",
+                  "seed": 14,
+                  "color": "#d62828",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": {
+                  "name": "Montenegro",
+                  "seed": 19,
+                  "color": "#c77dff",
+                  "region": "",
+                  "players": []
+                },
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w0-14",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "9",
+                    "scoreB": "5",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "1",
+                    "scoreB": "0",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "Israel",
+                  "seed": 6,
+                  "color": "#457b9d",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": {
+                  "name": "Andorra",
+                  "seed": 27,
+                  "color": "#80b918",
+                  "region": "",
+                  "players": []
+                },
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w0-15",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "7",
+                    "scoreB": "1",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "Armenia",
+                  "seed": 11,
+                  "color": "#06d6a0",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": {
+                  "name": "Malta",
+                  "seed": 22,
+                  "color": "#4cc9f0",
+                  "region": "",
+                  "players": []
+                },
+                "matchMode": "score",
+                "_autoWinner": null
+              }
+            ],
+            [
+              {
+                "id": "w1-0",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "4",
+                    "scoreB": "1",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "3",
+                    "scoreB": "1",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "Latvia",
+                  "seed": 1,
+                  "color": "#264653",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w1-1",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "4",
+                    "scoreB": "3",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "2",
+                    "scoreB": "4",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w1-2",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "3",
+                    "scoreB": "9",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w1-3",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "8",
+                    "scoreB": "4",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "1",
+                    "scoreB": "5",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 2,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "0",
+                    "scoreB": "1",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w1-4",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "8",
+                    "scoreB": "3",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "Greece",
+                  "seed": 2,
+                  "color": "#2b2d42",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w1-5",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "2",
+                    "scoreB": "0",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "3",
+                    "scoreB": "0",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w1-6",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "7",
+                    "scoreB": "4",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "2",
+                    "scoreB": "0",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": {
+                  "name": "Slovenia",
+                  "seed": 3,
+                  "color": "#ef233c",
+                  "region": "",
+                  "players": []
+                },
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w1-7",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "6",
+                    "scoreB": "0",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              }
+            ],
+            [
+              {
+                "id": "w2-0",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "8",
+                    "scoreB": "1",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w2-1",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "8",
+                    "scoreB": "6",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "3",
+                    "scoreB": "0",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w2-2",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "6",
+                    "scoreB": "6",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "5",
+                    "scoreB": "0",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w2-3",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "0",
+                    "scoreB": "7",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              }
+            ],
+            [
+              {
+                "id": "w3-0",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              },
+              {
+                "id": "w3-1",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              }
+            ],
+            [
+              {
+                "id": "w4-0",
+                "mvp": null,
+                "games": [
+                  {
+                    "id": 0,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  },
+                  {
+                    "id": 1,
+                    "isTie": false,
+                    "stats": {},
+                    "scoreA": "",
+                    "scoreB": "",
+                    "gameMvp": null,
+                    "winnerName": null
+                  }
+                ],
+                "teamA": null,
+                "teamB": null,
+                "matchMode": "score",
+                "_autoWinner": null
+              }
+            ]
+          ],
+          "grandFinal": {
+            "id": "gf",
+            "mvp": null,
+            "games": [
+              {
+                "id": 0,
+                "isTie": false,
+                "stats": {},
+                "scoreA": "",
+                "scoreB": "",
+                "gameMvp": null,
+                "winnerName": null
+              },
+              {
+                "id": 1,
+                "isTie": false,
+                "stats": {},
+                "scoreA": "",
+                "scoreB": "",
+                "gameMvp": null,
+                "winnerName": null
+              }
+            ],
+            "teamA": null,
+            "teamB": null,
+            "matchMode": "score",
+            "_autoWinner": null
+          },
+          "aatTeamsByStage": {
+            "1": [
+              {
+                "name": "Germany",
+                "seed": 1,
+                "color": "#e63946",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "France",
+                "seed": 2,
+                "color": "#457b9d",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Spain",
+                "seed": 3,
+                "color": "#2a9d8f",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "England",
+                "seed": 4,
+                "color": "#e9c46a",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Portugal",
+                "seed": 5,
+                "color": "#f4a261",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Netherlands",
+                "seed": 6,
+                "color": "#8338ec",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Turkey",
+                "seed": 7,
+                "color": "#06d6a0",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Croatia",
+                "seed": 8,
+                "color": "#fb8500",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Denmark",
+                "seed": 9,
+                "color": "#118ab2",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Italy",
+                "seed": 10,
+                "color": "#d62828",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Serbia",
+                "seed": 11,
+                "color": "#3a86ff",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Scotland",
+                "seed": 12,
+                "color": "#ff006e",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Switzerland",
+                "seed": 13,
+                "color": "#219ebc",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Republic Of Ireland",
+                "seed": 14,
+                "color": "#ffb703",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Poland",
+                "seed": 15,
+                "color": "#c77dff",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Hungary",
+                "seed": 16,
+                "color": "#52b788",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Belgium",
+                "seed": 17,
+                "color": "#f77f00",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Russia",
+                "seed": 18,
+                "color": "#4cc9f0",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Romania",
+                "seed": 19,
+                "color": "#b5179e",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Norway",
+                "seed": 20,
+                "color": "#7209b7",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Sweden",
+                "seed": 21,
+                "color": "#3a0ca3",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Austria",
+                "seed": 22,
+                "color": "#4361ee",
+                "region": "",
+                "players": []
+              }
+            ],
+            "2": [
+              {
+                "name": "Georgia",
+                "seed": 23,
+                "color": "#80b918",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Ukraine",
+                "seed": 24,
+                "color": "#e07a5f",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Czech Republic",
+                "seed": 25,
+                "color": "#3d405b",
+                "region": "",
+                "players": []
+              },
+              {
+                "name": "Lithuania",
+                "seed": 26,
+                "color": "#81b29a",
+                "region": "",
+                "players": []
+              }
+            ]
+          },
+          "grandFinalReset": {
+            "id": "gf-reset",
+            "mvp": null,
+            "games": [
+              {
+                "id": 0,
+                "isTie": false,
+                "stats": {},
+                "scoreA": "",
+                "scoreB": "",
+                "gameMvp": null,
+                "winnerName": null
+              },
+              {
+                "id": 1,
+                "isTie": false,
+                "stats": {},
+                "scoreA": "",
+                "scoreB": "",
+                "gameMvp": null,
+                "winnerName": null
+              }
+            ],
+            "teamA": null,
+            "teamB": null,
+            "_isReset": true,
+            "matchMode": "score",
+            "_autoWinner": null
+          }
+        },
+        "1": {
+          "gpm": 1,
+          "type": "groupstage",
+          "pools": [
+            {
+              "name": "Pool 1",
+              "teams": [
+                {
+                  "name": "Germany",
+                  "seed": 1,
+                  "color": "#e63946",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "France",
+                  "seed": 2,
+                  "color": "#457b9d",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Spain",
+                  "seed": 3,
+                  "color": "#2a9d8f",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "England",
+                  "seed": 4,
+                  "color": "#e9c46a",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Portugal",
+                  "seed": 5,
+                  "color": "#f4a261",
+                  "region": "",
+                  "players": []
+                }
+              ]
+            },
+            {
+              "name": "Pool 2",
+              "teams": [
+                {
+                  "name": "Netherlands",
+                  "seed": 6,
+                  "color": "#8338ec",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Turkey",
+                  "seed": 7,
+                  "color": "#06d6a0",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Croatia",
+                  "seed": 8,
+                  "color": "#fb8500",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Denmark",
+                  "seed": 9,
+                  "color": "#118ab2",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Italy",
+                  "seed": 10,
+                  "color": "#d62828",
+                  "region": "",
+                  "players": []
+                }
+              ]
+            },
+            {
+              "name": "Pool 3",
+              "teams": [
+                {
+                  "name": "Serbia",
+                  "seed": 11,
+                  "color": "#3a86ff",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Scotland",
+                  "seed": 12,
+                  "color": "#ff006e",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Switzerland",
+                  "seed": 13,
+                  "color": "#219ebc",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Republic Of Ireland",
+                  "seed": 14,
+                  "color": "#ffb703",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Poland",
+                  "seed": 15,
+                  "color": "#c77dff",
+                  "region": "",
+                  "players": []
+                }
+              ]
+            },
+            {
+              "name": "Pool 4",
+              "teams": [
+                {
+                  "name": "Hungary",
+                  "seed": 16,
+                  "color": "#52b788",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Belgium",
+                  "seed": 17,
+                  "color": "#f77f00",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Russia",
+                  "seed": 18,
+                  "color": "#4cc9f0",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Romania",
+                  "seed": 19,
+                  "color": "#b5179e",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Norway",
+                  "seed": 20,
+                  "color": "#7209b7",
+                  "region": "",
+                  "players": []
+                }
+              ]
+            },
+            {
+              "name": "Pool 5",
+              "teams": [
+                {
+                  "name": "Sweden",
+                  "seed": 21,
+                  "color": "#3a0ca3",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Austria",
+                  "seed": 22,
+                  "color": "#4361ee",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Latvia",
+                  "seed": 23,
+                  "color": "#264653",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Greece",
+                  "seed": 24,
+                  "color": "#2b2d42",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Israel",
+                  "seed": 25,
+                  "color": "#457b9d",
+                  "region": "",
+                  "players": []
+                }
+              ]
+            },
+            {
+              "name": "Pool 6",
+              "teams": [
+                {
+                  "name": "Cyprus",
+                  "seed": 26,
+                  "color": "#118ab2",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Slovenia",
+                  "seed": 27,
+                  "color": "#ef233c",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Kazakhstan",
+                  "seed": 28,
+                  "color": "#f4a261",
+                  "region": "",
+                  "players": []
+                }
+              ]
+            }
+          ],
+          "teams": [
+            {
+              "name": "Germany",
+              "seed": 1,
+              "color": "#e63946",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "France",
+              "seed": 2,
+              "color": "#457b9d",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Spain",
+              "seed": 3,
+              "color": "#2a9d8f",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "England",
+              "seed": 4,
+              "color": "#e9c46a",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Portugal",
+              "seed": 5,
+              "color": "#f4a261",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Netherlands",
+              "seed": 6,
+              "color": "#8338ec",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Turkey",
+              "seed": 7,
+              "color": "#06d6a0",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Croatia",
+              "seed": 8,
+              "color": "#fb8500",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Denmark",
+              "seed": 9,
+              "color": "#118ab2",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Italy",
+              "seed": 10,
+              "color": "#d62828",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Serbia",
+              "seed": 11,
+              "color": "#3a86ff",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Scotland",
+              "seed": 12,
+              "color": "#ff006e",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Switzerland",
+              "seed": 13,
+              "color": "#219ebc",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Republic Of Ireland",
+              "seed": 14,
+              "color": "#ffb703",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Poland",
+              "seed": 15,
+              "color": "#c77dff",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Hungary",
+              "seed": 16,
+              "color": "#52b788",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Belgium",
+              "seed": 17,
+              "color": "#f77f00",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Russia",
+              "seed": 18,
+              "color": "#4cc9f0",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Romania",
+              "seed": 19,
+              "color": "#b5179e",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Norway",
+              "seed": 20,
+              "color": "#7209b7",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Sweden",
+              "seed": 21,
+              "color": "#3a0ca3",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Austria",
+              "seed": 22,
+              "color": "#4361ee",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Latvia",
+              "seed": 23,
+              "color": "#264653",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Greece",
+              "seed": 24,
+              "color": "#2b2d42",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Israel",
+              "seed": 25,
+              "color": "#457b9d",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Cyprus",
+              "seed": 26,
+              "color": "#118ab2",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Slovenia",
+              "seed": 27,
+              "color": "#ef233c",
+              "region": "",
+              "players": []
+            },
+            {
+              "name": "Kazakhstan",
+              "seed": 28,
+              "color": "#f4a261",
+              "region": "",
+              "players": []
+            }
+          ],
+          "groups": [
+            {
+              "name": "Group A",
+              "teams": [
+                {
+                  "name": "England",
+                  "seed": 4,
+                  "color": "#e9c46a",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Turkey",
+                  "seed": 7,
+                  "color": "#06d6a0",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Scotland",
+                  "seed": 12,
+                  "color": "#ff006e",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Norway",
+                  "seed": 20,
+                  "color": "#7209b7",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Latvia",
+                  "seed": 23,
+                  "color": "#264653",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Slovenia",
+                  "seed": 27,
+                  "color": "#ef233c",
+                  "region": "",
+                  "players": []
+                }
+              ],
+              "rounds": [
+                [
+                  {
+                    "id": "g0-rr-0-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "11",
+                        "scoreB": "2",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "England",
+                      "seed": 4,
+                      "color": "#e9c46a",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Slovenia",
+                      "seed": 27,
+                      "color": "#ef233c",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g0-rr-0-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "5",
+                        "scoreB": "6",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "4",
+                        "scoreB": "3",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Turkey",
+                      "seed": 7,
+                      "color": "#06d6a0",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Latvia",
+                      "seed": 23,
+                      "color": "#264653",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g0-rr-0-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "4",
+                        "scoreB": "7",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "0",
+                        "scoreB": "2",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Scotland",
+                      "seed": 12,
+                      "color": "#ff006e",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Norway",
+                      "seed": 20,
+                      "color": "#7209b7",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g0-rr-1-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "9",
+                        "scoreB": "1",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "England",
+                      "seed": 4,
+                      "color": "#e9c46a",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Latvia",
+                      "seed": 23,
+                      "color": "#264653",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g0-rr-1-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "5",
+                        "scoreB": "8",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "3",
+                        "scoreB": "4",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Slovenia",
+                      "seed": 27,
+                      "color": "#ef233c",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Norway",
+                      "seed": 20,
+                      "color": "#7209b7",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g0-rr-1-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "5",
+                        "scoreB": "9",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "3",
+                        "scoreB": "4",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Turkey",
+                      "seed": 7,
+                      "color": "#06d6a0",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Scotland",
+                      "seed": 12,
+                      "color": "#ff006e",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g0-rr-2-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "5",
+                        "scoreB": "3",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "3",
+                        "scoreB": "0",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "England",
+                      "seed": 4,
+                      "color": "#e9c46a",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Norway",
+                      "seed": 20,
+                      "color": "#7209b7",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g0-rr-2-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "8",
+                        "scoreB": "5",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "2",
+                        "scoreB": "2",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Latvia",
+                      "seed": 23,
+                      "color": "#264653",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Scotland",
+                      "seed": 12,
+                      "color": "#ff006e",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g0-rr-2-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "5",
+                        "scoreB": "0",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Slovenia",
+                      "seed": 27,
+                      "color": "#ef233c",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Turkey",
+                      "seed": 7,
+                      "color": "#06d6a0",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g0-rr-3-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "8",
+                        "scoreB": "5",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "3",
+                        "scoreB": "5",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "England",
+                      "seed": 4,
+                      "color": "#e9c46a",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Scotland",
+                      "seed": 12,
+                      "color": "#ff006e",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g0-rr-3-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "9",
+                        "scoreB": "3",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Norway",
+                      "seed": 20,
+                      "color": "#7209b7",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Turkey",
+                      "seed": 7,
+                      "color": "#06d6a0",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g0-rr-3-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "7",
+                        "scoreB": "2",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Latvia",
+                      "seed": 23,
+                      "color": "#264653",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Slovenia",
+                      "seed": 27,
+                      "color": "#ef233c",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g0-rr-4-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "10",
+                        "scoreB": "3",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "England",
+                      "seed": 4,
+                      "color": "#e9c46a",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Turkey",
+                      "seed": 7,
+                      "color": "#06d6a0",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g0-rr-4-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "2",
+                        "scoreB": "3",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "winnerName": null,
+                        "isTie": false,
+                        "scoreA": "3",
+                        "scoreB": "6",
+                        "gameMvp": null,
+                        "stats": {}
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Scotland",
+                      "seed": 12,
+                      "color": "#ff006e",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Slovenia",
+                      "seed": 27,
+                      "color": "#ef233c",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g0-rr-4-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "1",
+                        "scoreB": "4",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "winnerName": null,
+                        "isTie": false,
+                        "scoreA": "7",
+                        "scoreB": "2",
+                        "gameMvp": null,
+                        "stats": {}
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Norway",
+                      "seed": 20,
+                      "color": "#7209b7",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Latvia",
+                      "seed": 23,
+                      "color": "#264653",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ]
+              ]
+            },
+            {
+              "name": "Group B",
+              "teams": [
+                {
+                  "name": "Spain",
+                  "seed": 3,
+                  "color": "#2a9d8f",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Denmark",
+                  "seed": 9,
+                  "color": "#118ab2",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Poland",
+                  "seed": 15,
+                  "color": "#c77dff",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Romania",
+                  "seed": 19,
+                  "color": "#b5179e",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Sweden",
+                  "seed": 21,
+                  "color": "#3a0ca3",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Kazakhstan",
+                  "seed": 28,
+                  "color": "#f4a261",
+                  "region": "",
+                  "players": []
+                }
+              ],
+              "rounds": [
+                [
+                  {
+                    "id": "g1-rr-0-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "9",
+                        "scoreB": "4",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Spain",
+                      "seed": 3,
+                      "color": "#2a9d8f",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Kazakhstan",
+                      "seed": 28,
+                      "color": "#f4a261",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g1-rr-0-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "5",
+                        "scoreB": "6",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "5",
+                        "scoreB": "7",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Denmark",
+                      "seed": 9,
+                      "color": "#118ab2",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Sweden",
+                      "seed": 21,
+                      "color": "#3a0ca3",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g1-rr-0-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "9",
+                        "scoreB": "1",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Poland",
+                      "seed": 15,
+                      "color": "#c77dff",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Romania",
+                      "seed": 19,
+                      "color": "#b5179e",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g1-rr-1-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "6",
+                        "scoreB": "9",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "1",
+                        "scoreB": "3",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Spain",
+                      "seed": 3,
+                      "color": "#2a9d8f",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Sweden",
+                      "seed": 21,
+                      "color": "#3a0ca3",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g1-rr-1-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "9",
+                        "scoreB": "4",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Kazakhstan",
+                      "seed": 28,
+                      "color": "#f4a261",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Romania",
+                      "seed": 19,
+                      "color": "#b5179e",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g1-rr-1-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "10",
+                        "scoreB": "5",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Denmark",
+                      "seed": 9,
+                      "color": "#118ab2",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Poland",
+                      "seed": 15,
+                      "color": "#c77dff",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g1-rr-2-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "8",
+                        "scoreB": "6",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "4",
+                        "scoreB": "1",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Spain",
+                      "seed": 3,
+                      "color": "#2a9d8f",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Romania",
+                      "seed": 19,
+                      "color": "#b5179e",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g1-rr-2-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "5",
+                        "scoreB": "2",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "winnerName": null,
+                        "isTie": false,
+                        "scoreA": "2",
+                        "scoreB": "0",
+                        "gameMvp": null,
+                        "stats": {}
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Sweden",
+                      "seed": 21,
+                      "color": "#3a0ca3",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Poland",
+                      "seed": 15,
+                      "color": "#c77dff",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g1-rr-2-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "11",
+                        "scoreB": "3",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Kazakhstan",
+                      "seed": 28,
+                      "color": "#f4a261",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Denmark",
+                      "seed": 9,
+                      "color": "#118ab2",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g1-rr-3-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "7",
+                        "scoreB": "6",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "2",
+                        "scoreB": "0",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Spain",
+                      "seed": 3,
+                      "color": "#2a9d8f",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Poland",
+                      "seed": 15,
+                      "color": "#c77dff",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g1-rr-3-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "12",
+                        "scoreB": "4",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Romania",
+                      "seed": 19,
+                      "color": "#b5179e",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Denmark",
+                      "seed": 9,
+                      "color": "#118ab2",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g1-rr-3-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "7",
+                        "scoreB": "2",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Sweden",
+                      "seed": 21,
+                      "color": "#3a0ca3",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Kazakhstan",
+                      "seed": 28,
+                      "color": "#f4a261",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g1-rr-4-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "7",
+                        "scoreB": "7",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Spain",
+                      "seed": 3,
+                      "color": "#2a9d8f",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Denmark",
+                      "seed": 9,
+                      "color": "#118ab2",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g1-rr-4-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "7",
+                        "scoreB": "2",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Poland",
+                      "seed": 15,
+                      "color": "#c77dff",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Kazakhstan",
+                      "seed": 28,
+                      "color": "#f4a261",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g1-rr-4-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "10",
+                        "scoreB": "2",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Romania",
+                      "seed": 19,
+                      "color": "#b5179e",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Sweden",
+                      "seed": 21,
+                      "color": "#3a0ca3",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ]
+              ]
+            },
+            {
+              "name": "Group C",
+              "teams": [
+                {
+                  "name": "France",
+                  "seed": 2,
+                  "color": "#457b9d",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Italy",
+                  "seed": 10,
+                  "color": "#d62828",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Republic Of Ireland",
+                  "seed": 14,
+                  "color": "#ffb703",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Russia",
+                  "seed": 18,
+                  "color": "#4cc9f0",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Israel",
+                  "seed": 25,
+                  "color": "#457b9d",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Cyprus",
+                  "seed": 26,
+                  "color": "#118ab2",
+                  "region": "",
+                  "players": []
+                }
+              ],
+              "rounds": [
+                [
+                  {
+                    "id": "g2-rr-0-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "8",
+                        "scoreB": "3",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "France",
+                      "seed": 2,
+                      "color": "#457b9d",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Cyprus",
+                      "seed": 26,
+                      "color": "#118ab2",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g2-rr-0-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "11",
+                        "scoreB": "1",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Italy",
+                      "seed": 10,
+                      "color": "#d62828",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Israel",
+                      "seed": 25,
+                      "color": "#457b9d",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g2-rr-0-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "3",
+                        "scoreB": "3",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "5",
+                        "scoreB": "0",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Republic Of Ireland",
+                      "seed": 14,
+                      "color": "#ffb703",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Russia",
+                      "seed": 18,
+                      "color": "#4cc9f0",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g2-rr-1-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "7",
+                        "scoreB": "4",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "2",
+                        "scoreB": "0",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "France",
+                      "seed": 2,
+                      "color": "#457b9d",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Israel",
+                      "seed": 25,
+                      "color": "#457b9d",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g2-rr-1-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "10",
+                        "scoreB": "5",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Cyprus",
+                      "seed": 26,
+                      "color": "#118ab2",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Russia",
+                      "seed": 18,
+                      "color": "#4cc9f0",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g2-rr-1-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "10",
+                        "scoreB": "4",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Italy",
+                      "seed": 10,
+                      "color": "#d62828",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Republic Of Ireland",
+                      "seed": 14,
+                      "color": "#ffb703",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g2-rr-2-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "9",
+                        "scoreB": "0",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "France",
+                      "seed": 2,
+                      "color": "#457b9d",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Russia",
+                      "seed": 18,
+                      "color": "#4cc9f0",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g2-rr-2-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "9",
+                        "scoreB": "4",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Israel",
+                      "seed": 25,
+                      "color": "#457b9d",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Republic Of Ireland",
+                      "seed": 14,
+                      "color": "#ffb703",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g2-rr-2-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "7",
+                        "scoreB": "7",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Cyprus",
+                      "seed": 26,
+                      "color": "#118ab2",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Italy",
+                      "seed": 10,
+                      "color": "#d62828",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g2-rr-3-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "10",
+                        "scoreB": "5",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "France",
+                      "seed": 2,
+                      "color": "#457b9d",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Republic Of Ireland",
+                      "seed": 14,
+                      "color": "#ffb703",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g2-rr-3-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "3",
+                        "scoreB": "8",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Russia",
+                      "seed": 18,
+                      "color": "#4cc9f0",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Italy",
+                      "seed": 10,
+                      "color": "#d62828",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g2-rr-3-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "0",
+                        "scoreB": "5",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Israel",
+                      "seed": 25,
+                      "color": "#457b9d",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Cyprus",
+                      "seed": 26,
+                      "color": "#118ab2",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g2-rr-4-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "12",
+                        "scoreB": "7",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "France",
+                      "seed": 2,
+                      "color": "#457b9d",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Italy",
+                      "seed": 10,
+                      "color": "#d62828",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g2-rr-4-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "2",
+                        "scoreB": "9",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Republic Of Ireland",
+                      "seed": 14,
+                      "color": "#ffb703",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Cyprus",
+                      "seed": 26,
+                      "color": "#118ab2",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g2-rr-4-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "6",
+                        "scoreB": "5",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "winnerName": null,
+                        "isTie": false,
+                        "scoreA": "3",
+                        "scoreB": "5",
+                        "gameMvp": null,
+                        "stats": {}
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Russia",
+                      "seed": 18,
+                      "color": "#4cc9f0",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Israel",
+                      "seed": 25,
+                      "color": "#457b9d",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ]
+              ]
+            },
+            {
+              "name": "Group D",
+              "teams": [
+                {
+                  "name": "Portugal",
+                  "seed": 5,
+                  "color": "#f4a261",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Croatia",
+                  "seed": 8,
+                  "color": "#fb8500",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Switzerland",
+                  "seed": 13,
+                  "color": "#219ebc",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Hungary",
+                  "seed": 16,
+                  "color": "#52b788",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Greece",
+                  "seed": 24,
+                  "color": "#2b2d42",
+                  "region": "",
+                  "players": []
+                }
+              ],
+              "rounds": [
+                [
+                  {
+                    "id": "g3-rr-0-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "6",
+                        "scoreB": "1",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Croatia",
+                      "seed": 8,
+                      "color": "#fb8500",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Greece",
+                      "seed": 24,
+                      "color": "#2b2d42",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g3-rr-0-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "7",
+                        "scoreB": "1",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Switzerland",
+                      "seed": 13,
+                      "color": "#219ebc",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Hungary",
+                      "seed": 16,
+                      "color": "#52b788",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g3-rr-1-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "6",
+                        "scoreB": "1",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Portugal",
+                      "seed": 5,
+                      "color": "#f4a261",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Greece",
+                      "seed": 24,
+                      "color": "#2b2d42",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g3-rr-1-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "9",
+                        "scoreB": "1",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Croatia",
+                      "seed": 8,
+                      "color": "#fb8500",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Switzerland",
+                      "seed": 13,
+                      "color": "#219ebc",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g3-rr-2-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "7",
+                        "scoreB": "2",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Portugal",
+                      "seed": 5,
+                      "color": "#f4a261",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Hungary",
+                      "seed": 16,
+                      "color": "#52b788",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g3-rr-2-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "1",
+                        "scoreB": "9",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Greece",
+                      "seed": 24,
+                      "color": "#2b2d42",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Switzerland",
+                      "seed": 13,
+                      "color": "#219ebc",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g3-rr-3-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "7",
+                        "scoreB": "7",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Portugal",
+                      "seed": 5,
+                      "color": "#f4a261",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Switzerland",
+                      "seed": 13,
+                      "color": "#219ebc",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g3-rr-3-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "2",
+                        "scoreB": "7",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Hungary",
+                      "seed": 16,
+                      "color": "#52b788",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Croatia",
+                      "seed": 8,
+                      "color": "#fb8500",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g3-rr-4-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "8",
+                        "scoreB": "4",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Portugal",
+                      "seed": 5,
+                      "color": "#f4a261",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Croatia",
+                      "seed": 8,
+                      "color": "#fb8500",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g3-rr-4-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "5",
+                        "scoreB": "3",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "winnerName": null,
+                        "isTie": false,
+                        "scoreA": "3",
+                        "scoreB": "0",
+                        "gameMvp": null,
+                        "stats": {}
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Hungary",
+                      "seed": 16,
+                      "color": "#52b788",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Greece",
+                      "seed": 24,
+                      "color": "#2b2d42",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ]
+              ]
+            },
+            {
+              "name": "Group E",
+              "teams": [
+                {
+                  "name": "Germany",
+                  "seed": 1,
+                  "color": "#e63946",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Netherlands",
+                  "seed": 6,
+                  "color": "#8338ec",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Serbia",
+                  "seed": 11,
+                  "color": "#3a86ff",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Belgium",
+                  "seed": 17,
+                  "color": "#f77f00",
+                  "region": "",
+                  "players": []
+                },
+                {
+                  "name": "Austria",
+                  "seed": 22,
+                  "color": "#4361ee",
+                  "region": "",
+                  "players": []
+                }
+              ],
+              "rounds": [
+                [
+                  {
+                    "id": "g4-rr-0-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "9",
+                        "scoreB": "2",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Netherlands",
+                      "seed": 6,
+                      "color": "#8338ec",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Austria",
+                      "seed": 22,
+                      "color": "#4361ee",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g4-rr-0-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "6",
+                        "scoreB": "1",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Serbia",
+                      "seed": 11,
+                      "color": "#3a86ff",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Belgium",
+                      "seed": 17,
+                      "color": "#f77f00",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g4-rr-1-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "13",
+                        "scoreB": "2",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Germany",
+                      "seed": 1,
+                      "color": "#e63946",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Austria",
+                      "seed": 22,
+                      "color": "#4361ee",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g4-rr-1-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "4",
+                        "scoreB": "7",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "winnerName": null,
+                        "isTie": false,
+                        "scoreA": "4",
+                        "scoreB": "3",
+                        "gameMvp": null,
+                        "stats": {}
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Netherlands",
+                      "seed": 6,
+                      "color": "#8338ec",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Serbia",
+                      "seed": 11,
+                      "color": "#3a86ff",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g4-rr-2-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "11",
+                        "scoreB": "1",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Germany",
+                      "seed": 1,
+                      "color": "#e63946",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Belgium",
+                      "seed": 17,
+                      "color": "#f77f00",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g4-rr-2-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "6",
+                        "scoreB": "1",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Austria",
+                      "seed": 22,
+                      "color": "#4361ee",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Serbia",
+                      "seed": 11,
+                      "color": "#3a86ff",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g4-rr-3-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "11",
+                        "scoreB": "2",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Germany",
+                      "seed": 1,
+                      "color": "#e63946",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Serbia",
+                      "seed": 11,
+                      "color": "#3a86ff",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g4-rr-3-1",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "4",
+                        "scoreB": "10",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Belgium",
+                      "seed": 17,
+                      "color": "#f77f00",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Netherlands",
+                      "seed": 6,
+                      "color": "#8338ec",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ],
+                [
+                  {
+                    "id": "g4-rr-4-0",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "9",
+                        "scoreB": "2",
+                        "gameMvp": null,
+                        "winnerName": null
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Germany",
+                      "seed": 1,
+                      "color": "#e63946",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Netherlands",
+                      "seed": 6,
+                      "color": "#8338ec",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  },
+                  {
+                    "id": "g4-rr-4-2",
+                    "mvp": null,
+                    "games": [
+                      {
+                        "id": 0,
+                        "isTie": false,
+                        "stats": {},
+                        "scoreA": "5",
+                        "scoreB": "4",
+                        "gameMvp": null,
+                        "winnerName": null
+                      },
+                      {
+                        "id": 1,
+                        "winnerName": null,
+                        "isTie": false,
+                        "scoreA": "3",
+                        "scoreB": "4",
+                        "gameMvp": null,
+                        "stats": {}
+                      }
+                    ],
+                    "teamA": {
+                      "name": "Belgium",
+                      "seed": 17,
+                      "color": "#f77f00",
+                      "region": "",
+                      "players": []
+                    },
+                    "teamB": {
+                      "name": "Austria",
+                      "seed": 22,
+                      "color": "#4361ee",
+                      "region": "",
+                      "players": []
+                    },
+                    "allowTie": true,
+                    "matchMode": "score",
+                    "_autoWinner": null
+                  }
+                ]
+              ]
+            }
+          ],
+          "matchMode": "score",
+          "groupCount": 5,
+          "poolChoice": true,
+          "poolsConfirmed": true
+        }
+      },
+      "activeStageIdx": 1,
+      "qualificationLinks": [],
+      "projectName": "EURO_QUALIFIer"
+    },
+    "folderId": "folder-1782367929008"
+  }
+}
