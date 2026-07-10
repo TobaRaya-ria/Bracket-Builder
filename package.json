@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
+    "dev:elo": "node server.js",
     "build": "vite build",
     "preview": "vite preview"
   },

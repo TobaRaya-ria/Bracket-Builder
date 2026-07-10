@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@supabase/supabase-js";
 import { strFromU8, strToU8, unzipSync, unzlibSync, zipSync, zlibSync } from "fflate";
@@ -26,6 +26,12 @@ const DEFAULT_STANDINGS_RULES={
   summary:"Football system. Ranking: Points, Match wins, Pts scored, Pts difference."
 };
 const RR_LEG_MAX=12;
+const ELO_TIERS=["Tier 1","Tier 2","Tier 3","Tier 4","Tier 5"];
+const DEFAULT_ELO_TIER="Tier 4";
+const EloBridgeContext=createContext({
+  getMatchContext:()=>null,
+  submitMatch:async()=>({ok:false,error:"Elo bridge unavailable"})
+});
 
 function normalizeRoundRobinLegs(value){
   const parsed=Math.floor(Number(value));
@@ -307,6 +313,61 @@ function matchResult(match) {
   else if (mode==="score"&&completedGames===match.games.length&&match.games.length>0) { winner=scoreA>scoreB?match.teamA:scoreB>scoreA?match.teamB:null; }
   if (winner) loser=winner===match.teamA?match.teamB:match.teamA;
   return { wA,wB,gameTies,scoreA,scoreB,winner,loser };
+}
+
+function safeMatchCodePart(value){
+  return String(value||"")
+    .trim()
+    .replace(/[^a-z0-9_-]+/gi,"-")
+    .replace(/^-+|-+$/g,"")
+    .slice(0,90)||"x";
+}
+
+function formatEloNumber(value){
+  const num=Number(value);
+  if(!Number.isFinite(num))return value==null||value===""?"-":String(value);
+  return Number.isInteger(num)?String(num):num.toFixed(1);
+}
+
+function kitakanaEloResult(match){
+  if(!match?.teamA||!match?.teamB)return null;
+  const res=matchResult(match);
+  const complete=matchIsComplete(match);
+  if(!complete)return null;
+  const hasNumericScore=(match.games||[]).some(game=>game.scoreA!==""&&game.scoreB!=="");
+  const scoreA=hasNumericScore?res.scoreA:res.wA;
+  const scoreB=hasNumericScore?res.scoreB:res.wB;
+  const diff=Math.abs(scoreA-scoreB);
+  const winnerSide=res.winner?.name===match.teamA.name?"Team A":res.winner?.name===match.teamB.name?"Team B":"Tie";
+  let resultType="Renga";
+  if(diff>5)resultType="Hoshin-Tora";
+  else if(diff===5)resultType="Hoshin-Kai";
+  else if(diff>0)resultType="Hoshin-Renga";
+  return {winner:winnerSide,resultType,scoreA,scoreB,score:`${formatEloNumber(scoreA)}-${formatEloNumber(scoreB)}`,usesNumericScore:hasNumericScore};
+}
+
+function buildKitakanaEloPayload(match,context){
+  const mapped=kitakanaEloResult(match);
+  if(!mapped||!context)return null;
+  const matchCode=context.matchCode||[
+    "tourney",
+    safeMatchCodePart(context.projectId||context.tournamentName),
+    safeMatchCodePart(context.stageKey||"stage"),
+    safeMatchCodePart(match.id)
+  ].join("-");
+  return {
+    matchCode,
+    tournamentName:context.tournamentName||"Tournament",
+    tier:context.tier||DEFAULT_ELO_TIER,
+    sourceMatchId:match.id,
+    teamA:match.teamA.name,
+    teamB:match.teamB.name,
+    winner:mapped.winner,
+    resultType:mapped.resultType,
+    score:mapped.score,
+    scoreA:mapped.scoreA,
+    scoreB:mapped.scoreB
+  };
 }
 
 function teamName(team){
@@ -1508,6 +1569,111 @@ function MatchCard({match,onGameUpdate,statCols,onMatchUpdate,accentLabel}){
   );
 }
 
+function MatchEloPanel({match}){
+  const eloBridge=useContext(EloBridgeContext);
+  const context=eloBridge.getMatchContext(match);
+  const mapped=kitakanaEloResult(match);
+  const[info,setInfo]=useState(null);
+  const[status,setStatus]=useState({loading:false,message:"",error:false});
+  const[submitState,setSubmitState]=useState({loading:false,message:"",error:false});
+  const ready=!!(match?.teamA&&match?.teamB);
+  const fetchInfo=async()=>{
+    if(!ready)return;
+    setStatus({loading:true,message:"",error:false});
+    try{
+      const params=new URLSearchParams({teamA:match.teamA.name,teamB:match.teamB.name});
+      const res=await fetch(`/api/elo/context?${params.toString()}`);
+      const data=await res.json();
+      if(!res.ok||!data.ok)throw new Error(data.error||"Elo bridge unavailable");
+      setInfo(data);
+      setStatus({loading:false,message:data.lockFileExists?"Workbook lock file is present. Close Excel if saving fails.":"",error:false});
+    }catch(error){
+      setStatus({loading:false,message:error.message||"Elo bridge unavailable",error:true});
+    }
+  };
+
+  useEffect(()=>{
+    let cancelled=false;
+    const run=async()=>{
+      if(!ready)return;
+      setStatus({loading:true,message:"",error:false});
+      try{
+        const params=new URLSearchParams({teamA:match.teamA.name,teamB:match.teamB.name});
+        const res=await fetch(`/api/elo/context?${params.toString()}`);
+        const data=await res.json();
+        if(cancelled)return;
+        if(!res.ok||!data.ok)throw new Error(data.error||"Elo bridge unavailable");
+        setInfo(data);
+        setStatus({loading:false,message:data.lockFileExists?"Workbook lock file is present. Close Excel if saving fails.":"",error:false});
+      }catch(error){
+        if(!cancelled)setStatus({loading:false,message:error.message||"Elo bridge unavailable",error:true});
+      }
+    };
+    run();
+    return()=>{cancelled=true;};
+  },[ready,match.teamA?.name,match.teamB?.name]);
+
+  if(!ready||!context)return null;
+  const submit=async()=>{
+    setSubmitState({loading:true,message:"",error:false});
+    try{
+      const result=await eloBridge.submitMatch(match);
+      if(!result.ok)throw new Error(result.error||"Submit failed");
+      setSubmitState({loading:false,message:`Submitted to row ${result.excelRow}`,error:false});
+      fetchInfo();
+    }catch(error){
+      setSubmitState({loading:false,message:error.message||"Submit failed",error:true});
+    }
+  };
+  const teamInfo=name=>info?.teams?.[name]||null;
+  const teamHistory=name=>info?.history?.[name]||[];
+  const InfoCard=({team})=>{
+    const data=teamInfo(team.name);
+    const history=teamHistory(team.name).slice(0,3);
+    return(
+      <div style={{border:`1px solid ${team.color||"var(--color-border-tertiary)"}55`,borderRadius:8,background:"rgba(255,255,255,0.035)",padding:"9px 10px",minWidth:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>
+          <TeamTag name={team.name} color={team.color} seed={team.seed} small/>
+          {data?.currentRank&&<span style={{marginLeft:"auto",fontSize:10,color:"var(--color-text-tertiary)",fontWeight:800}}>#{data.currentRank}</span>}
+        </div>
+        <div style={{fontSize:20,fontWeight:800,color:team.color||"#e9c46a",fontVariantNumeric:"tabular-nums"}}>{data?formatEloNumber(data.currentElo):"-"}</div>
+        <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginTop:2}}>{data?.code||"Not found in tracker"}{data?.continent?` · ${data.continent}`:""}</div>
+        {history.length>0&&(
+          <div style={{marginTop:7,display:"flex",flexDirection:"column",gap:2}}>
+            {history.map(item=>(
+              <div key={`${team.name}-${item.matchId}-${item.opponent}`} style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",gap:6,fontSize:10,color:"var(--color-text-tertiary)"}}>
+                <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.result} vs {item.opponent}</span>
+                <span style={{color:Number(item.eloChange)>=0?"#2a9d8f":"#e63946",fontWeight:800}}>{Number.isFinite(Number(item.eloChange))?Number(item.eloChange).toFixed(1):"-"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return(
+    <div style={{marginTop:12,padding:"12px",borderRadius:8,border:"1px solid rgba(233,196,106,0.32)",background:"rgba(233,196,106,0.045)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:9,flexWrap:"wrap"}}>
+        <span style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#e9c46a"}}>Kitakana Elo</span>
+        <span style={{fontSize:10,color:"var(--color-text-tertiary)",fontWeight:700}}>{context.tier||DEFAULT_ELO_TIER}</span>
+        {mapped&&<span style={{fontSize:10,color:"#2a9d8f",fontWeight:800,marginLeft:"auto"}}>{mapped.resultType} · {mapped.score}</span>}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:8}}>
+        {[match.teamA,match.teamB].filter(Boolean).map(team=><InfoCard key={team.name} team={team}/>)}
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10,flexWrap:"wrap"}}>
+        <button onClick={submit} disabled={!mapped||submitState.loading} style={{...btn(false),padding:"6px 12px",fontSize:11,background:mapped?"#e9c46a":"var(--color-background-secondary)",borderColor:mapped?"#e9c46a":"var(--color-border-tertiary)",color:mapped?"#2c2c00":"var(--color-text-tertiary)",opacity:submitState.loading?0.6:1,cursor:mapped&&!submitState.loading?"pointer":"not-allowed"}}>
+          {submitState.loading?"Submitting...":"Submit to Elo Tracker"}
+        </button>
+        <span style={{fontSize:10,color:submitState.error||status.error?"#e63946":submitState.message?"#2a9d8f":"var(--color-text-tertiary)",fontWeight:700}}>
+          {submitState.message||status.message||(status.loading?"Loading tracker...":mapped?context.matchCode:"Complete match first")}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
   const[activeGame,setActiveGame]=useState(0);
   const ready=!!(match.teamA&&match.teamB);
@@ -1574,6 +1740,7 @@ function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
         )}
 
         {allPlayers.length>0&&<PlayerStatPanel match={match} gameIdx={activeGameIdx} statCols={statCols} onUpdate={onGameUpdate}/>}
+        <MatchEloPanel match={match}/>
       </div>
     </div>
   );
@@ -2372,6 +2539,9 @@ function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=
             <button key={id} onClick={()=>!controlDisabled&&onChange({...stage,matchMode:id,gamesPerMatch:id==="wl"?1:(stage.gamesPerMatch||3)})} disabled={controlDisabled} style={{...btn(stage.matchMode===id),padding:"2px 7px",fontSize:10,...(controlDisabled?disabledStyle:{})}}>{lbl}</button>
           ))}
           {stage.matchMode!=="wl"&&<><Stepper value={stage.gamesPerMatch||3} min={1} max={11} onChange={v=>onChange({...stage,gamesPerMatch:v})} small disabled={controlDisabled}/><span style={{fontSize:10,color:"var(--color-text-tertiary)",alignSelf:"center"}}>games</span></>}
+          <select value={stage.eloTier||DEFAULT_ELO_TIER} onChange={e=>!controlDisabled&&onChange({...stage,eloTier:e.target.value})} disabled={controlDisabled} title="Elo tier" style={{fontSize:10,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,border:"0.5px solid var(--color-border-tertiary)",borderRadius:5,background:"var(--color-background-primary)",color:"var(--color-text-secondary)",padding:"2px 6px",textTransform:"uppercase",letterSpacing:"0.04em",opacity:controlDisabled?0.45:1,cursor:controlDisabled?"not-allowed":"pointer"}}>
+            {ELO_TIERS.map(tier=><option key={tier} value={tier}>{tier}</option>)}
+          </select>
         </div>
       </div>
 
@@ -2680,7 +2850,7 @@ const FOLDERS_KEY="tourney:folders:v1";
 const USERS_KEY="tourney:users:v1";
 const AUTH_KEY="tourney:auth:v1";
 const DEFAULT_AWARDS={weekMvps:[],stageMvps:[],finalMvps:[],finalMvpCount:1};
-const DEFAULT_STAGES=[{format:"single",teamCount:8,matchMode:"wl",gamesPerMatch:1,advance:4}];
+const DEFAULT_STAGES=[{format:"single",teamCount:8,matchMode:"wl",gamesPerMatch:1,eloTier:DEFAULT_ELO_TIER,advance:4}];
 const SUPABASE_URL=import.meta.env.VITE_SUPABASE_URL||"";
 const SUPABASE_ANON_KEY=import.meta.env.VITE_SUPABASE_ANON_KEY||"";
 const supabaseConfigured=!!(SUPABASE_URL&&SUPABASE_ANON_KEY);
@@ -3415,6 +3585,7 @@ export default function App(){
   const[matchMode,setMatchMode]=useState("wl");
   const[gamesPerMatch,setGamesPerMatch]=useState(1);
   const[rrLegs,setRrLegs]=useState(1);
+  const[eloTier,setEloTier]=useState(DEFAULT_ELO_TIER);
   const[rrStandingsRules,setRrStandingsRules]=useState(DEFAULT_STANDINGS_RULES);
   const[statCols,setStatCols]=useState(["Score"]);
   const[teams,setTeams]=useState([]);
@@ -3591,7 +3762,7 @@ export default function App(){
 
   useEffect(()=>{
     if(step!=="bracket"||!currentProjectId)return;
-    const state={step,formatType,teamCount,matchMode,gamesPerMatch,rrLegs,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks};
+    const state={step,formatType,teamCount,matchMode,gamesPerMatch,rrLegs,eloTier,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks};
     const hasBracket=isMulti?Object.keys(stageData||{}).length>0:isRR?rrRounds.length>0:!!bracketData;
     if(!hasBracket)return;
     const updatedAt=new Date().toISOString();
@@ -3602,7 +3773,7 @@ export default function App(){
       return [project,...others].slice(0,20);
     });
     setLastSavedAt(new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}));
-  },[step,currentProjectId,currentFolderId,formatType,teamCount,matchMode,gamesPerMatch,rrLegs,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks,isMulti,isRR]);
+  },[step,currentProjectId,currentFolderId,formatType,teamCount,matchMode,gamesPerMatch,rrLegs,eloTier,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks,isMulti,isRR]);
 
   useEffect(()=>{
     if(step!=="bracket"||!qualificationLinks.length)return;
@@ -3628,6 +3799,7 @@ export default function App(){
     setMatchMode(s.matchMode||"wl");
     setGamesPerMatch(s.gamesPerMatch||1);
     setRrLegs(normalizeRoundRobinLegs(s.rrLegs));
+    setEloTier(ELO_TIERS.includes(s.eloTier)?s.eloTier:DEFAULT_ELO_TIER);
     setRrStandingsRules(normalizeStandingsRules(s.rrStandingsRules));
     setStatCols(s.statCols||["Score"]);
     setTeams(s.teams||[]);
@@ -3788,7 +3960,7 @@ export default function App(){
     if(folderImportRef.current)folderImportRef.current.value="";
   };
 
-  const goHome=()=>{setCurrentProjectId(null);setLastSavedAt(null);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setRrLegs(1);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setPlacementTiebreaks([]);setBracketTab("tournament");};
+  const goHome=()=>{setCurrentProjectId(null);setLastSavedAt(null);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setRrLegs(1);setEloTier(DEFAULT_ELO_TIER);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setPlacementTiebreaks([]);setBracketTab("tournament");};
 
   const deleteProject=async(project)=>{
     if(!window.confirm(`Delete "${project.name}"? This cannot be undone.`))return;
@@ -3842,6 +4014,111 @@ export default function App(){
   const nonMultiMatches=isRR?rrRounds.flat():bracketData?dataMatches(bracketData):[];
   const nonMultiSettingsLocked=!isMulti&&matchesHaveEntries(nonMultiMatches);
   const nonMultiMetricRulesLocked=!isMulti&&isRR&&stageDataComplete({type:"roundrobin",rounds:rrRounds,teams:teamsWithSeed});
+  const[eloSyncState,setEloSyncState]=useState({loading:false,message:"",error:false});
+
+  const getMatchEloContext=(match)=>{
+    if(!match?.teamA||!match?.teamB||match._placementMatch)return null;
+    const tournamentName=currentTournamentName||projectNameFromState({formatType,teams:teamsWithSeed});
+    const projectPart=currentProjectId||safeMatchCodePart(tournamentName);
+    if(!isMulti){
+      const stageKey=formatType||"stage-1";
+      return {
+        projectId:projectPart,
+        tournamentName,
+        stageKey,
+        tier:eloTier||DEFAULT_ELO_TIER,
+        matchCode:["tourney",safeMatchCodePart(projectPart),safeMatchCodePart(stageKey),safeMatchCodePart(match.id)].join("-")
+      };
+    }
+    for(const [idxKey,data] of Object.entries(stageData||{})){
+      const idx=Number(idxKey);
+      const found=dataMatches(data).some(item=>item?.id===match.id);
+      if(found){
+        const stageKey=`stage-${idx+1}`;
+        const tier=stages[idx]?.eloTier||DEFAULT_ELO_TIER;
+        return {
+          projectId:projectPart,
+          tournamentName,
+          stageKey,
+          tier,
+          matchCode:["tourney",safeMatchCodePart(projectPart),safeMatchCodePart(stageKey),safeMatchCodePart(match.id)].join("-")
+        };
+      }
+    }
+    return null;
+  };
+
+  const submitEloMatch=async(match)=>{
+    const context=getMatchEloContext(match);
+    const payload=buildKitakanaEloPayload(match,context);
+    if(!payload)return {ok:false,error:"Complete the match before submitting."};
+    try{
+      const res=await fetch("/api/elo/submit-match",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(payload)
+      });
+      const data=await res.json();
+      return data.ok?data:{ok:false,error:data.error||"Elo submit failed"};
+    }catch(error){
+      return {ok:false,error:error.message||"Elo bridge unavailable"};
+    }
+  };
+
+  const collectCompletedEloPayloads=()=>{
+    const payloads=new Map();
+    const pushMatch=(match,context)=>{
+      if(!match?.teamA||!match?.teamB||isByeMatch(match)||!matchIsComplete(match))return;
+      const payload=buildKitakanaEloPayload(match,context);
+      if(payload&&!payloads.has(payload.matchCode))payloads.set(payload.matchCode,payload);
+    };
+    const tournamentName=currentTournamentName||projectNameFromState({formatType,teams:teamsWithSeed});
+    const projectPart=currentProjectId||safeMatchCodePart(tournamentName);
+    if(isMulti){
+      Object.entries(stageData||{}).forEach(([idxKey,data])=>{
+        const idx=Number(idxKey);
+        const stageKey=`stage-${idx+1}`;
+        const context={
+          projectId:projectPart,
+          tournamentName,
+          stageKey,
+          tier:stages[idx]?.eloTier||DEFAULT_ELO_TIER
+        };
+        dataMatches(data).forEach(match=>{
+          pushMatch(match,{...context,matchCode:["tourney",safeMatchCodePart(projectPart),safeMatchCodePart(stageKey),safeMatchCodePart(match.id)].join("-")});
+        });
+      });
+    } else {
+      const stageKey=formatType||"stage-1";
+      const context={projectId:projectPart,tournamentName,stageKey,tier:eloTier||DEFAULT_ELO_TIER};
+      (isRR?rrRounds.flat():bracketData?dataMatches(bracketData):[]).forEach(match=>{
+        pushMatch(match,{...context,matchCode:["tourney",safeMatchCodePart(projectPart),safeMatchCodePart(stageKey),safeMatchCodePart(match.id)].join("-")});
+      });
+    }
+    return [...payloads.values()];
+  };
+
+  const syncCompletedEloMatches=async()=>{
+    const matches=collectCompletedEloPayloads();
+    if(!matches.length){
+      setEloSyncState({loading:false,message:"No completed matches to sync.",error:true});
+      return;
+    }
+    setEloSyncState({loading:true,message:"Syncing completed matches...",error:false});
+    try{
+      const res=await fetch("/api/elo/sync-matches",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({matches})
+      });
+      const data=await res.json();
+      if(!res.ok||!data.ok)throw new Error(data.error||"Elo sync failed");
+      const errorText=data.errors?.length?` · ${data.errors.length} skipped`:"";
+      setEloSyncState({loading:false,message:`Synced ${data.submitted} match${data.submitted===1?"":"es"}${errorText}.`,error:!!data.errors?.length});
+    }catch(error){
+      setEloSyncState({loading:false,message:error.message||"Elo sync failed",error:true});
+    }
+  };
 
   const renameParticipant=(seed,newName)=>{
     const name=newName.trim();
@@ -3881,6 +4158,10 @@ export default function App(){
       if(!nonMultiMetricRulesLocked)setRrStandingsRules(normalizeStandingsRules(updates.rrStandingsRules));
       return;
     }
+    if(updates.eloTier&&Object.keys(updates).every(key=>key==="eloTier")){
+      if(!nonMultiSettingsLocked)setEloTier(ELO_TIERS.includes(updates.eloTier)?updates.eloTier:DEFAULT_ELO_TIER);
+      return;
+    }
     if(nonMultiSettingsLocked)return;
     const nextFormat=updates.formatType||formatType;
     const nextMode=updates.matchMode||matchMode;
@@ -3890,6 +4171,7 @@ export default function App(){
     if(updates.matchMode)setMatchMode(updates.matchMode);
     if(updates.gamesPerMatch)setGamesPerMatch(updates.gamesPerMatch);
     if(updates.rrLegs!=null)setRrLegs(nextLegs);
+    if(updates.eloTier)setEloTier(ELO_TIERS.includes(updates.eloTier)?updates.eloTier:DEFAULT_ELO_TIER);
     rebuildNonMultiBracket(nextFormat,nextMode,nextGames,nextLegs);
   };
 
@@ -4005,7 +4287,7 @@ export default function App(){
     if(tb&&(fromStage.tiebreakMode||"performance")==="stage"){
       const candidates=tb.candidates.map(c=>c.row.team);
       const tiebreakFormat=fromStage.tiebreakStageFormat||"roundrobin";
-      const tiebreakStage={format:tiebreakFormat,teamCount:candidates.length,aat:0,matchMode:fromStage.matchMode,gamesPerMatch:fromStage.gamesPerMatch,rrLegs:fromStage.rrLegs||1,advance:tb.remainder,isTiebreak:true};
+      const tiebreakStage={format:tiebreakFormat,teamCount:candidates.length,aat:0,matchMode:fromStage.matchMode,gamesPerMatch:fromStage.gamesPerMatch,rrLegs:fromStage.rrLegs||1,eloTier:fromStage.eloTier||DEFAULT_ELO_TIER,advance:tb.remainder,isTiebreak:true};
       const tiebreakData=buildStageData(tiebreakStage,candidates,{carryTeamsForNext:advancing});
       setStages(prev=>[...prev.slice(0,nextIdx),tiebreakStage,...prev.slice(nextIdx)]);
       setStageData(prev=>{
@@ -4049,7 +4331,7 @@ export default function App(){
     });
   };
 
-  const reset=()=>{if(typeof window!=="undefined")window.localStorage.removeItem(STORAGE_KEY);setCurrentProjectId(null);setLastSavedAt(null);setSaveError(false);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setRrLegs(1);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setPlacementTiebreaks([]);setBracketTab("tournament");};
+  const reset=()=>{if(typeof window!=="undefined")window.localStorage.removeItem(STORAGE_KEY);setCurrentProjectId(null);setLastSavedAt(null);setSaveError(false);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setRrLegs(1);setEloTier(DEFAULT_ELO_TIER);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setPlacementTiebreaks([]);setBracketTab("tournament");};
 
   const allBracketTeams=isRR?teamsWithSeed:(bracketData?teamsWithSeed:[]);
   const allBracketMatches=playableMatches(isRR?rrRounds.flat():bracketData?dataMatches(bracketData):[]);
@@ -4057,7 +4339,7 @@ export default function App(){
   const authHint=supabaseConfigured
     ?"Projects sync online with Supabase after you log in."
     :"Local browser mode. Add Supabase env vars in Vercel for real online accounts.";
-  const liveTournamentState={step,formatType,teamCount,matchMode,gamesPerMatch,rrLegs,rrStandingsRules,statCols,teams:teamsWithSeed,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks};
+  const liveTournamentState={step,formatType,teamCount,matchMode,gamesPerMatch,rrLegs,eloTier,rrStandingsRules,statCols,teams:teamsWithSeed,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks};
   const currentTournamentComplete=step==="bracket"&&tournamentIsComplete(liveTournamentState);
   const canEndTournament=currentTournamentComplete&&!tournamentEnded;
 
@@ -4220,6 +4502,12 @@ export default function App(){
               <button key={id} onClick={()=>updateNonMultiSettings({matchMode:id,gamesPerMatch:id==="wl"?1:(gamesPerMatch||3)})} disabled={nonMultiSettingsLocked} style={{...btn(matchMode===id),padding:"6px 12px",opacity:nonMultiSettingsLocked?0.45:1,cursor:nonMultiSettingsLocked?"not-allowed":"pointer"}}>{label}</button>
             ))}
             {matchMode!=="wl"&&<Stepper label="Games" value={gamesPerMatch||3} min={1} max={11} onChange={v=>updateNonMultiSettings({gamesPerMatch:v})} small disabled={nonMultiSettingsLocked}/>}
+            <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"var(--color-text-tertiary)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em"}}>
+              Elo Tier
+              <select value={eloTier} onChange={e=>updateNonMultiSettings({eloTier:e.target.value})} disabled={nonMultiSettingsLocked} style={{fontSize:12,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,border:"0.5px solid var(--color-border-tertiary)",borderRadius:5,background:"var(--color-background-primary)",color:"var(--color-text-secondary)",padding:"4px 7px",opacity:nonMultiSettingsLocked?0.45:1,cursor:nonMultiSettingsLocked?"not-allowed":"pointer"}}>
+                {ELO_TIERS.map(tier=><option key={tier} value={tier}>{tier}</option>)}
+              </select>
+            </label>
           </div>
           {formatType==="roundrobin"&&<StandingsRulesEditor rules={rrStandingsRules} onChange={rules=>updateNonMultiSettings({rrStandingsRules:rules})} disabled={nonMultiMetricRulesLocked}/>}
         </div>
@@ -4279,6 +4567,7 @@ export default function App(){
   );
 
   return(
+    <EloBridgeContext.Provider value={{getMatchContext:getMatchEloContext,submitMatch:submitEloMatch}}>
     <div style={{fontFamily:"'Barlow Condensed',sans-serif",padding:"0 0 40px"}}>
       <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Barlow:wght@400;500&display=swap" rel="stylesheet"/>
       <style>{`
@@ -4436,6 +4725,12 @@ export default function App(){
                   <div style={{fontSize:11,color:"var(--color-text-tertiary)",marginTop:2}}>{sub}</div>
                 </div>
               ))}
+              <label style={{display:"flex",alignItems:"center",gap:7,padding:"12px 14px",borderRadius:10,border:"1.5px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",fontSize:11,color:"var(--color-text-tertiary)",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.06em"}}>
+                Elo Tier
+                <select value={eloTier} onChange={e=>setEloTier(e.target.value)} style={{fontSize:13,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,border:"0.5px solid var(--color-border-tertiary)",borderRadius:5,background:"var(--color-background-secondary)",color:"var(--color-text-primary)",padding:"4px 8px"}}>
+                  {ELO_TIERS.map(tier=><option key={tier} value={tier}>{tier}</option>)}
+                </select>
+              </label>
             </div>
             {formatType==="roundrobin"&&<StandingsRulesEditor rules={rrStandingsRules} onChange={setRrStandingsRules}/>}
             {matchMode!=="wl"&&<div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16,padding:"12px 16px",background:"var(--color-background-secondary)",borderRadius:10,border:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap"}}><Stepper label="Games per match" value={gamesPerMatch} min={1} max={11} onChange={setGamesPerMatch}/><span style={{fontSize:12,color:"var(--color-text-tertiary)"}}>Best of {gamesPerMatch} · need {Math.ceil(gamesPerMatch/2)} to win</span></div>}
@@ -4490,7 +4785,7 @@ export default function App(){
               })}
               {stages.length<6&&<button onClick={()=>{
                 const lastAdv=stages[stages.length-1]?.advance||2;
-                updateMultiStages(p=>[...p,{format:"roundrobin",teamCount:lastAdv,aat:0,matchMode:"wl",gamesPerMatch:1,rrLegs:1,advance:Math.max(1,Math.floor(lastAdv/2))}]);
+                updateMultiStages(p=>[...p,{format:"roundrobin",teamCount:lastAdv,aat:0,matchMode:"wl",gamesPerMatch:1,rrLegs:1,eloTier:DEFAULT_ELO_TIER,advance:Math.max(1,Math.floor(lastAdv/2))}]);
               }} style={{padding:"8px 16px",borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:13,textTransform:"uppercase",letterSpacing:"0.05em",background:"var(--color-background-secondary)",color:"var(--color-text-secondary)",border:"1px dashed var(--color-border-tertiary)",cursor:"pointer"}}>+ Add Stage</button>}
             </div>
             <button onClick={()=>setStep("teams")} style={{padding:"10px 28px",borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,letterSpacing:"0.07em",textTransform:"uppercase",background:"#e9c46a",color:"#2c2c00",border:"none",cursor:"pointer",marginTop:8}}>Continue →</button>
@@ -4582,6 +4877,8 @@ export default function App(){
               {matchMode!=="wl"&&<><Stepper value={gamesPerMatch} min={1} max={11} onChange={reconfigureGames} small/><span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>games</span></>}
               <button onClick={()=>setShowPlayers(p=>!p)} style={{...btn(showPlayers),padding:"4px 10px",fontSize:11}}>{showPlayers?"🏆 Teams":"👤 Players"}</button>
               <button onClick={()=>setShowAwards(p=>!p)} style={{...btn(showAwards),padding:"4px 10px",fontSize:11,borderColor:showAwards?"#e9c46a":"rgba(233,196,106,0.3)",color:showAwards?"#e9c46a":"rgba(233,196,106,0.7)"}}>⭐ MVP Awards</button>
+              <button onClick={syncCompletedEloMatches} disabled={eloSyncState.loading} style={{...btn(false),padding:"4px 10px",fontSize:11,borderColor:"rgba(42,157,143,0.45)",color:"#2a9d8f",opacity:eloSyncState.loading?0.55:1,cursor:eloSyncState.loading?"not-allowed":"pointer"}}>{eloSyncState.loading?"Syncing Elo":"Sync Elo"}</button>
+              {eloSyncState.message&&<span style={{fontSize:10,color:eloSyncState.error?"#e63946":"#2a9d8f",fontWeight:800}}>{eloSyncState.message}</span>}
               <div style={{marginLeft:"auto"}}><StatColsEditor statCols={statCols} onChange={setStatCols}/></div>
             </div>
           )}
@@ -4589,6 +4886,8 @@ export default function App(){
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"10px 14px",background:"var(--color-background-secondary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap"}}>
               <span style={{fontSize:11,color:"var(--color-text-tertiary)",fontWeight:700,fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:"0.05em",textTransform:"uppercase"}}>Multi-Stage · {teams.length} teams</span>
               <button onClick={()=>setShowAwards(p=>!p)} style={{...btn(showAwards),padding:"4px 10px",fontSize:11,borderColor:showAwards?"#e9c46a":"rgba(233,196,106,0.3)",color:showAwards?"#e9c46a":"rgba(233,196,106,0.7)"}}>⭐ MVP Awards</button>
+              <button onClick={syncCompletedEloMatches} disabled={eloSyncState.loading} style={{...btn(false),padding:"4px 10px",fontSize:11,borderColor:"rgba(42,157,143,0.45)",color:"#2a9d8f",opacity:eloSyncState.loading?0.55:1,cursor:eloSyncState.loading?"not-allowed":"pointer"}}>{eloSyncState.loading?"Syncing Elo":"Sync Elo"}</button>
+              {eloSyncState.message&&<span style={{fontSize:10,color:eloSyncState.error?"#e63946":"#2a9d8f",fontWeight:800}}>{eloSyncState.message}</span>}
               <div style={{marginLeft:"auto"}}><StatColsEditor statCols={statCols} onChange={setStatCols}/></div>
             </div>
           )}
@@ -4661,5 +4960,6 @@ export default function App(){
         </div>
       )}
     </div>
+    </EloBridgeContext.Provider>
   );
 }

@@ -22,6 +22,14 @@ npm run dev
 
 Open the local URL shown by Vite, usually `http://127.0.0.1:5173/`.
 
+For the local Kitakana Elo Excel bridge, run this in a second terminal:
+
+```bash
+npm run dev:elo
+```
+
+The bridge writes to `Kitakana_Elo_Tracker.xlsx` by default, creates a backup before the first write, and keeps a local `.kitakana-elo-sync.json` ledger so repeated submits update the same Excel row.
+
 ## Build
 
 ```bash
