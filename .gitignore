@@ -4,7 +4,6 @@ dist/
 .env
 .env.*
 !.env.example
-.kitakana-elo-sync.json
 __pycache__/
 *.pyc
 npm-debug.log*

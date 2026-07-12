@@ -12,6 +12,7 @@ A playful tournament bracket builder for single elimination, double elimination,
 - Export/import tournaments as `.tourney.json`.
 - Export/import tournament folders as `.tourney-folder.zip`.
 - Share a tournament snapshot with a generated link.
+- Store Kitakana Elo teams, history, and match updates in Supabase.
 
 ## Run locally
 
@@ -21,14 +22,6 @@ npm run dev
 ```
 
 Open the local URL shown by Vite, usually `http://127.0.0.1:5173/`.
-
-For the local Kitakana Elo Excel bridge, run this in a second terminal:
-
-```bash
-npm run dev:elo
-```
-
-The bridge writes to `Kitakana_Elo_Tracker.xlsx` by default, creates a backup before the first write, and keeps a local `.kitakana-elo-sync.json` ledger so repeated submits update the same Excel row.
 
 ## Build
 
@@ -41,10 +34,11 @@ npm run build
 1. Create a Supabase project.
 2. Open Supabase SQL Editor.
 3. Run [`supabase/schema.sql`](supabase/schema.sql).
-4. Go to Project Settings → API and copy:
+4. Run [`supabase/kitakana_elo.sql`](supabase/kitakana_elo.sql).
+5. Go to Project Settings → API and copy:
    - Project URL
    - anon public key
-5. Create `.env.local` from `.env.example`:
+6. Create `.env.local` from `.env.example`:
 
 ```bash
 cp .env.example .env.local
@@ -58,6 +52,8 @@ VITE_SUPABASE_ANON_KEY=...
 ```
 
 When these env vars are present, login/signup uses Supabase and projects sync online. Without them, the app falls back to local browser storage.
+
+The first Kitakana Elo lookup for an account imports the verified workbook baseline once: 330 teams, 38 bonuses, and 453 historical matches. New submissions are stored by unique match code and recalculate directly in Supabase; no local Excel bridge is required.
 
 ## Round-robin AI rules
 

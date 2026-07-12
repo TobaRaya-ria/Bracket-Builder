@@ -1,0 +1,15 @@
+{
+  "ok": true,
+  "row": 10,
+  "directions": [
+    {"direction":"180","verdict":"pass","observed":"down","reason":"Pupils and eyelids point down with a tucked chin; body remains frontal and planted."},
+    {"direction":"202.5","verdict":"pass","observed":"down-left","reason":"Eyes and nose begin shifting screen-left while preserving the downward head pitch."},
+    {"direction":"225","verdict":"pass","observed":"down-left","reason":"Face, pupils, and nose progress farther screen-left with lowered gaze."},
+    {"direction":"247.5","verdict":"pass","observed":"down-left","reason":"Head approaches the left cardinal while retaining a visible down cue."},
+    {"direction":"270","verdict":"pass","observed":"left","reason":"Pupils, nose tip, mouth, and face surface are unmistakably screen-left and oppose 090."},
+    {"direction":"292.5","verdict":"pass","observed":"up-left","reason":"Screen-left head turn continues as pupils and chin begin rising."},
+    {"direction":"315","verdict":"pass","observed":"up-left","reason":"Face returns toward frontal while pupils remain high and slightly screen-left."},
+    {"direction":"337.5","verdict":"pass","observed":"up-left","reason":"Pose is nearly up-facing with a remaining subtle screen-left cue, one smooth step before 000."}
+  ],
+  "continuity": "pass: 157.5-to-180 and 337.5-to-000 are ordinary adjacent steps; scale, baseline, lower-body anchor, suit details, and face construction stay stable with no visible reversal or snap"
+}

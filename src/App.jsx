@@ -30,7 +30,8 @@ const ELO_TIERS=["Tier 1","Tier 2","Tier 3","Tier 4","Tier 5"];
 const DEFAULT_ELO_TIER="Tier 4";
 const EloBridgeContext=createContext({
   getMatchContext:()=>null,
-  submitMatch:async()=>({ok:false,error:"Elo bridge unavailable"})
+  loadMatchInfo:async()=>({initialized:false}),
+  submitMatch:async()=>({ok:false,error:"Supabase Elo unavailable"})
 });
 
 function normalizeRoundRobinLegs(value){
@@ -329,6 +330,17 @@ function formatEloNumber(value){
   return Number.isInteger(num)?String(num):num.toFixed(1);
 }
 
+function friendlyEloError(error){
+  const message=error?.message||String(error||"");
+  if(error?.code==="PGRST202"||message.includes("Could not find the function")||message.includes("kitakana_elo_context")){
+    return "The Supabase Kitakana Elo migration has not been installed yet.";
+  }
+  if(message.includes("Authentication required")||message.includes("JWT")||message.includes("session")){
+    return "Log in to the Toba account to use its Kitakana Elo tracker.";
+  }
+  return message||"Supabase Elo unavailable";
+}
+
 function kitakanaEloResult(match){
   if(!match?.teamA||!match?.teamB)return null;
   const res=matchResult(match);
@@ -362,6 +374,8 @@ function buildKitakanaEloPayload(match,context){
     sourceMatchId:match.id,
     teamA:match.teamA.name,
     teamB:match.teamB.name,
+    teamARegion:match.teamA.region||"",
+    teamBRegion:match.teamB.region||"",
     winner:mapped.winner,
     resultType:mapped.resultType,
     score:mapped.score,
@@ -1581,14 +1595,11 @@ function MatchEloPanel({match}){
     if(!ready)return;
     setStatus({loading:true,message:"",error:false});
     try{
-      const params=new URLSearchParams({teamA:match.teamA.name,teamB:match.teamB.name});
-      const res=await fetch(`/api/elo/context?${params.toString()}`);
-      const data=await res.json();
-      if(!res.ok||!data.ok)throw new Error(data.error||"Elo bridge unavailable");
+      const data=await eloBridge.loadMatchInfo(match);
       setInfo(data);
-      setStatus({loading:false,message:data.lockFileExists?"Workbook lock file is present. Close Excel if saving fails.":"",error:false});
+      setStatus({loading:false,message:"",error:false});
     }catch(error){
-      setStatus({loading:false,message:error.message||"Elo bridge unavailable",error:true});
+      setStatus({loading:false,message:friendlyEloError(error),error:true});
     }
   };
 
@@ -1598,20 +1609,17 @@ function MatchEloPanel({match}){
       if(!ready)return;
       setStatus({loading:true,message:"",error:false});
       try{
-        const params=new URLSearchParams({teamA:match.teamA.name,teamB:match.teamB.name});
-        const res=await fetch(`/api/elo/context?${params.toString()}`);
-        const data=await res.json();
+        const data=await eloBridge.loadMatchInfo(match);
         if(cancelled)return;
-        if(!res.ok||!data.ok)throw new Error(data.error||"Elo bridge unavailable");
         setInfo(data);
-        setStatus({loading:false,message:data.lockFileExists?"Workbook lock file is present. Close Excel if saving fails.":"",error:false});
+        setStatus({loading:false,message:"",error:false});
       }catch(error){
-        if(!cancelled)setStatus({loading:false,message:error.message||"Elo bridge unavailable",error:true});
+        if(!cancelled)setStatus({loading:false,message:friendlyEloError(error),error:true});
       }
     };
     run();
     return()=>{cancelled=true;};
-  },[ready,match.teamA?.name,match.teamB?.name]);
+  },[ready,match.teamA?.name,match.teamA?.region,match.teamB?.name,match.teamB?.region]);
 
   if(!ready||!context)return null;
   const submit=async()=>{
@@ -1619,17 +1627,18 @@ function MatchEloPanel({match}){
     try{
       const result=await eloBridge.submitMatch(match);
       if(!result.ok)throw new Error(result.error||"Submit failed");
-      setSubmitState({loading:false,message:`Submitted to row ${result.excelRow}`,error:false});
+      setSubmitState({loading:false,message:`Submitted as Elo match ${result.matchOrder}`,error:false});
       fetchInfo();
     }catch(error){
-      setSubmitState({loading:false,message:error.message||"Submit failed",error:true});
+      setSubmitState({loading:false,message:friendlyEloError(error)||"Submit failed",error:true});
     }
   };
-  const teamInfo=name=>info?.teams?.[name]||null;
-  const teamHistory=name=>info?.history?.[name]||[];
+  const sideForTeam=team=>team===match.teamA?"teamA":"teamB";
   const InfoCard=({team})=>{
-    const data=teamInfo(team.name);
-    const history=teamHistory(team.name).slice(0,3);
+    const side=info?.sides?.[sideForTeam(team)]||null;
+    const data=side?.info||info?.teams?.[team.name]||null;
+    const history=(side?.history||info?.history?.[team.name]||[]).slice(0,3);
+    const trackerName=side?.trackerName||data?.name||"";
     return(
       <div style={{border:`1px solid ${team.color||"var(--color-border-tertiary)"}55`,borderRadius:8,background:"rgba(255,255,255,0.035)",padding:"9px 10px",minWidth:0}}>
         <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>
@@ -1638,6 +1647,7 @@ function MatchEloPanel({match}){
         </div>
         <div style={{fontSize:20,fontWeight:800,color:team.color||"#e9c46a",fontVariantNumeric:"tabular-nums"}}>{data?formatEloNumber(data.currentElo):"-"}</div>
         <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginTop:2}}>{data?.code||"Not found in tracker"}{data?.continent?` · ${data.continent}`:""}</div>
+        {trackerName&&trackerName!==team.name&&<div style={{fontSize:9,color:"var(--color-text-tertiary)",marginTop:2}}>Tracker team: {trackerName}</div>}
         {history.length>0&&(
           <div style={{marginTop:7,display:"flex",flexDirection:"column",gap:2}}>
             {history.map(item=>(
@@ -1657,6 +1667,7 @@ function MatchEloPanel({match}){
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:9,flexWrap:"wrap"}}>
         <span style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#e9c46a"}}>Kitakana Elo</span>
         <span style={{fontSize:10,color:"var(--color-text-tertiary)",fontWeight:700}}>{context.tier||DEFAULT_ELO_TIER}</span>
+        {info?.backend&&<span style={{fontSize:9,color:"#2a9d8f",fontWeight:800}}>{info.backend}</span>}
         {mapped&&<span style={{fontSize:10,color:"#2a9d8f",fontWeight:800,marginLeft:"auto"}}>{mapped.resultType} · {mapped.score}</span>}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:8}}>
@@ -3579,6 +3590,7 @@ export default function App(){
   const tournamentImportRef=useRef(null);
   const folderImportRef=useRef(null);
   const qualificationSignatureRef=useRef("");
+  const eloInitializationRef=useRef({userId:null,promise:null});
   const[step,setStep]=useState("setup");
   const[formatType,setFormatType]=useState(null); // "single"|"double"|"roundrobin"|"multi"
   const[teamCount,setTeamCount]=useState(8);
@@ -4048,20 +4060,62 @@ export default function App(){
     return null;
   };
 
+  const requireSupabaseElo=()=>{
+    if(!supabaseConfigured||!supabase)throw new Error("Supabase is not configured for this website.");
+    if(!currentUser?.supabase)throw new Error("Log in to the Toba account to use its Kitakana Elo tracker.");
+  };
+
+  const ensureEloTrackerInitialized=async()=>{
+    requireSupabaseElo();
+    if(eloInitializationRef.current.userId!==currentUser.id){
+      eloInitializationRef.current={userId:currentUser.id,promise:null};
+    }
+    if(!eloInitializationRef.current.promise){
+      eloInitializationRef.current.promise=(async()=>{
+        const{data:status,error:statusError}=await supabase.rpc("kitakana_elo_status");
+        if(statusError)throw statusError;
+        if(status?.initialized)return status;
+        const seedModule=await import("../supabase/seed/kitakana_elo_seed.json");
+        const{data,error}=await supabase.rpc("kitakana_import_seed",{p_seed:seedModule.default});
+        if(error)throw error;
+        return data;
+      })().catch(error=>{
+        eloInitializationRef.current.promise=null;
+        throw error;
+      });
+    }
+    return eloInitializationRef.current.promise;
+  };
+
+  const loadEloMatchInfo=async(match)=>{
+    await ensureEloTrackerInitialized();
+    const{data,error}=await supabase.rpc("kitakana_elo_context",{
+      p_team_a:match.teamA?.name||"",
+      p_team_a_region:match.teamA?.region||"",
+      p_team_b:match.teamB?.name||"",
+      p_team_b_region:match.teamB?.region||""
+    });
+    if(error)throw error;
+    return data;
+  };
+
+  const submitEloPayloads=async(payloads)=>{
+    await ensureEloTrackerInitialized();
+    const{data,error}=await supabase.rpc("kitakana_submit_matches",{p_matches:payloads});
+    if(error)throw error;
+    return data;
+  };
+
   const submitEloMatch=async(match)=>{
     const context=getMatchEloContext(match);
     const payload=buildKitakanaEloPayload(match,context);
     if(!payload)return {ok:false,error:"Complete the match before submitting."};
     try{
-      const res=await fetch("/api/elo/submit-match",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(payload)
-      });
-      const data=await res.json();
-      return data.ok?data:{ok:false,error:data.error||"Elo submit failed"};
+      const data=await submitEloPayloads([payload]);
+      const result=data?.results?.[0]||{};
+      return data?.ok?{ok:true,...result}:{ok:false,error:"Elo submit failed"};
     }catch(error){
-      return {ok:false,error:error.message||"Elo bridge unavailable"};
+      return {ok:false,error:friendlyEloError(error)};
     }
   };
 
@@ -4106,17 +4160,12 @@ export default function App(){
     }
     setEloSyncState({loading:true,message:"Syncing completed matches...",error:false});
     try{
-      const res=await fetch("/api/elo/sync-matches",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({matches})
-      });
-      const data=await res.json();
-      if(!res.ok||!data.ok)throw new Error(data.error||"Elo sync failed");
+      const data=await submitEloPayloads(matches);
+      if(!data?.ok)throw new Error("Elo sync failed");
       const errorText=data.errors?.length?` · ${data.errors.length} skipped`:"";
       setEloSyncState({loading:false,message:`Synced ${data.submitted} match${data.submitted===1?"":"es"}${errorText}.`,error:!!data.errors?.length});
     }catch(error){
-      setEloSyncState({loading:false,message:error.message||"Elo sync failed",error:true});
+      setEloSyncState({loading:false,message:friendlyEloError(error)||"Elo sync failed",error:true});
     }
   };
 
@@ -4567,7 +4616,7 @@ export default function App(){
   );
 
   return(
-    <EloBridgeContext.Provider value={{getMatchContext:getMatchEloContext,submitMatch:submitEloMatch}}>
+    <EloBridgeContext.Provider value={{getMatchContext:getMatchEloContext,loadMatchInfo:loadEloMatchInfo,submitMatch:submitEloMatch}}>
     <div style={{fontFamily:"'Barlow Condensed',sans-serif",padding:"0 0 40px"}}>
       <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Barlow:wght@400;500&display=swap" rel="stylesheet"/>
       <style>{`

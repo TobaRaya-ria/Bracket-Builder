@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "spriteVersionNumber": 2,
+  "run_dir": "/Users/marcel/Downloads/tourney/prabowo-v2-run",
+  "spritesheet": "/Users/marcel/Downloads/tourney/prabowo-v2-run/final/spritesheet-extended.webp",
+  "validation": "/Users/marcel/Downloads/tourney/prabowo-v2-run/final/validation-extended.json",
+  "chroma_despill": "/Users/marcel/Downloads/tourney/prabowo-v2-run/qa/chroma-despill-extended.json",
+  "contact_sheet": "/Users/marcel/Downloads/tourney/prabowo-v2-run/qa/contact-sheet-extended.png",
+  "direction_sheet": "/Users/marcel/Downloads/tourney/prabowo-v2-run/qa/look-directions.png",
+  "direction_semantics": "/Users/marcel/Downloads/tourney/prabowo-v2-run/qa/direction-semantics.json",
+  "blind_direction_validation": "/Users/marcel/Downloads/tourney/prabowo-v2-run/qa/direction-blind-validation.json",
+  "blind_review_resolution": "/Users/marcel/Downloads/tourney/prabowo-v2-run/qa/blind-review-resolution.json",
+  "continuity": "/Users/marcel/Downloads/tourney/prabowo-v2-run/qa/look-continuity.json",
+  "review": "/Users/marcel/Downloads/tourney/prabowo-v2-run/qa/review.json",
+  "package": "/Users/marcel/.codex/pets/prabowo"
+}

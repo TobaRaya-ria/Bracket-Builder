@@ -1,0 +1,26 @@
+{
+  "ok": true,
+  "reviewed_at_normal_size": true,
+  "directions": [
+    {
+      "direction": "000",
+      "verdict": "pass",
+      "evidence": "Pupils and irises sit high in the original eye apertures; chin and face pitch upward while the planted body stays frontal."
+    },
+    {
+      "direction": "090",
+      "verdict": "pass",
+      "evidence": "Pupils, nose tip, mouth, and face surface move toward screen-right, with the opposite cheek and ear more visible."
+    },
+    {
+      "direction": "180",
+      "verdict": "pass",
+      "evidence": "Pupils and eyelids aim downward; the chin tucks and the face pitches toward the bottom edge."
+    },
+    {
+      "direction": "270",
+      "verdict": "pass",
+      "evidence": "Pupils, nose tip, mouth, and face surface move toward screen-left, clearly opposing 090."
+    }
+  ]
+}

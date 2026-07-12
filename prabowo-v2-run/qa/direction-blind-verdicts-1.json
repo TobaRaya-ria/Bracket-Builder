@@ -1,0 +1,16 @@
+{"pairs":[
+  {"pair":"horizontal-1","A":"ambiguous","B":"ambiguous","reason":"front-facing pair; no definite horizontal cue"},
+  {"pair":"horizontal-2","A":"ambiguous","B":"screen-right","reason":"A is centered; B nose and pupils shift right"},
+  {"pair":"horizontal-3","A":"screen-right","B":"screen-left","reason":"face and pupils oppose across the horizontal axis"},
+  {"pair":"horizontal-4","A":"screen-left","B":"screen-right","reason":"head turns oppose across the horizontal axis"},
+  {"pair":"horizontal-5","A":"screen-left","B":"screen-right","reason":"nose and face surfaces oppose"},
+  {"pair":"horizontal-6","A":"screen-left","B":"screen-right","reason":"pupils and head turn oppose"},
+  {"pair":"horizontal-7","A":"screen-left","B":"screen-right","reason":"left/right face orientation is visible"},
+  {"pair":"vertical-1","A":"up","B":"down","reason":"pupils are high versus low"},
+  {"pair":"vertical-2","A":"up","B":"down","reason":"upper versus lower eye placement"},
+  {"pair":"vertical-3","A":"up","B":"down","reason":"upper versus lower eye placement"},
+  {"pair":"vertical-4","A":"up","B":"down","reason":"upper versus lower eye placement"},
+  {"pair":"vertical-5","A":"up","B":"down","reason":"upper versus lower eye placement"},
+  {"pair":"vertical-6","A":"down","B":"up","reason":"lower versus upper eye placement"},
+  {"pair":"vertical-7","A":"down","B":"up","reason":"high-resolution crop shows low versus high pupils"}
+]}

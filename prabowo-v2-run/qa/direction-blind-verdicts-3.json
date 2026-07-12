@@ -1,0 +1,16 @@
+{"pairs":[
+  {"pair":"horizontal-1","A":"ambiguous","B":"ambiguous","reason":"front-facing pair"},
+  {"pair":"horizontal-2","A":"ambiguous","B":"screen-right","reason":"B aims right"},
+  {"pair":"horizontal-3","A":"screen-right","B":"screen-left","reason":"opposing face turns"},
+  {"pair":"horizontal-4","A":"screen-right","B":"screen-left","reason":"opposing face turns"},
+  {"pair":"horizontal-5","A":"screen-left","B":"screen-right","reason":"opposing face turns"},
+  {"pair":"horizontal-6","A":"screen-left","B":"screen-right","reason":"opposing face turns"},
+  {"pair":"horizontal-7","A":"screen-left","B":"screen-right","reason":"opposing face turns"},
+  {"pair":"vertical-1","A":"up","B":"down","reason":"high versus low pupils"},
+  {"pair":"vertical-2","A":"up","B":"down","reason":"high versus low pupils"},
+  {"pair":"vertical-3","A":"up","B":"down","reason":"high versus low pupils"},
+  {"pair":"vertical-4","A":"up","B":"down","reason":"high versus low pupils"},
+  {"pair":"vertical-5","A":"up","B":"down","reason":"high versus low pupils"},
+  {"pair":"vertical-6","A":"up","B":"down","reason":"high versus low pupils"},
+  {"pair":"vertical-7","A":"up","B":"down","reason":"high versus low pupils"}
+]}
