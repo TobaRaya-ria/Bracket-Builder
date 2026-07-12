@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { Fragment, createContext, useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@supabase/supabase-js";
 import { strFromU8, strToU8, unzipSync, unzlibSync, zipSync, zlibSync } from "fflate";
@@ -7,6 +7,17 @@ import { strFromU8, strToU8, unzipSync, unzlibSync, zipSync, zlibSync } from "ff
 const COUNTRY_MAP = {"afghanistan":"af","albania":"al","algeria":"dz","argentina":"ar","australia":"au","austria":"at","bangladesh":"bd","belgium":"be","bolivia":"bo","brazil":"br","cambodia":"kh","cameroon":"cm","canada":"ca","chile":"cl","china":"cn","colombia":"co","costa rica":"cr","croatia":"hr","cuba":"cu","czech republic":"cz","denmark":"dk","ecuador":"ec","egypt":"eg","england":"gb","ethiopia":"et","finland":"fi","france":"fr","germany":"de","ghana":"gh","greece":"gr","guatemala":"gt","hungary":"hu","india":"in","indonesia":"id","iran":"ir","iraq":"iq","ireland":"ie","israel":"il","italy":"it","ivory coast":"ci","jamaica":"jm","japan":"jp","jordan":"jo","kenya":"ke","kuwait":"kw","malaysia":"my","mali":"ml","mexico":"mx","morocco":"ma","mozambique":"mz","myanmar":"mm","nepal":"np","netherlands":"nl","new zealand":"nz","nigeria":"ng","north korea":"kp","norway":"no","pakistan":"pk","panama":"pa","paraguay":"py","peru":"pe","philippines":"ph","poland":"pl","portugal":"pt","qatar":"qa","romania":"ro","russia":"ru","saudi arabia":"sa","scotland":"gb","senegal":"sn","serbia":"rs","singapore":"sg","slovakia":"sk","south africa":"za","south korea":"kr","spain":"es","sri lanka":"lk","sweden":"se","switzerland":"ch","taiwan":"tw","tanzania":"tz","thailand":"th","tunisia":"tn","turkey":"tr","ukraine":"ua","united kingdom":"gb","united states":"us","usa":"us","uk":"gb","uruguay":"uy","venezuela":"ve","vietnam":"vn","wales":"gb","zambia":"zm","zimbabwe":"zw"};
 const FLAG = (code) => { if(!code)return""; const c=code.trim().toUpperCase().slice(0,2); if(c.length<2)return""; try{return String.fromCodePoint(...[...c].map(ch=>0x1F1E6-65+ch.charCodeAt(0)));}catch{return"";} };
 const regionFlag = (region) => { if(!region)return""; const iso=COUNTRY_MAP[region.trim().toLowerCase()]; return iso?FLAG(iso):""; };
+const CONMEBOL_CODES=new Set(["ARG","BOL","BRA","CHI","COL","ECU","PAR","PER","URU","VEN"]);
+const eloSubregion=team=>{
+  const region=String(team?.continent||"").toUpperCase();
+  const code=String(team?.code||"").toUpperCase();
+  if(region==="EURO")return"UEFA";
+  if(region==="ASIA")return"AFC";
+  if(region==="AFRICA")return"CAF";
+  if(region==="OCEANIA")return"OFC";
+  if(region==="AMER")return CONMEBOL_CODES.has(code)?"CONMEBOL":"CONCACAF";
+  return"";
+};
 
 // ─── Palette ─────────────────────────────────────────────────────────────────
 const palette=["#e63946","#457b9d","#2a9d8f","#e9c46a","#f4a261","#8338ec","#06d6a0","#fb8500","#118ab2","#d62828","#3a86ff","#ff006e","#219ebc","#ffb703","#c77dff","#52b788","#f77f00","#4cc9f0","#b5179e","#7209b7","#3a0ca3","#4361ee","#80b918","#e07a5f","#3d405b","#81b29a","#264653","#2b2d42","#ef233c","#06aed5"];
@@ -328,6 +339,12 @@ function formatEloNumber(value){
   const num=Number(value);
   if(!Number.isFinite(num))return value==null||value===""?"-":String(value);
   return Number.isInteger(num)?String(num):num.toFixed(1);
+}
+
+function eloHistoryResult(item){
+  const result=String(item?.result||item?.resultType||"");
+  const lost=item?.outcome==="loss"||(item?.outcome==null&&Number(item?.eloChange)<0);
+  return lost?result.replace(/^Hoshin/,"Besan"):result;
 }
 
 function friendlyEloError(error){
@@ -1637,7 +1654,7 @@ function MatchEloPanel({match}){
   const InfoCard=({team})=>{
     const side=info?.sides?.[sideForTeam(team)]||null;
     const data=side?.info||info?.teams?.[team.name]||null;
-    const history=(side?.history||info?.history?.[team.name]||[]).slice(0,3);
+    const history=(side?.history||info?.history?.[team.name]||[]).slice(0,8);
     const trackerName=side?.trackerName||data?.name||"";
     return(
       <div style={{border:`1px solid ${team.color||"var(--color-border-tertiary)"}55`,borderRadius:8,background:"rgba(255,255,255,0.035)",padding:"9px 10px",minWidth:0}}>
@@ -1652,7 +1669,7 @@ function MatchEloPanel({match}){
           <div style={{marginTop:7,display:"flex",flexDirection:"column",gap:2}}>
             {history.map(item=>(
               <div key={`${team.name}-${item.matchId}-${item.opponent}`} style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",gap:6,fontSize:10,color:"var(--color-text-tertiary)"}}>
-                <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.result} vs {item.opponent}</span>
+                <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{eloHistoryResult(item)} vs {item.opponent}</span>
                 <span style={{color:Number(item.eloChange)>=0?"#2a9d8f":"#e63946",fontWeight:800}}>{Number.isFinite(Number(item.eloChange))?Number(item.eloChange).toFixed(1):"-"}</span>
               </div>
             ))}
@@ -1687,6 +1704,9 @@ function MatchEloPanel({match}){
 
 function EloStandingsPanel({loadStandings,refreshToken}){
   const[state,setState]=useState({loading:true,error:"",standings:[]});
+  const[regionFilter,setRegionFilter]=useState("all");
+  const[subregionFilter,setSubregionFilter]=useState("all");
+  const[openTeam,setOpenTeam]=useState("");
 
   useEffect(()=>{
     let cancelled=false;
@@ -1701,40 +1721,91 @@ function EloStandingsPanel({loadStandings,refreshToken}){
     return()=>{cancelled=true;};
   },[refreshToken]);
 
+  const regions=[...new Set(state.standings.map(team=>team.continent).filter(Boolean))].sort();
+  const subregions=[...new Set(state.standings.map(eloSubregion).filter(Boolean))].sort();
+  const filtered=state.standings.filter(team=>(regionFilter==="all"||team.continent===regionFilter)&&(subregionFilter==="all"||eloSubregion(team)===subregionFilter));
+  const outcomeColor=outcome=>outcome==="win"?"#16833b":outcome==="loss"?"#e63946":"#74798b";
+  const outcomeLetter=outcome=>outcome==="win"?"W":outcome==="loss"?"L":"D";
+  const shortDate=value=>{
+    if(!value)return"Historical";
+    const date=new Date(value);
+    return Number.isNaN(date.getTime())?String(value):date.toLocaleDateString(undefined,{day:"2-digit",month:"short",year:"numeric"});
+  };
+  const HistoryCard=({item})=><div style={{flex:"0 0 240px",minHeight:142,border:"1px solid var(--color-border-tertiary)",borderRadius:8,overflow:"hidden",background:"var(--color-background-primary)",boxSizing:"border-box"}}>
+    <div style={{padding:"7px 10px",background:"#061c32",color:"#fff",fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.event||"Elo match"}</div>
+    <div style={{padding:"10px 11px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:10,color:"var(--color-text-tertiary)",marginBottom:8}}><strong>{eloHistoryResult(item)}</strong><span>{shortDate(item.updatedAt)}</span></div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,fontSize:13,fontWeight:800}}><span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>vs {item.opponent}</span><span>{item.score||"—"}</span></div>
+      <div style={{marginTop:10,paddingTop:8,borderTop:"1px solid var(--color-border-tertiary)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+        <span style={{width:25,height:25,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",background:outcomeColor(item.outcome),color:"white",fontWeight:900,fontSize:11}}>{outcomeLetter(item.outcome)}</span>
+        <span style={{fontWeight:900,color:Number(item.eloChange)>=0?"#2a9d8f":"#e63946"}}>{Number(item.eloChange)>=0?"+":""}{formatEloNumber(item.eloChange)}</span>
+      </div>
+    </div>
+  </div>;
+  const BonusCard=({item})=><div style={{flex:"0 0 240px",minHeight:142,border:"1px solid rgba(233,196,106,0.42)",borderRadius:8,overflow:"hidden",background:"rgba(233,196,106,0.04)",boxSizing:"border-box"}}>
+    <div style={{padding:"7px 10px",background:"rgba(233,196,106,0.18)",color:"#b8921a",fontSize:10,fontWeight:900,letterSpacing:"0.05em",textTransform:"uppercase",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.category||"Elo bonus"}</div>
+    <div style={{padding:"10px 11px",display:"flex",flexDirection:"column",minHeight:105,boxSizing:"border-box"}}>
+      <div style={{fontSize:12,fontWeight:800,lineHeight:1.35}}>{item.event||"Historical Elo adjustment"}</div>
+      <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginTop:5}}>Applied before match #{item.bonusOrder||item.bonusId||"—"}</div>
+      <div style={{marginTop:"auto",paddingTop:8,borderTop:"1px solid rgba(233,196,106,0.22)",fontSize:20,fontWeight:900,color:Number(item.points)>=0?"#2a9d8f":"#e63946"}}>{Number(item.points)>=0?"+":""}{formatEloNumber(item.points)}</div>
+    </div>
+  </div>;
+
   return(
     <div style={{border:"1px solid rgba(233,196,106,0.32)",background:"rgba(233,196,106,0.04)",borderRadius:8,overflow:"hidden"}}>
-      <div style={{padding:"13px 15px",borderBottom:"1px solid rgba(233,196,106,0.2)",display:"flex",alignItems:"baseline",gap:9,flexWrap:"wrap"}}>
+      <div style={{padding:"13px 15px",borderBottom:"1px solid rgba(233,196,106,0.2)",display:"flex",alignItems:"center",gap:9,flexWrap:"wrap"}}>
         <span style={{fontSize:15,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:"#e9c46a"}}>Kitakana Elo Standings</span>
         <span style={{fontSize:11,color:"var(--color-text-tertiary)",fontWeight:700}}>All historical and submitted matches</span>
+        <div style={{marginLeft:"auto",display:"flex",gap:7,flexWrap:"wrap"}}>
+          <select aria-label="Filter Elo standings by region" value={regionFilter} onChange={event=>{setRegionFilter(event.target.value);setOpenTeam("");}} style={{padding:"5px 8px",borderRadius:6,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800}}><option value="all">All regions</option>{regions.map(region=><option key={region} value={region}>{region}</option>)}</select>
+          <select aria-label="Filter Elo standings by subregion" value={subregionFilter} onChange={event=>{setSubregionFilter(event.target.value);setOpenTeam("");}} style={{padding:"5px 8px",borderRadius:6,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800}}><option value="all">All subregions</option>{subregions.map(region=><option key={region} value={region}>{region}</option>)}</select>
+        </div>
       </div>
       {state.loading&&<div style={{padding:18,color:"var(--color-text-tertiary)",fontWeight:700}}>Loading tracker...</div>}
       {!state.loading&&state.error&&<div style={{padding:18,color:"#e63946",fontWeight:700}}>{state.error}</div>}
       {!state.loading&&!state.error&&(
         <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",minWidth:600,fontSize:13}}>
+          <table style={{width:"100%",borderCollapse:"collapse",minWidth:920,fontSize:13}}>
             <thead>
               <tr style={{background:"rgba(255,255,255,0.035)",color:"var(--color-text-tertiary)",textTransform:"uppercase",letterSpacing:"0.05em",fontSize:10}}>
                 <th style={{padding:"9px 12px",textAlign:"left"}}>Rank</th>
                 <th style={{padding:"9px 12px",textAlign:"left"}}>Team</th>
-                <th style={{padding:"9px 12px",textAlign:"right"}}>Elo</th>
-                <th style={{padding:"9px 12px",textAlign:"right"}}>Change</th>
-                <th style={{padding:"9px 12px",textAlign:"right"}}>Matches</th>
+                <th style={{padding:"9px 12px",textAlign:"left"}}>Latest Results</th>
+                <th style={{padding:"9px 12px",textAlign:"left"}}>Match</th>
+                <th style={{padding:"9px 12px",textAlign:"left"}}>Bonus</th>
+                <th style={{padding:"9px 12px",textAlign:"right"}}>Points</th>
+                <th style={{padding:"9px 12px",textAlign:"center"}}>More</th>
               </tr>
             </thead>
             <tbody>
-              {state.standings.map(team=>{
+              {filtered.map(team=>{
                 const change=Number(team.eloChange)||0;
-                return <tr key={team.code||team.name} style={{borderTop:"1px solid var(--color-border-tertiary)"}}>
-                  <td style={{padding:"9px 12px",fontWeight:800,color:"#e9c46a"}}>{team.rank}</td>
-                  <td style={{padding:"9px 12px",fontWeight:700}}>{regionFlag(team.continent)} {team.name} <span style={{fontSize:10,color:"var(--color-text-tertiary)",marginLeft:5}}>{team.code}</span></td>
-                  <td style={{padding:"9px 12px",textAlign:"right",fontWeight:800}}>{Number(team.currentElo).toFixed(1)}</td>
-                  <td style={{padding:"9px 12px",textAlign:"right",fontWeight:800,color:change>0?"#2a9d8f":change<0?"#e63946":"var(--color-text-tertiary)"}}>{change>0?"+":""}{change.toFixed(1)}</td>
-                  <td style={{padding:"9px 12px",textAlign:"right",color:"var(--color-text-secondary)"}}>{team.matches}</td>
-                </tr>;
+                const history=team.history||[];
+                const bonuses=team.bonuses||[];
+                const latest=history[0];
+                const latestBonus=bonuses[0];
+                const open=openTeam===(team.code||team.name);
+                return <Fragment key={team.code||team.name}>
+                  <tr onClick={()=>setOpenTeam(open?"":team.code||team.name)} style={{borderTop:"1px solid var(--color-border-tertiary)",background:open?"rgba(255,255,255,0.035)":"transparent",cursor:"pointer"}}>
+                    <td style={{padding:"13px 12px",fontSize:22,fontWeight:900,color:"#e9c46a"}}>{team.rank}</td>
+                    <td style={{padding:"13px 12px",fontWeight:800}}><span style={{fontSize:18,marginRight:7}}>{regionFlag(team.name)}</span>{team.name}<div style={{fontSize:9,color:"var(--color-text-tertiary)",marginTop:2}}>{team.code} · {team.continent}{eloSubregion(team)?` · ${eloSubregion(team)}`:""}</div></td>
+                    <td style={{padding:"13px 12px"}}><div style={{display:"flex",gap:4}}>{history.slice(0,5).map((item,index)=><span key={`${item.matchId}-${index}`} title={`${eloHistoryResult(item)} vs ${item.opponent}`} style={{width:20,height:20,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",background:outcomeColor(item.outcome),color:"white",fontSize:9,fontWeight:900}}>{outcomeLetter(item.outcome)}</span>)}{!history.length&&<span style={{color:"var(--color-text-tertiary)"}}>—</span>}</div></td>
+                    <td style={{padding:"13px 12px",maxWidth:210}}>{latest?<><div style={{fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{eloHistoryResult(latest)} vs {latest.opponent}</div><div style={{fontSize:10,color:Number(latest.eloChange)>=0?"#2a9d8f":"#e63946",fontWeight:800}}>{Number(latest.eloChange)>=0?"+":""}{formatEloNumber(latest.eloChange)} · {latest.score||latest.event||"Historical"}</div></>:<span style={{color:"var(--color-text-tertiary)"}}>No match</span>}</td>
+                    <td style={{padding:"13px 12px",maxWidth:170}}>{latestBonus?<><div style={{fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{latestBonus.category||"Elo bonus"}</div><div style={{fontSize:10,color:Number(latestBonus.points)>=0?"#2a9d8f":"#e63946",fontWeight:800}}>{Number(latestBonus.points)>=0?"+":""}{formatEloNumber(latestBonus.points)}</div></>:<span style={{color:"var(--color-text-tertiary)"}}>No bonus</span>}</td>
+                    <td style={{padding:"13px 12px",textAlign:"right"}}><div style={{fontSize:18,fontWeight:900}}>{Number(team.currentElo).toFixed(1)}</div><div style={{fontSize:10,fontWeight:800,color:change>0?"#2a9d8f":change<0?"#e63946":"var(--color-text-tertiary)"}}>{change>0?"+":""}{change.toFixed(1)}</div></td>
+                    <td style={{padding:"13px 12px",textAlign:"center",fontSize:18,fontWeight:900}}>{open?"⌃":"⌄"}</td>
+                  </tr>
+                  {open&&<tr><td colSpan={7} style={{padding:"16px 18px 20px",background:"var(--color-background-secondary)",borderTop:"1px solid var(--color-border-tertiary)"}}>
+                    <div style={{fontSize:16,fontWeight:900,marginBottom:10}}>Matches <span style={{fontSize:10,color:"var(--color-text-tertiary)",fontWeight:700}}>Latest {history.length} historical results</span></div>
+                    <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:8}}>{history.length?history.map((item,index)=><HistoryCard key={`${item.matchId}-${index}`} item={item}/>):<div style={{padding:12,color:"var(--color-text-tertiary)",border:"1px dashed var(--color-border-tertiary)",borderRadius:7}}>No historical matches yet.</div>}</div>
+                    <div style={{fontSize:16,fontWeight:900,margin:"12px 0 10px"}}>Bonuses <span style={{fontSize:10,color:"var(--color-text-tertiary)",fontWeight:700}}>Point adjustments and explanations</span></div>
+                    <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}}>{bonuses.length?bonuses.map((item,index)=><BonusCard key={`${item.bonusId}-${index}`} item={item}/>):<div style={{padding:12,color:"var(--color-text-tertiary)",border:"1px dashed rgba(233,196,106,0.35)",borderRadius:7}}>No historical bonuses for this team.</div>}</div>
+                  </td></tr>}
+                </Fragment>;
               })}
             </tbody>
           </table>
-          {!state.standings.length&&<div style={{padding:18,color:"var(--color-text-tertiary)",fontWeight:700}}>No Elo teams have been imported yet.</div>}
+          {!filtered.length&&<div style={{padding:18,color:"var(--color-text-tertiary)",fontWeight:700}}>{state.standings.length?"No teams match these filters.":"No Elo teams have been imported yet."}</div>}
         </div>
       )}
     </div>
@@ -1742,21 +1813,17 @@ function EloStandingsPanel({loadStandings,refreshToken}){
 }
 
 function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
-  const[activeGame,setActiveGame]=useState(0);
   const ready=!!(match.teamA&&match.teamB);
   const{wA,wB,scoreA,scoreB,winner}=ready?matchResult(match):{wA:0,wB:0,scoreA:0,scoreB:0,winner:null};
   const allPlayers=ready?[...(match.teamA.players||[]).filter(p=>p.role==="player"||p.role==="substitute").map(p=>({...p,team:match.teamA})),...(match.teamB.players||[]).filter(p=>p.role==="player"||p.role==="substitute").map(p=>({...p,team:match.teamB}))]:[];
-  const activeGameIdx=Math.min(activeGame,Math.max(0,match.games.length-1));
   const addGame=()=>{
     const nextGame={id:match.games.length,winnerName:null,isTie:false,scoreA:"",scoreB:"",gameMvp:null,stats:{}};
     onMatchUpdate({games:[...match.games,nextGame]});
-    setActiveGame(match.games.length);
   };
-  const deleteGame=()=>{
+  const deleteGame=gameIdx=>{
     if(match.games.length<=1)return;
-    const nextGames=match.games.filter((_,idx)=>idx!==activeGameIdx).map((game,idx)=>({...game,id:idx}));
+    const nextGames=match.games.filter((_,idx)=>idx!==gameIdx).map((game,idx)=>({...game,id:idx}));
     onMatchUpdate({games:nextGames});
-    setActiveGame(Math.min(activeGameIdx,nextGames.length-1));
   };
   return(
     <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.78)",display:"flex",alignItems:"center",justifyContent:"center",padding:18}}>
@@ -1782,18 +1849,20 @@ function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
           ))}
         </div>
 
-        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
-          {match.games.map((g,gi)=>(
-            <button key={gi} onClick={()=>setActiveGame(gi)} style={{...btn(activeGameIdx===gi),padding:"4px 10px",position:"relative"}}>
-              Game {gi+1}{g.gameMvp&&<span style={{position:"absolute",top:-5,right:-5,fontSize:9}}>⭐</span>}
-            </button>
-          ))}
-          <button onClick={addGame} style={{...btn(false),padding:"4px 10px",borderColor:"rgba(42,157,143,0.45)",color:"#2a9d8f"}}>+ Game</button>
-          {match.games.length>1&&<button onClick={deleteGame} style={{...btn(false),padding:"4px 10px",borderColor:"rgba(230,57,70,0.5)",color:"#e63946"}}>Delete Game</button>}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:9,flexWrap:"wrap"}}>
+          <div style={{fontSize:11,fontWeight:900,letterSpacing:"0.09em",textTransform:"uppercase",color:"#e9c46a"}}>Games · all in one view</div>
+          <button onClick={addGame} style={{...btn(false),padding:"4px 10px",border:"1px solid rgba(42,157,143,0.45)",color:"#2a9d8f"}}>+ Game</button>
         </div>
-
-        <div style={{padding:"12px",borderRadius:8,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",marginBottom:12}}>
-          <GameSlot game={match.games[activeGameIdx]} gi={activeGameIdx} match={match} mode={match.matchMode} onUpdate={onGameUpdate}/>
+        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:12}}>
+          {match.games.map((game,gameIdx)=><div key={gameIdx} style={{padding:"11px 12px",borderRadius:8,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:9}}>
+              <span style={{fontSize:12,fontWeight:900,letterSpacing:"0.07em",textTransform:"uppercase"}}>Game {gameIdx+1}</span>
+              {game.gameMvp&&<span style={{fontSize:10,color:"#e9c46a",fontWeight:800}}>⭐ {game.gameMvp}</span>}
+              {match.games.length>1&&<button onClick={()=>deleteGame(gameIdx)} aria-label={`Delete game ${gameIdx+1}`} style={{marginLeft:"auto",...btn(false),padding:"3px 8px",fontSize:10,border:"1px solid rgba(230,57,70,0.5)",color:"#e63946"}}>Delete</button>}
+            </div>
+            <GameSlot game={game} gi={gameIdx} match={match} mode={match.matchMode} onUpdate={onGameUpdate}/>
+            {allPlayers.length>0&&<div style={{marginTop:10}}><PlayerStatPanel match={match} gameIdx={gameIdx} statCols={statCols} onUpdate={onGameUpdate}/></div>}
+          </div>)}
         </div>
 
         {allPlayers.length>0&&(
@@ -1806,7 +1875,6 @@ function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
           </div>
         )}
 
-        {allPlayers.length>0&&<PlayerStatPanel match={match} gameIdx={activeGameIdx} statCols={statCols} onUpdate={onGameUpdate}/>}
         <MatchEloPanel match={match}/>
       </div>
     </div>
@@ -3680,6 +3748,7 @@ export default function App(){
   const[shareMessage,setShareMessage]=useState("");
   const[projectName,setProjectName]=useState("");
   const[bracketTab,setBracketTab]=useState("tournament");
+  const[homeEloOpen,setHomeEloOpen]=useState(false);
   const[tournamentEnded,setTournamentEnded]=useState(false);
   const[resultPlacements,setResultPlacements]=useState([]);
   const[placementTiebreaks,setPlacementTiebreaks]=useState([]);
@@ -3888,6 +3957,7 @@ export default function App(){
     setResultPlacements(Array.isArray(s.resultPlacements)&&s.resultPlacements.length?s.resultPlacements:s.tournamentEnded?resultPlacementsFromState(s):[]);
     setPlacementTiebreaks(Array.isArray(s.placementTiebreaks)?s.placementTiebreaks.map(syncPlacementTiebreak):[]);
     setBracketTab("tournament");
+    setHomeEloOpen(false);
     setCurrentFolderId(project.shared?null:project.folderId||null);
     setLastSavedAt(new Date(project.updatedAt||Date.now()).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}));
   };
@@ -4028,7 +4098,7 @@ export default function App(){
     if(folderImportRef.current)folderImportRef.current.value="";
   };
 
-  const goHome=()=>{setCurrentProjectId(null);setLastSavedAt(null);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setRrLegs(1);setEloTier(DEFAULT_ELO_TIER);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setPlacementTiebreaks([]);setBracketTab("tournament");};
+  const goHome=()=>{setCurrentProjectId(null);setLastSavedAt(null);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setRrLegs(1);setEloTier(DEFAULT_ELO_TIER);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setPlacementTiebreaks([]);setBracketTab("tournament");setHomeEloOpen(false);};
 
   const deleteProject=async(project)=>{
     if(!window.confirm(`Delete "${project.name}"? This cannot be undone.`))return;
@@ -4158,9 +4228,35 @@ export default function App(){
 
   const loadEloStandings=async()=>{
     await ensureEloTrackerInitialized();
-    const{data,error}=await supabase.rpc("kitakana_elo_standings");
-    if(error)throw error;
-    return data;
+    const[standingResult,matchResult,bonusResult]=await Promise.all([
+      supabase.rpc("kitakana_elo_standings"),
+      supabase.from("kitakana_elo_matches").select("match_order,source_match_id,team_a,team_b,winner,result_type,score_text,event,team_a_delta,team_b_delta,updated_at").eq("validation","OK").order("match_order",{ascending:false}).limit(3000),
+      supabase.from("kitakana_elo_bonuses").select("bonus_id,bonus_order,team_name,category,points,event").order("bonus_order",{ascending:false}).limit(3000)
+    ]);
+    if(standingResult.error)throw standingResult.error;
+    const matches=matchResult.error?[]:(matchResult.data||[]);
+    const bonuses=bonusResult.error?[]:(bonusResult.data||[]);
+    const standings=(standingResult.data?.standings||[]).map(team=>{
+      const history=matches.filter(item=>item.team_a===team.name||item.team_b===team.name).slice(0,12).map(item=>{
+        const isA=item.team_a===team.name;
+        const won=item.winner===(isA?"Team A":"Team B");
+        return {
+          matchId:item.source_match_id||item.match_order,
+          opponent:isA?item.team_b:item.team_a,
+          result:item.result_type,
+          outcome:item.winner==="Tie"?"tie":won?"win":"loss",
+          eloChange:isA?item.team_a_delta:item.team_b_delta,
+          event:item.event,
+          score:item.score_text,
+          updatedAt:item.updated_at
+        };
+      });
+      const teamBonuses=bonuses.filter(item=>item.team_name===team.name).slice(0,12).map(item=>({
+        bonusId:item.bonus_id,bonusOrder:item.bonus_order,category:item.category,points:item.points,event:item.event
+      }));
+      return {...team,history,bonuses:teamBonuses};
+    });
+    return {...standingResult.data,standings};
   };
 
   const submitEloPayloads=async(payloads)=>{
@@ -4800,10 +4896,13 @@ export default function App(){
             ))}
           </div>
 
-          {visibleProjects.length>0&&(
-            <div style={{marginBottom:22}}>
-              <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:10}}>Previous Projects</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
+          <div style={{marginBottom:22}}>
+              <div style={{display:"flex",alignItems:"center",gap:9,justifyContent:"space-between",flexWrap:"wrap",marginBottom:10}}>
+                <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)"}}>Previous Projects</div>
+                <button onClick={()=>setHomeEloOpen(open=>!open)} style={{...btn(homeEloOpen),padding:"6px 11px",fontSize:11,border:"1px solid rgba(233,196,106,0.48)",color:homeEloOpen?"#2c2c00":"#b8921a"}}>{homeEloOpen?"Close Elo Standings":"Open Elo Standings"}</button>
+              </div>
+              {homeEloOpen&&<div style={{marginBottom:12}}><EloStandingsPanel loadStandings={loadEloStandings} refreshToken={eloRefreshKey}/></div>}
+              {visibleProjects.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
                 {visibleProjects.map(project=>(
                   <div key={project.id} onClick={()=>loadProject(project)} style={{position:"relative",textAlign:"left",padding:"12px 38px 34px 14px",minHeight:116,borderRadius:8,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",boxSizing:"border-box"}}>
                     <button onClick={e=>{e.stopPropagation();deleteProject(project);}} title="Delete project" style={{position:"absolute",top:8,right:8,width:22,height:22,borderRadius:5,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",color:"var(--color-text-tertiary)",cursor:"pointer",fontSize:14,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
@@ -4817,9 +4916,8 @@ export default function App(){
                     <div style={{fontSize:11,color:"#2a9d8f",marginTop:6,fontWeight:700}}>Open bracket →</div>
                   </div>
                 ))}
-              </div>
-            </div>
-          )}
+              </div>}
+          </div>
 
           {formatType&&!isMulti&&(<>
             <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:12}}>Participants</div>

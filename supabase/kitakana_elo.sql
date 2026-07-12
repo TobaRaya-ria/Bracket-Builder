@@ -425,7 +425,9 @@ begin
   select
     v_owner,
     seed_match.match_code,
-    seed_match.match_order,
+    row_number() over (
+      order by seed_match.match_order, seed_match.match_code
+    )::bigint,
     seed_match.source_match_id,
     true,
     seed_match.team_a,
