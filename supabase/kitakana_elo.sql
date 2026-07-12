@@ -570,6 +570,51 @@ begin
 end;
 $$;
 
+create or replace function public.kitakana_elo_standings()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_owner uuid := auth.uid();
+  v_teams jsonb;
+begin
+  if v_owner is null then
+    raise exception 'Authentication required';
+  end if;
+  if not exists(select 1 from public.kitakana_elo_teams where owner_user_id = v_owner) then
+    return jsonb_build_object('initialized', false, 'backend', 'Supabase', 'standings', '[]'::jsonb);
+  end if;
+
+  select coalesce(jsonb_agg(standing.item order by standing.current_rank, standing.name), '[]'::jsonb)
+  into v_teams
+  from (
+    select team.current_rank, team.name, jsonb_build_object(
+      'rank', team.current_rank,
+      'name', team.name,
+      'code', team.code,
+      'continent', team.continent,
+      'startingElo', team.starting_elo,
+      'currentElo', team.current_elo,
+      'eloChange', team.current_elo - team.starting_elo,
+      'matches', (
+        select count(*)
+        from public.kitakana_elo_matches match
+        where match.owner_user_id = v_owner
+          and match.validation = 'OK'
+          and team.name in (match.team_a, match.team_b)
+      )
+    ) as item
+    from public.kitakana_elo_teams team
+    where team.owner_user_id = v_owner
+  ) standing;
+
+  return jsonb_build_object('initialized', true, 'backend', 'Supabase', 'standings', v_teams);
+end;
+$$;
+
 create or replace function public.kitakana_submit_matches(p_matches jsonb)
 returns jsonb
 language plpgsql
@@ -712,8 +757,10 @@ revoke all on function public.kitakana_side_context_internal(uuid, text) from pu
 revoke all on function public.kitakana_elo_status() from public, anon;
 revoke all on function public.kitakana_import_seed(jsonb) from public, anon;
 revoke all on function public.kitakana_elo_context(text, text, text, text) from public, anon;
+revoke all on function public.kitakana_elo_standings() from public, anon;
 revoke all on function public.kitakana_submit_matches(jsonb) from public, anon;
 grant execute on function public.kitakana_elo_status() to authenticated;
 grant execute on function public.kitakana_import_seed(jsonb) to authenticated;
 grant execute on function public.kitakana_elo_context(text, text, text, text) to authenticated;
+grant execute on function public.kitakana_elo_standings() to authenticated;
 grant execute on function public.kitakana_submit_matches(jsonb) to authenticated;

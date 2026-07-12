@@ -1685,6 +1685,62 @@ function MatchEloPanel({match}){
   );
 }
 
+function EloStandingsPanel({loadStandings,refreshToken}){
+  const[state,setState]=useState({loading:true,error:"",standings:[]});
+
+  useEffect(()=>{
+    let cancelled=false;
+    setState({loading:true,error:"",standings:[]});
+    loadStandings()
+      .then(data=>{
+        if(!cancelled)setState({loading:false,error:"",standings:Array.isArray(data?.standings)?data.standings:[]});
+      })
+      .catch(error=>{
+        if(!cancelled)setState({loading:false,error:friendlyEloError(error)||"Could not load Elo standings.",standings:[]});
+      });
+    return()=>{cancelled=true;};
+  },[refreshToken]);
+
+  return(
+    <div style={{border:"1px solid rgba(233,196,106,0.32)",background:"rgba(233,196,106,0.04)",borderRadius:8,overflow:"hidden"}}>
+      <div style={{padding:"13px 15px",borderBottom:"1px solid rgba(233,196,106,0.2)",display:"flex",alignItems:"baseline",gap:9,flexWrap:"wrap"}}>
+        <span style={{fontSize:15,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:"#e9c46a"}}>Kitakana Elo Standings</span>
+        <span style={{fontSize:11,color:"var(--color-text-tertiary)",fontWeight:700}}>All historical and submitted matches</span>
+      </div>
+      {state.loading&&<div style={{padding:18,color:"var(--color-text-tertiary)",fontWeight:700}}>Loading tracker...</div>}
+      {!state.loading&&state.error&&<div style={{padding:18,color:"#e63946",fontWeight:700}}>{state.error}</div>}
+      {!state.loading&&!state.error&&(
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",minWidth:600,fontSize:13}}>
+            <thead>
+              <tr style={{background:"rgba(255,255,255,0.035)",color:"var(--color-text-tertiary)",textTransform:"uppercase",letterSpacing:"0.05em",fontSize:10}}>
+                <th style={{padding:"9px 12px",textAlign:"left"}}>Rank</th>
+                <th style={{padding:"9px 12px",textAlign:"left"}}>Team</th>
+                <th style={{padding:"9px 12px",textAlign:"right"}}>Elo</th>
+                <th style={{padding:"9px 12px",textAlign:"right"}}>Change</th>
+                <th style={{padding:"9px 12px",textAlign:"right"}}>Matches</th>
+              </tr>
+            </thead>
+            <tbody>
+              {state.standings.map(team=>{
+                const change=Number(team.eloChange)||0;
+                return <tr key={team.code||team.name} style={{borderTop:"1px solid var(--color-border-tertiary)"}}>
+                  <td style={{padding:"9px 12px",fontWeight:800,color:"#e9c46a"}}>{team.rank}</td>
+                  <td style={{padding:"9px 12px",fontWeight:700}}>{regionFlag(team.continent)} {team.name} <span style={{fontSize:10,color:"var(--color-text-tertiary)",marginLeft:5}}>{team.code}</span></td>
+                  <td style={{padding:"9px 12px",textAlign:"right",fontWeight:800}}>{Number(team.currentElo).toFixed(1)}</td>
+                  <td style={{padding:"9px 12px",textAlign:"right",fontWeight:800,color:change>0?"#2a9d8f":change<0?"#e63946":"var(--color-text-tertiary)"}}>{change>0?"+":""}{change.toFixed(1)}</td>
+                  <td style={{padding:"9px 12px",textAlign:"right",color:"var(--color-text-secondary)"}}>{team.matches}</td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+          {!state.standings.length&&<div style={{padding:18,color:"var(--color-text-tertiary)",fontWeight:700}}>No Elo teams have been imported yet.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
   const[activeGame,setActiveGame]=useState(0);
   const ready=!!(match.teamA&&match.teamB);
@@ -4027,6 +4083,7 @@ export default function App(){
   const nonMultiSettingsLocked=!isMulti&&matchesHaveEntries(nonMultiMatches);
   const nonMultiMetricRulesLocked=!isMulti&&isRR&&stageDataComplete({type:"roundrobin",rounds:rrRounds,teams:teamsWithSeed});
   const[eloSyncState,setEloSyncState]=useState({loading:false,message:"",error:false});
+  const[eloRefreshKey,setEloRefreshKey]=useState(0);
 
   const getMatchEloContext=(match)=>{
     if(!match?.teamA||!match?.teamB||match._placementMatch)return null;
@@ -4099,6 +4156,13 @@ export default function App(){
     return data;
   };
 
+  const loadEloStandings=async()=>{
+    await ensureEloTrackerInitialized();
+    const{data,error}=await supabase.rpc("kitakana_elo_standings");
+    if(error)throw error;
+    return data;
+  };
+
   const submitEloPayloads=async(payloads)=>{
     await ensureEloTrackerInitialized();
     const{data,error}=await supabase.rpc("kitakana_submit_matches",{p_matches:payloads});
@@ -4113,6 +4177,7 @@ export default function App(){
     try{
       const data=await submitEloPayloads([payload]);
       const result=data?.results?.[0]||{};
+      if(data?.ok)setEloRefreshKey(value=>value+1);
       return data?.ok?{ok:true,...result}:{ok:false,error:"Elo submit failed"};
     }catch(error){
       return {ok:false,error:friendlyEloError(error)};
@@ -4162,6 +4227,7 @@ export default function App(){
     try{
       const data=await submitEloPayloads(matches);
       if(!data?.ok)throw new Error("Elo sync failed");
+      setEloRefreshKey(value=>value+1);
       const errorText=data.errors?.length?` · ${data.errors.length} skipped`:"";
       setEloSyncState({loading:false,message:`Synced ${data.submitted} match${data.submitted===1?"":"es"}${errorText}.`,error:!!data.errors?.length});
     }catch(error){
@@ -4912,7 +4978,7 @@ export default function App(){
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
             <input value={currentTournamentName} onChange={e=>setProjectName(e.target.value)} onBlur={()=>{if(!projectName.trim())setProjectName(projectNameFromState({formatType,teams:teamsWithSeed}));}} style={{flex:"1 1 260px",minWidth:0,fontFamily:"'Barlow Condensed',sans-serif",fontSize:22,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",padding:"8px 10px",borderRadius:8,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)"}}/>
             <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-              {[["tournament","Tournament"],["settings","Setting"],["participants","Participant"],...(tournamentEnded?[["result","Result"]]:[])].map(([id,label])=>(
+              {[["tournament","Tournament"],["elo","Elo"],["settings","Setting"],["participants","Participant"],...(tournamentEnded?[["result","Result"]]:[])].map(([id,label])=>(
                 <button key={id} onClick={()=>setBracketTab(id)} style={{...btn(bracketTab===id),padding:"7px 13px",fontSize:12}}>{label}</button>
               ))}
             </div>
@@ -5003,6 +5069,7 @@ export default function App(){
           })()}
             </>
           )}
+          {bracketTab==="elo"&&<EloStandingsPanel loadStandings={loadEloStandings} refreshToken={eloRefreshKey}/>}
           {bracketTab==="settings"&&renderSettingsTab()}
           {bracketTab==="participants"&&renderParticipantsTab()}
           {bracketTab==="result"&&renderResultTab()}

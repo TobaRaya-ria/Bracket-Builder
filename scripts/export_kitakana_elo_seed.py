@@ -84,7 +84,9 @@ def export_seed(workbook_path):
         matches.append(
             {
                 "match_code": f"excel-{match_id}",
-                "match_order": excel_order(matches_sheet.cell(row, 2).value, match_id),
+                # Match ID is the workbook's authoritative sequence. Excel's 1900
+                # date-system quirk makes date serials 59 and 60 ambiguous.
+                "match_order": match_id,
                 "source_match_id": match_id,
                 "team_a": canonical_team(team_a),
                 "team_b": canonical_team(team_b),
