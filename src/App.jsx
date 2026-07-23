@@ -524,6 +524,65 @@ function isByeMatch(match){
   return !!match?._splitDrop||!!match?._autoWinner && !(match.teamA&&match.teamB);
 }
 
+function appendRoundMatchNumbers(rounds,map,counter){
+  (rounds||[]).forEach(round=>(round||[]).forEach(match=>{
+    if(match&&!isByeMatch(match)&&!map.has(match.id))map.set(match.id,counter.value++);
+  }));
+}
+
+function appendStageMatchNumbers(data,map,counter){
+  if(!data)return;
+  if(data.type==="roundrobin"){
+    appendRoundMatchNumbers(data.rounds,map,counter);
+    return;
+  }
+  if(data.type==="groupstage"){
+    (data.groups||[]).forEach(group=>appendStageMatchNumbers(group,map,counter));
+    return;
+  }
+  if(data.type==="single"){
+    appendRoundMatchNumbers(data.winners,map,counter);
+    appendRoundMatchNumbers(data.qualificationTiebreaker?.rounds,map,counter);
+    return;
+  }
+  if(data.type!=="double")return;
+
+  const finalState=doubleElimFinalState(data);
+  const numberedData=finalState.propagated||data;
+  const winners=numberedData.winners||[];
+  const losers=numberedData.losers||[];
+  const upperFinal=winners.at(-1)||[];
+  const lowerFinal=losers.at(-1)||[];
+  const upperPre=winners.slice(0,-1);
+  const lowerPre=losers.slice(0,-1);
+  let lowerIdx=0;
+
+  // Competition order: one upper round, then up to two lower rounds.
+  upperPre.forEach(round=>{
+    appendRoundMatchNumbers([round],map,counter);
+    for(let count=0;count<2&&lowerIdx<lowerPre.length;count++,lowerIdx++){
+      appendRoundMatchNumbers([lowerPre[lowerIdx]],map,counter);
+    }
+  });
+  while(lowerIdx<lowerPre.length){
+    appendRoundMatchNumbers([lowerPre[lowerIdx]],map,counter);
+    lowerIdx++;
+  }
+
+  appendRoundMatchNumbers(data.qualificationTiebreaker?.rounds,map,counter);
+  appendRoundMatchNumbers([upperFinal],map,counter);
+  appendRoundMatchNumbers([lowerFinal],map,counter);
+  if(numberedData.grandFinal&&!map.has(numberedData.grandFinal.id))map.set(numberedData.grandFinal.id,counter.value++);
+
+  if(finalState.resetActive&&numberedData.grandFinalReset&&!map.has(numberedData.grandFinalReset.id))map.set(numberedData.grandFinalReset.id,counter.value++);
+}
+
+function stageMatchNumberMap(data,start=1){
+  const map=new Map();
+  appendStageMatchNumbers(data,map,{value:start});
+  return map;
+}
+
 function playableMatches(matches){
   return (matches||[]).filter(m=>m&&m.teamA&&m.teamB&&!isByeMatch(m));
 }
@@ -1609,7 +1668,7 @@ function GameSlot({game,gi,match,mode,onUpdate}){
   return null;
 }
 
-function MatchCard({match,onGameUpdate,statCols,onMatchUpdate,accentLabel}){
+function MatchCard({match,onGameUpdate,statCols,onMatchUpdate,accentLabel,matchNumber}){
   const[open,setOpen]=useState(false);
   const ready=!!(match.teamA&&match.teamB);
   const result=ready?matchResult(match):{wA:0,wB:0,scoreA:0,scoreB:0,winner:null};
@@ -1643,12 +1702,15 @@ function MatchCard({match,onGameUpdate,statCols,onMatchUpdate,accentLabel}){
 
   return(
     <>
-    <div className="match-card" onClick={()=>ready&&setOpen(true)} style={{background:ready?"#10141f":"#0b0d13",border:winner?`1.5px solid ${winner.color}66`:ready?"1px solid rgba(255,255,255,0.18)":"1px dashed rgba(255,255,255,0.2)",borderRadius:8,padding:"9px 11px",fontFamily:"'Barlow Condensed',sans-serif",width:210,minHeight:96,boxSizing:"border-box",opacity:ready?1:0.8,cursor:ready?"pointer":"default",boxShadow:"0 8px 22px rgba(0,0,0,0.16)",color:"#f8fafc","--color-text-primary":"#f8fafc","--color-text-secondary":"rgba(248,250,252,0.82)","--color-text-tertiary":"rgba(248,250,252,0.62)","--color-background-primary":"#0b0d13","--color-background-secondary":"rgba(255,255,255,0.07)","--color-border-tertiary":"rgba(255,255,255,0.2)"}}>
-      {accentLabel&&<div style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:4}}>{accentLabel}</div>}
-      <div style={{marginBottom:8}}>{match.teamA?<TeamRow team={match.teamA} w={wA} score={scoreA}/>:<TBDRow/>}</div>
-      <div style={{marginTop:8}}>{match.teamB?<TeamRow team={match.teamB} w={wB} score={scoreB}/>:<TBDRow/>}</div>
-      <div style={{marginTop:8,paddingTop:6,borderTop:"0.5px solid var(--color-border-tertiary)",fontSize:11,display:"flex",alignItems:"center",gap:5,minHeight:18}}>
-        {match.mvp?<span style={{marginLeft:"auto",color:"#e9c46a",fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>MVP {match.mvp}</span>:<span aria-hidden="true" style={{display:"block",height:14}}/>}
+    <div style={{position:"relative",width:210,flexShrink:0}}>
+      {Number.isFinite(matchNumber)&&<span title={`Match ${matchNumber}`} aria-label={`Match ${matchNumber}`} style={{position:"absolute",left:-17,top:10,width:14,textAlign:"right",fontSize:11,lineHeight:1,fontWeight:800,fontFamily:"'Barlow Condensed',sans-serif",color:"var(--color-text-tertiary)",fontVariantNumeric:"tabular-nums"}}>{matchNumber}</span>}
+      <div className="match-card" onClick={()=>ready&&setOpen(true)} style={{background:ready?"#10141f":"#0b0d13",border:winner?`1.5px solid ${winner.color}66`:ready?"1px solid rgba(255,255,255,0.18)":"1px dashed rgba(255,255,255,0.2)",borderRadius:8,padding:"9px 11px",fontFamily:"'Barlow Condensed',sans-serif",width:210,minHeight:96,boxSizing:"border-box",opacity:ready?1:0.8,cursor:ready?"pointer":"default",boxShadow:"0 8px 22px rgba(0,0,0,0.16)",color:"#f8fafc","--color-text-primary":"#f8fafc","--color-text-secondary":"rgba(248,250,252,0.82)","--color-text-tertiary":"rgba(248,250,252,0.62)","--color-background-primary":"#0b0d13","--color-background-secondary":"rgba(255,255,255,0.07)","--color-border-tertiary":"rgba(255,255,255,0.2)"}}>
+        {accentLabel&&<div style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:4}}>{accentLabel}</div>}
+        <div style={{marginBottom:8}}>{match.teamA?<TeamRow team={match.teamA} w={wA} score={scoreA}/>:<TBDRow/>}</div>
+        <div style={{marginTop:8}}>{match.teamB?<TeamRow team={match.teamB} w={wB} score={scoreB}/>:<TBDRow/>}</div>
+        <div style={{marginTop:8,paddingTop:6,borderTop:"0.5px solid var(--color-border-tertiary)",fontSize:11,display:"flex",alignItems:"center",gap:5,minHeight:18}}>
+          {match.mvp?<span style={{marginLeft:"auto",color:"#e9c46a",fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>MVP {match.mvp}</span>:<span aria-hidden="true" style={{display:"block",height:14}}/>}
+        </div>
       </div>
     </div>
     {open&&typeof document!=="undefined"&&createPortal(<MatchDetailsModal match={match} statCols={statCols} onClose={()=>setOpen(false)} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>,document.body)}
@@ -2139,7 +2201,7 @@ function PlayerStandingsTable({teams,matches,statCols,title,sortBy,onSortBy,stag
 }
 
 // ─── Bracket display ──────────────────────────────────────────────────────────
-function ElimBracket({rounds,onGameUpdate,onMatchUpdate,statCols,labelPrefix}){
+function ElimBracket({rounds,onGameUpdate,onMatchUpdate,statCols,labelPrefix,matchNumbers}){
   if(!rounds?.length)return null;
   const CARD_H=132,CARD_W=230,CONN_W=38,base=rounds[0].length;
   const slotInfo=(rIdx,mIdx)=>{
@@ -2167,7 +2229,7 @@ function ElimBracket({rounds,onGameUpdate,onMatchUpdate,statCols,labelPrefix}){
                 const {top}=slotInfo(rIdx,mIdx);
                 return(
                   <div key={match.id} style={{position:"absolute",top,left:0,height:CARD_H,display:"flex",alignItems:"center"}}>
-                    <MatchCard match={match} statCols={statCols} onGameUpdate={(gi,upd)=>onGameUpdate(match.id,gi,upd)} onMatchUpdate={upd=>onMatchUpdate(match.id,upd)}/>
+                    <MatchCard match={match} matchNumber={matchNumbers?.get(match.id)} statCols={statCols} onGameUpdate={(gi,upd)=>onGameUpdate(match.id,gi,upd)} onMatchUpdate={upd=>onMatchUpdate(match.id,upd)}/>
                   </div>
                 );
               })}
@@ -2200,6 +2262,7 @@ function ElimBracket({rounds,onGameUpdate,onMatchUpdate,statCols,labelPrefix}){
 function PlacementTiebreakView({tiebreak,onGameUpdate,onMatchUpdate,statCols}){
   const synced=syncPlacementTiebreak(tiebreak);
   const finalTeams=placementTiebreakFinalTeams(synced);
+  const matchNumbers=stageMatchNumberMap({type:"single",winners:synced.rounds||[]});
   return(
     <div style={{border:"1px solid rgba(42,157,143,0.35)",borderRadius:10,background:"rgba(42,157,143,0.045)",padding:"12px 14px"}}>
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
@@ -2216,6 +2279,7 @@ function PlacementTiebreakView({tiebreak,onGameUpdate,onMatchUpdate,statCols}){
                   <MatchCard
                     key={match.id}
                     match={match}
+                    matchNumber={matchNumbers.get(match.id)}
                     statCols={statCols}
                     accentLabel={match.teamA&&match.teamB?"Placement":"Waiting"}
                     onGameUpdate={(gi,upd)=>onGameUpdate(match.id,gi,upd)}
@@ -2241,7 +2305,7 @@ function PlacementTiebreakView({tiebreak,onGameUpdate,onMatchUpdate,statCols}){
   );
 }
 
-function SingleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualificationStatus=null}){
+function SingleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualificationStatus=null,matchNumbers:providedMatchNumbers}){
   const[showFull,setShowFull]=useState(false);
   const{winners}=bracketData;
   if(!winners?.length)return null;
@@ -2251,6 +2315,7 @@ function SingleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualifi
   const tb=bracketData.qualificationTiebreaker;
   const compact=qualificationStatus&&!showFull&&(qualificationStatus.ready||qualificationStatus.needsTiebreaker);
   const displayWinners=compact?winners.slice(0,qualificationStatus.visibleWinnerRounds||winners.length):winners;
+  const matchNumbers=providedMatchNumbers||stageMatchNumberMap(bracketData);
   return(
     <BracketCanvas style={{overflowX:"auto",padding:"18px 14px 20px"}}>
       <div style={{display:"flex",flexDirection:"column",gap:24,minWidth:"max-content"}}>
@@ -2261,7 +2326,7 @@ function SingleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualifi
           </div>
         )}
         <div style={{display:"flex",gap:24,alignItems:"flex-start"}}>
-          <ElimBracket rounds={displayWinners} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols}/>
+          <ElimBracket rounds={displayWinners} matchNumbers={matchNumbers} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols}/>
           {(!compact||showFull)&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0}}>
             <div style={{fontSize:9,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:8}}>Champion</div>
             <div style={{paddingTop:Math.max(0,(base/2-0.45)*CARD_H)+"px"}}>
@@ -2274,7 +2339,7 @@ function SingleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualifi
         {tb?.rounds?.length>0&&(
           <div style={{paddingTop:18,borderTop:"1px solid var(--color-border-tertiary)"}}>
             <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#b8921a",marginBottom:12}}>Qualification Tiebreaker · {tb.target} slot{tb.target===1?"":"s"}</div>
-            <ElimBracket rounds={tb.rounds} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols} labelPrefix="TB"/>
+            <ElimBracket rounds={tb.rounds} matchNumbers={matchNumbers} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols} labelPrefix="TB"/>
           </div>
         )}
       </div>
@@ -2282,7 +2347,7 @@ function SingleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualifi
   );
 }
 
-function DoubleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualificationStatus=null}){
+function DoubleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualificationStatus=null,matchNumbers:providedMatchNumbers}){
   const[showFull,setShowFull]=useState(false);
   const finalState=doubleElimFinalState(bracketData);
   const propagated=finalState.propagated;
@@ -2291,6 +2356,7 @@ function DoubleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualifi
   const compact=qualificationStatus&&!showFull&&(qualificationStatus.ready||qualificationStatus.needsTiebreaker);
   const displayWinners=compact?propagated.winners.slice(0,qualificationStatus.visibleWinnerRounds||propagated.winners.length):propagated.winners;
   const displayLosers=compact?propagated.losers.slice(0,qualificationStatus.visibleLoserRounds||0):propagated.losers;
+  const matchNumbers=providedMatchNumbers||stageMatchNumberMap(bracketData);
   const wbBase=displayWinners[0]?.length||1;
   const grandFinalTop=Math.max(0,(wbBase/2-0.5)*132);
   const clearResetGames=()=>onMatchUpdate(propagated.grandFinalReset.id,{
@@ -2312,12 +2378,12 @@ function DoubleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualifi
         <div>
           <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#2a9d8f",marginBottom:12}}>Winners Bracket</div>
           <div style={{display:"flex",gap:24,alignItems:"flex-start"}}>
-            <ElimBracket rounds={displayWinners} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols}/>
+            <ElimBracket rounds={displayWinners} matchNumbers={matchNumbers} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols}/>
             {(!compact||showFull)&&(
               <div style={{flexShrink:0,paddingTop:grandFinalTop}}>
                 <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#e9c46a",marginBottom:12}}>Grand Final</div>
                 <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                  <MatchCard match={propagated.grandFinal} statCols={statCols} accentLabel="Grand Final" onGameUpdate={(gi,upd)=>onGameUpdate(propagated.grandFinal.id,gi,upd)} onMatchUpdate={upd=>onMatchUpdate(propagated.grandFinal.id,upd)}/>
+                  <MatchCard match={propagated.grandFinal} matchNumber={matchNumbers.get(propagated.grandFinal.id)} statCols={statCols} accentLabel="Grand Final" onGameUpdate={(gi,upd)=>onGameUpdate(propagated.grandFinal.id,gi,upd)} onMatchUpdate={upd=>onMatchUpdate(propagated.grandFinal.id,upd)}/>
                   {resetNeeded&&!resetActive&&<button onClick={()=>onMatchUpdate(propagated.grandFinalReset.id,{_resetEnabled:true})} style={{...btn(false),padding:"6px 10px",fontSize:11,borderColor:"rgba(233,196,106,0.45)",color:"#b8921a"}}>Add Bracket Reset</button>}
                   {resetActive&&(
                     <div style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -2325,7 +2391,7 @@ function DoubleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualifi
                         <span style={{fontSize:10,color:"#e9c46a",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase"}}>Bracket Reset</span>
                         <button onClick={clearResetGames} style={{border:"none",background:"none",color:"var(--color-text-tertiary)",cursor:"pointer",fontSize:10,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,textTransform:"uppercase"}}>Skip</button>
                       </div>
-                      <MatchCard match={propagated.grandFinalReset} statCols={statCols} accentLabel="Bracket Reset" onGameUpdate={(gi,upd)=>onGameUpdate(propagated.grandFinalReset.id,gi,upd)} onMatchUpdate={upd=>onMatchUpdate(propagated.grandFinalReset.id,upd)}/>
+                      <MatchCard match={propagated.grandFinalReset} matchNumber={matchNumbers.get(propagated.grandFinalReset.id)} statCols={statCols} accentLabel="Bracket Reset" onGameUpdate={(gi,upd)=>onGameUpdate(propagated.grandFinalReset.id,gi,upd)} onMatchUpdate={upd=>onMatchUpdate(propagated.grandFinalReset.id,upd)}/>
                     </div>
                   )}
                   {champion&&<div style={{marginTop:8,padding:"10px 14px",borderRadius:8,border:"2px solid #e9c46a",background:"rgba(233,196,106,0.07)",display:"flex",alignItems:"center",gap:8,fontFamily:"'Barlow Condensed',sans-serif"}}><span style={{fontSize:16}}>🏆</span><TeamTag name={champion.name} color={champion.color}/></div>}
@@ -2337,12 +2403,12 @@ function DoubleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualifi
         <div style={{height:1,background:"var(--color-border-tertiary)",width:"100%"}}/>
         <div>
           <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#e63946",marginBottom:12}}>Losers Bracket</div>
-          {displayLosers.length>0?<ElimBracket rounds={displayLosers} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols} labelPrefix="LB"/>:<div style={{fontSize:12,color:"var(--color-text-tertiary)",fontStyle:"italic"}}>No losers yet</div>}
+          {displayLosers.length>0?<ElimBracket rounds={displayLosers} matchNumbers={matchNumbers} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols} labelPrefix="LB"/>:<div style={{fontSize:12,color:"var(--color-text-tertiary)",fontStyle:"italic"}}>No losers yet</div>}
         </div>
         {tb?.rounds?.length>0&&(
           <div style={{paddingTop:18,borderTop:"1px solid var(--color-border-tertiary)"}}>
             <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#b8921a",marginBottom:12}}>Qualification Tiebreaker · {tb.target} slot{tb.target===1?"":"s"}</div>
-            <ElimBracket rounds={tb.rounds} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols} labelPrefix="TB"/>
+            <ElimBracket rounds={tb.rounds} matchNumbers={matchNumbers} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} statCols={statCols} labelPrefix="TB"/>
             </div>
         )}
       </div>
@@ -2351,11 +2417,12 @@ function DoubleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualifi
 }
 
 // ─── Round Robin view with rounds ─────────────────────────────────────────────
-function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreakRound,matchMode,statCols,standingsRules}){
+function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreakRound,matchMode,statCols,standingsRules,matchNumbers:providedMatchNumbers}){
   const[activeRound,setActiveRound]=useState(0);
   const[playerSort,setPlayerSort]=useState("mw");
   const[showPlayers,setShowPlayers]=useState(false);
   const total=rrRounds.length,all=rrRounds.flat();
+  const matchNumbers=providedMatchNumbers||stageMatchNumberMap({type:"roundrobin",rounds:rrRounds});
   const done=all.filter(matchIsComplete).length;
   const pct=all.length>0?Math.round(done/all.length*100):0;
 
@@ -2415,7 +2482,7 @@ function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreak
       <BracketCanvas style={{padding:"16px 14px 2px"}}>
         <div style={{marginBottom:20}}>
           <div style={{fontSize:11,fontWeight:700,color:"var(--color-text-tertiary)",letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:8,fontFamily:"'Barlow Condensed',sans-serif"}}>{curRound.some(m=>m._tiebreak)?"Tiebreaker Round":currentRoundLabel}</div>
-          <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>{curRound.map(m=><MatchCard key={m.id} match={m} statCols={statCols} onGameUpdate={(gi,upd)=>onGameUpdate(m.id,gi,upd)} onMatchUpdate={upd=>onMatchUpdate(m.id,upd)}/>)}</div>
+          <div style={{display:"flex",gap:28,flexWrap:"wrap",paddingLeft:10}}>{curRound.map(m=><MatchCard key={m.id} match={m} matchNumber={matchNumbers.get(m.id)} statCols={statCols} onGameUpdate={(gi,upd)=>onGameUpdate(m.id,gi,upd)} onMatchUpdate={upd=>onMatchUpdate(m.id,upd)}/>)}</div>
         </div>
       </BracketCanvas>
 
@@ -2438,6 +2505,7 @@ function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,matchMode
   const mode=data.matchMode||matchMode;
   const format=data.stageFormat||stageConfig.format||"roundrobin";
   const cfg={...stageConfig,format,matchMode:mode,gamesPerMatch:gpm,groupCount,teamCount:data.teams?.length||stageConfig.teamCount};
+  const matchNumbers=stageMatchNumberMap(data);
 
   const choosePools=()=>{
     onStageUpdate(d=>({...d,poolChoice:true,pools:makePools(d.teams||[],d.groupCount||2),poolsConfirmed:false,groups:[]}));
@@ -2500,9 +2568,9 @@ function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,matchMode
   const renderGroup=()=>{
     if(!group)return null;
     const groupTarget=groupQualificationTarget(group,data,cfg);
-    if(group.type==="single")return <SingleElimView bracketData={group} qualificationStatus={isLast?null:stageQualificationStatus(group,{...cfg,advance:groupTarget},false)} statCols={statCols} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>;
-    if(group.type==="double")return <DoubleElimView bracketData={group} qualificationStatus={isLast?null:stageQualificationStatus(group,{...cfg,advance:groupTarget},false)} statCols={statCols} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>;
-    return <RoundRobinView rrRounds={group.rounds||[]} teams={group.teams} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} onAddTiebreakRound={round=>onStageUpdate(d=>({...d,groups:d.groups.map((g,idx)=>idx===activeGroup?{...g,rounds:[...(g.rounds||[]),round]}:g)}))} matchMode={mode} statCols={statCols} standingsRules={standingsRules}/>;
+    if(group.type==="single")return <SingleElimView bracketData={group} matchNumbers={matchNumbers} qualificationStatus={isLast?null:stageQualificationStatus(group,{...cfg,advance:groupTarget},false)} statCols={statCols} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>;
+    if(group.type==="double")return <DoubleElimView bracketData={group} matchNumbers={matchNumbers} qualificationStatus={isLast?null:stageQualificationStatus(group,{...cfg,advance:groupTarget},false)} statCols={statCols} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>;
+    return <RoundRobinView rrRounds={group.rounds||[]} teams={group.teams} matchNumbers={matchNumbers} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate} onAddTiebreakRound={round=>onStageUpdate(d=>({...d,groups:d.groups.map((g,idx)=>idx===activeGroup?{...g,rounds:[...(g.rounds||[]),round]}:g)}))} matchMode={mode} statCols={statCols} standingsRules={standingsRules}/>;
   };
 
   return(
@@ -2906,7 +2974,7 @@ function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=
 }
 
 // ─── Multi-Stage view ─────────────────────────────────────────────────────────
-function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpdate,onStageUpdate,onAdvance,activeStageIdx,setActiveStageIdx}){
+function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpdate,onStageUpdate,onAdvance,onStagePeriodChange,activeStageIdx,setActiveStageIdx}){
   const[playerSort,setPlayerSort]=useState("mw");
   const[showPlayers,setShowPlayers]=useState(false);
 
@@ -3013,6 +3081,8 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
           {FORMAT_LABELS[stages[activeStageIdx]?.format]} · {getStageTeams(activeStageIdx).length} teams
           {(stageData[0]?.aatTeamsByStage?.[activeStageIdx]||[]).length>0&&<span style={{color:"#2a9d8f",marginLeft:6}}>({(stageData[0]?.aatTeamsByStage?.[activeStageIdx]||[]).length} AAT joined)</span>}
         </span>
+        <span style={{fontSize:10,color:"var(--color-text-tertiary)",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.06em",marginLeft:6}}>Stage date</span>
+        <StagePeriodInput value={stage?.period} onChange={period=>onStagePeriodChange?.(activeStageIdx,period)} compact/>
         {data&&data.type!=="roundrobin"&&<button onClick={()=>setShowPlayers(p=>!p)} style={{...btn(showPlayers),padding:"4px 10px",fontSize:11,marginLeft:"auto"}}>{showPlayers?"🏆 Teams":"👤 Players"}</button>}
       </div>
 
@@ -4903,7 +4973,7 @@ export default function App(){
               const done=stageData[idx]?.type==="groupstage"?groupStageReady(stageData[idx],stage,idx===stages.length-1):stageQualificationStatus(stageData[idx],stage,idx===stages.length-1).ready;
               return(
                 <div key={idx}>
-                  <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:done?"#e63946":started?"#b8921a":"#2a9d8f",margin:"0 0 5px 2px"}}>{done?"Done - read only":started?"Started - metrics editable":"Not started - editable"}</div>
+                  <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:done?"#e63946":started?"#b8921a":"#2a9d8f",margin:"0 0 5px 2px"}}>{done?"Done - stage date remains editable":started?"Started - stage date and metrics editable":"Not started - editable"}</div>
                   <StageConfig
                     stage={displayStage}
                     idx={idx}
@@ -5254,6 +5324,8 @@ export default function App(){
           {!isMulti&&(
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"10px 14px",background:"var(--color-background-secondary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap"}}>
               <span style={{padding:"3px 10px",borderRadius:5,background:"rgba(233,196,106,0.12)",border:"1px solid rgba(233,196,106,0.3)",fontSize:12,fontWeight:700,color:"#b8921a",fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase",letterSpacing:"0.05em"}}>{matchMode==="wl"?"Win/Lose":matchMode==="games"?"Game Wins":"Score"}{matchMode!=="wl"&&` · Bo${effectiveGames}`}</span>
+              <span style={{fontSize:10,color:"var(--color-text-tertiary)",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.06em"}}>Stage date</span>
+              <StagePeriodInput value={stagePeriod} onChange={period=>{setStagePeriod(normalizeStagePeriod(period));setEloSyncState({loading:false,message:"Stage date changed. Sync Elo to update completed matches.",error:false});}} compact/>
               {matchMode!=="wl"&&<><Stepper value={gamesPerMatch} min={1} max={11} onChange={reconfigureGames} small/><span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>games</span></>}
               <button onClick={()=>setShowPlayers(p=>!p)} style={{...btn(showPlayers),padding:"4px 10px",fontSize:11}}>{showPlayers?"🏆 Teams":"👤 Players"}</button>
               <button onClick={()=>setShowAwards(p=>!p)} style={{...btn(showAwards),padding:"4px 10px",fontSize:11,borderColor:showAwards?"#e9c46a":"rgba(233,196,106,0.3)",color:showAwards?"#e9c46a":"rgba(233,196,106,0.7)"}}>⭐ MVP Awards</button>
@@ -5272,7 +5344,7 @@ export default function App(){
             </div>
           )}
 
-          {isMulti&&<MultiStageView stages={stages} stageData={stageData} teams={teamsWithSeed} statCols={statCols} onGameUpdate={handleStageGameUpdate} onMatchUpdate={handleStageMatchUpdate} onStageUpdate={handleStageDataUpdate} onAdvance={handleAdvance} activeStageIdx={activeStageIdx} setActiveStageIdx={setActiveStageIdx}/>}
+          {isMulti&&<MultiStageView stages={stages} stageData={stageData} teams={teamsWithSeed} statCols={statCols} onGameUpdate={handleStageGameUpdate} onMatchUpdate={handleStageMatchUpdate} onStageUpdate={handleStageDataUpdate} onAdvance={handleAdvance} onStagePeriodChange={(idx,period)=>{const normalized=normalizeStagePeriod(period);if(!normalized)return;updateMultiStages(prev=>prev.map((stage,stageIdx)=>stageIdx===idx?{...stage,period:normalized}:stage));setEloSyncState({loading:false,message:"Stage date changed. Sync Elo to update completed matches.",error:false});}} activeStageIdx={activeStageIdx} setActiveStageIdx={setActiveStageIdx}/>}
 
           {!isMulti&&isRR&&<RoundRobinView rrRounds={rrRounds} teams={teamsWithSeed} onGameUpdate={handleGameUpdate} onMatchUpdate={handleMatchUpdate} onAddTiebreakRound={round=>setRrRounds(prev=>[...prev,round])} matchMode={matchMode} statCols={statCols} standingsRules={rrStandingsRules}/>}
 
