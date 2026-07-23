@@ -59,6 +59,7 @@ create table if not exists public.kitakana_elo_matches (
   winner text not null check (winner in ('Team A', 'Team B', 'Tie')),
   result_type text not null check (result_type in ('Hoshin-Tora', 'Hoshin-Kai', 'Hoshin-Renga', 'Renga')),
   tier text not null check (tier in ('Tier 1', 'Tier 2', 'Tier 3', 'Tier 4', 'Tier 5')),
+  period_month date,
   score_a double precision,
   score_b double precision,
   score_text text,
@@ -91,8 +92,14 @@ create table if not exists public.kitakana_elo_matches (
   check (team_a <> team_b)
 );
 
+alter table public.kitakana_elo_matches
+  add column if not exists period_month date;
+
 create index if not exists kitakana_elo_matches_owner_order_idx
   on public.kitakana_elo_matches (owner_user_id, match_order desc);
+
+create index if not exists kitakana_elo_matches_owner_period_idx
+  on public.kitakana_elo_matches (owner_user_id, period_month, match_order);
 
 alter table public.kitakana_elo_trackers enable row level security;
 alter table public.kitakana_elo_teams enable row level security;
@@ -483,7 +490,13 @@ begin
 end;
 $$;
 
-create or replace function public.kitakana_side_context_internal(p_owner uuid, p_team text)
+drop function if exists public.kitakana_side_context_internal(uuid, text);
+
+create or replace function public.kitakana_side_context_internal(
+  p_owner uuid,
+  p_team text,
+  p_before_match_order bigint default null
+)
 returns jsonb
 language plpgsql
 stable
@@ -527,6 +540,7 @@ begin
     where match.owner_user_id = p_owner
       and match.validation = 'OK'
       and p_team in (match.team_a, match.team_b)
+      and (p_before_match_order is null or match.match_order < p_before_match_order)
     order by match.match_order desc
     limit 5
   ) history;
@@ -535,11 +549,14 @@ begin
 end;
 $$;
 
+drop function if exists public.kitakana_elo_context(text, text, text, text);
+
 create or replace function public.kitakana_elo_context(
   p_team_a text,
   p_team_a_region text default '',
   p_team_b text default '',
-  p_team_b_region text default ''
+  p_team_b_region text default '',
+  p_match_code text default ''
 )
 returns jsonb
 language plpgsql
@@ -551,6 +568,8 @@ declare
   v_owner uuid := auth.uid();
   v_team_a text;
   v_team_b text;
+  v_match public.kitakana_elo_matches%rowtype;
+  v_match_found boolean := false;
 begin
   if v_owner is null then
     raise exception 'Authentication required';
@@ -561,18 +580,45 @@ begin
 
   v_team_a := public.kitakana_resolve_team_internal(v_owner, p_team_a, p_team_a_region);
   v_team_b := public.kitakana_resolve_team_internal(v_owner, p_team_b, p_team_b_region);
+  if btrim(coalesce(p_match_code, '')) <> '' then
+    select *
+    into v_match
+    from public.kitakana_elo_matches match
+    where match.owner_user_id = v_owner
+      and match.match_code = btrim(p_match_code)
+      and match.validation = 'OK';
+    v_match_found := found;
+  end if;
+
   return jsonb_build_object(
     'initialized', true,
     'backend', 'Supabase',
+    'match', case when v_match_found then jsonb_build_object(
+      'matchCode', v_match.match_code,
+      'matchOrder', v_match.match_order,
+      'teamA', jsonb_build_object(
+        'postElo', v_match.team_a_post_elo,
+        'eloChange', v_match.team_a_delta
+      ),
+      'teamB', jsonb_build_object(
+        'postElo', v_match.team_b_post_elo,
+        'eloChange', v_match.team_b_delta
+      )
+    ) else null end,
     'sides', jsonb_build_object(
-      'teamA', public.kitakana_side_context_internal(v_owner, v_team_a),
-      'teamB', public.kitakana_side_context_internal(v_owner, v_team_b)
+      'teamA', public.kitakana_side_context_internal(v_owner, v_team_a, case when v_match_found then v_match.match_order else null end),
+      'teamB', public.kitakana_side_context_internal(v_owner, v_team_b, case when v_match_found then v_match.match_order else null end)
     )
   );
 end;
 $$;
 
-create or replace function public.kitakana_elo_standings()
+drop function if exists public.kitakana_elo_standings();
+
+create or replace function public.kitakana_elo_standings(
+  p_start_period text default 'all',
+  p_end_period text default 'latest'
+)
 returns jsonb
 language plpgsql
 stable
@@ -582,38 +628,150 @@ as $$
 declare
   v_owner uuid := auth.uid();
   v_teams jsonb;
+  v_periods jsonb;
+  v_latest_period date;
+  v_start_period date;
+  v_end_period date;
+  v_period_filter boolean;
 begin
   if v_owner is null then
     raise exception 'Authentication required';
   end if;
   if not exists(select 1 from public.kitakana_elo_teams where owner_user_id = v_owner) then
-    return jsonb_build_object('initialized', false, 'backend', 'Supabase', 'standings', '[]'::jsonb);
+    return jsonb_build_object('initialized', false, 'backend', 'Supabase', 'standings', '[]'::jsonb, 'availablePeriods', '[]'::jsonb);
   end if;
 
-  select coalesce(jsonb_agg(standing.item order by standing.current_rank, standing.name), '[]'::jsonb)
+  select max(match.period_month)
+  into v_latest_period
+  from public.kitakana_elo_matches match
+  where match.owner_user_id = v_owner
+    and match.validation = 'OK'
+    and match.period_month is not null;
+
+  if p_start_period = 'latest' then
+    v_start_period := v_latest_period;
+  elsif coalesce(p_start_period, 'all') <> 'all' then
+    if p_start_period !~ '^\d{4}-(0[1-9]|1[0-2])$' then
+      raise exception 'Invalid starting Elo period';
+    end if;
+    v_start_period := (p_start_period || '-01')::date;
+  end if;
+
+  if coalesce(p_end_period, 'latest') = 'latest' then
+    v_end_period := v_latest_period;
+  elsif p_end_period <> 'all' then
+    if p_end_period !~ '^\d{4}-(0[1-9]|1[0-2])$' then
+      raise exception 'Invalid ending Elo period';
+    end if;
+    v_end_period := (p_end_period || '-01')::date;
+  end if;
+
+  if v_start_period is not null and v_end_period is not null and v_start_period > v_end_period then
+    raise exception 'Starting Elo period must not be after ending Elo period';
+  end if;
+
+  v_period_filter := v_start_period is not null or v_end_period is not null;
+
+  select coalesce(jsonb_agg(period_key order by period_key), '[]'::jsonb)
+  into v_periods
+  from (
+    select distinct to_char(match.period_month, 'YYYY-MM') as period_key
+    from public.kitakana_elo_matches match
+    where match.owner_user_id = v_owner
+      and match.validation = 'OK'
+      and match.period_month is not null
+  ) periods;
+
+  with ratings as (
+    select team.*,
+      case when not v_period_filter then team.starting_elo else
+        team.baseline_elo
+        + coalesce((
+            select sum(bonus.points)
+            from public.kitakana_elo_bonuses bonus
+            where bonus.owner_user_id = v_owner
+              and not bonus.is_imported
+              and bonus.team_name = team.name
+          ), 0)
+        + coalesce((
+            select sum(case when match.team_a = team.name then match.team_a_delta else match.team_b_delta end)
+            from public.kitakana_elo_matches match
+            where match.owner_user_id = v_owner
+              and not match.is_imported
+              and match.validation = 'OK'
+              and team.name in (match.team_a, match.team_b)
+              and (match.period_month is null or (v_start_period is not null and match.period_month < v_start_period))
+          ), 0)
+      end as before_elo,
+      case when not v_period_filter then team.current_elo else
+        team.baseline_elo
+        + coalesce((
+            select sum(bonus.points)
+            from public.kitakana_elo_bonuses bonus
+            where bonus.owner_user_id = v_owner
+              and not bonus.is_imported
+              and bonus.team_name = team.name
+          ), 0)
+        + coalesce((
+            select sum(case when match.team_a = team.name then match.team_a_delta else match.team_b_delta end)
+            from public.kitakana_elo_matches match
+            where match.owner_user_id = v_owner
+              and not match.is_imported
+              and match.validation = 'OK'
+              and team.name in (match.team_a, match.team_b)
+              and (match.period_month is null or v_end_period is null or match.period_month <= v_end_period)
+          ), 0)
+      end as after_elo
+    from public.kitakana_elo_teams team
+    where team.owner_user_id = v_owner
+  ), ranked as (
+    select ratings.*,
+      rank() over (order by before_elo desc) as before_rank,
+      rank() over (order by after_elo desc) as after_rank
+    from ratings
+  )
+  select coalesce(jsonb_agg(standing.item order by standing.after_rank, standing.name), '[]'::jsonb)
   into v_teams
   from (
-    select team.current_rank, team.name, jsonb_build_object(
-      'rank', team.current_rank,
+    select team.after_rank, team.name, jsonb_build_object(
+      'rank', team.after_rank,
+      'beforeRank', team.before_rank,
+      'afterRank', team.after_rank,
+      'rankChange', team.before_rank - team.after_rank,
       'name', team.name,
       'code', team.code,
       'continent', team.continent,
       'startingElo', team.starting_elo,
-      'currentElo', team.current_elo,
-      'eloChange', team.current_elo - team.starting_elo,
+      'periodStartElo', team.before_elo,
+      'currentElo', team.after_elo,
+      'eloChange', team.after_elo - team.before_elo,
       'matches', (
         select count(*)
         from public.kitakana_elo_matches match
         where match.owner_user_id = v_owner
           and match.validation = 'OK'
           and team.name in (match.team_a, match.team_b)
+          and (
+            not v_period_filter or (
+              match.period_month is not null
+              and (v_start_period is null or match.period_month >= v_start_period)
+              and (v_end_period is null or match.period_month <= v_end_period)
+            )
+          )
       )
     ) as item
-    from public.kitakana_elo_teams team
-    where team.owner_user_id = v_owner
+    from ranked team
   ) standing;
 
-  return jsonb_build_object('initialized', true, 'backend', 'Supabase', 'standings', v_teams);
+  return jsonb_build_object(
+    'initialized', true,
+    'backend', 'Supabase',
+    'standings', v_teams,
+    'availablePeriods', v_periods,
+    'latestPeriod', case when v_latest_period is null then null else to_char(v_latest_period, 'YYYY-MM') end,
+    'startPeriod', case when v_start_period is null then null else to_char(v_start_period, 'YYYY-MM') end,
+    'endPeriod', case when v_end_period is null then null else to_char(v_end_period, 'YYYY-MM') end
+  );
 end;
 $$;
 
@@ -632,6 +790,7 @@ declare
   v_winner text;
   v_result_type text;
   v_tier text;
+  v_period_month date;
   v_order bigint;
   v_count integer := 0;
   v_results jsonb := '[]'::jsonb;
@@ -676,6 +835,10 @@ begin
     v_winner := case when item->>'winner' in ('Tie', 'Renga') then 'Tie' else item->>'winner' end;
     v_result_type := item->>'resultType';
     v_tier := item->>'tier';
+    if coalesce(item->>'stagePeriod', '') !~ '^\d{4}-(0[1-9]|1[0-2])$' then
+      raise exception 'Stage month and year are required';
+    end if;
+    v_period_month := ((item->>'stagePeriod') || '-01')::date;
     if v_winner not in ('Team A', 'Team B', 'Tie') then raise exception 'Invalid winner'; end if;
     if v_result_type not in ('Hoshin-Tora', 'Hoshin-Kai', 'Hoshin-Renga', 'Renga') then raise exception 'Invalid result type'; end if;
     if v_tier not in ('Tier 1', 'Tier 2', 'Tier 3', 'Tier 4', 'Tier 5') then raise exception 'Invalid tier'; end if;
@@ -693,7 +856,7 @@ begin
     insert into public.kitakana_elo_matches (
       owner_user_id, match_code, match_order, source_match_id, is_imported,
       team_a, team_b, website_team_a, website_team_b,
-      winner, result_type, tier, score_a, score_b, score_text,
+      winner, result_type, tier, period_month, score_a, score_b, score_text,
       event, notes, validation, submitted_by, updated_at
     ) values (
       v_owner,
@@ -708,6 +871,7 @@ begin
       v_winner,
       v_result_type,
       v_tier,
+      v_period_month,
       nullif(item->>'scoreA', '')::double precision,
       nullif(item->>'scoreB', '')::double precision,
       coalesce(item->>'score', ''),
@@ -730,6 +894,7 @@ begin
       winner = excluded.winner,
       result_type = excluded.result_type,
       tier = excluded.tier,
+      period_month = excluded.period_month,
       score_a = excluded.score_a,
       score_b = excluded.score_b,
       score_text = excluded.score_text,
@@ -754,15 +919,15 @@ $$;
 
 revoke all on function public.kitakana_resolve_team_internal(uuid, text, text) from public, anon, authenticated;
 revoke all on function public.kitakana_recalculate_internal(uuid) from public, anon, authenticated;
-revoke all on function public.kitakana_side_context_internal(uuid, text) from public, anon, authenticated;
+revoke all on function public.kitakana_side_context_internal(uuid, text, bigint) from public, anon, authenticated;
 
 revoke all on function public.kitakana_elo_status() from public, anon;
 revoke all on function public.kitakana_import_seed(jsonb) from public, anon;
-revoke all on function public.kitakana_elo_context(text, text, text, text) from public, anon;
-revoke all on function public.kitakana_elo_standings() from public, anon;
+revoke all on function public.kitakana_elo_context(text, text, text, text, text) from public, anon;
+revoke all on function public.kitakana_elo_standings(text, text) from public, anon;
 revoke all on function public.kitakana_submit_matches(jsonb) from public, anon;
 grant execute on function public.kitakana_elo_status() to authenticated;
 grant execute on function public.kitakana_import_seed(jsonb) to authenticated;
-grant execute on function public.kitakana_elo_context(text, text, text, text) to authenticated;
-grant execute on function public.kitakana_elo_standings() to authenticated;
+grant execute on function public.kitakana_elo_context(text, text, text, text, text) to authenticated;
+grant execute on function public.kitakana_elo_standings(text, text) to authenticated;
 grant execute on function public.kitakana_submit_matches(jsonb) to authenticated;

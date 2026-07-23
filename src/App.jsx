@@ -4,7 +4,33 @@ import { createClient } from "@supabase/supabase-js";
 import { strFromU8, strToU8, unzipSync, unzlibSync, zipSync, zlibSync } from "fflate";
 
 // ─── Country map ─────────────────────────────────────────────────────────────
-const COUNTRY_MAP = {"afghanistan":"af","albania":"al","algeria":"dz","argentina":"ar","australia":"au","austria":"at","bangladesh":"bd","belgium":"be","bolivia":"bo","brazil":"br","cambodia":"kh","cameroon":"cm","canada":"ca","chile":"cl","china":"cn","colombia":"co","costa rica":"cr","croatia":"hr","cuba":"cu","czech republic":"cz","denmark":"dk","ecuador":"ec","egypt":"eg","england":"gb","ethiopia":"et","finland":"fi","france":"fr","germany":"de","ghana":"gh","greece":"gr","guatemala":"gt","hungary":"hu","india":"in","indonesia":"id","iran":"ir","iraq":"iq","ireland":"ie","israel":"il","italy":"it","ivory coast":"ci","jamaica":"jm","japan":"jp","jordan":"jo","kenya":"ke","kuwait":"kw","malaysia":"my","mali":"ml","mexico":"mx","morocco":"ma","mozambique":"mz","myanmar":"mm","nepal":"np","netherlands":"nl","new zealand":"nz","nigeria":"ng","north korea":"kp","norway":"no","pakistan":"pk","panama":"pa","paraguay":"py","peru":"pe","philippines":"ph","poland":"pl","portugal":"pt","qatar":"qa","romania":"ro","russia":"ru","saudi arabia":"sa","scotland":"gb","senegal":"sn","serbia":"rs","singapore":"sg","slovakia":"sk","south africa":"za","south korea":"kr","spain":"es","sri lanka":"lk","sweden":"se","switzerland":"ch","taiwan":"tw","tanzania":"tz","thailand":"th","tunisia":"tn","turkey":"tr","ukraine":"ua","united kingdom":"gb","united states":"us","usa":"us","uk":"gb","uruguay":"uy","venezuela":"ve","vietnam":"vn","wales":"gb","zambia":"zm","zimbabwe":"zw"};
+const COUNTRY_MAP = {
+  "afghanistan":"af","albania":"al","algeria":"dz","andorra":"ad","angola":"ao","anguilla":"ai","antigua and barbuda":"ag","argentina":"ar","armenia":"am","aruba":"aw","australia":"au","austria":"at","azerbaijan":"az",
+  "bahamas":"bs","bahrain":"bh","bangladesh":"bd","barbados":"bb","belarus":"by","belgium":"be","belize":"bz","benin":"bj","bermuda":"bm","bhutan":"bt","bolivia":"bo","bosnia and herzegovina":"ba","botswana":"bw","brazil":"br","british virgin islands":"vg","brunei":"bn","bulgaria":"bg","burkina faso":"bf","burundi":"bi",
+  "cambodia":"kh","cameroon":"cm","canada":"ca","cape verde":"cv","cayman islands":"ky","central african republic":"cf","chad":"td","chile":"cl","china":"cn","chinese taipei":"tw","colombia":"co","comoros":"km","congo":"cg","cook islands":"ck","costa rica":"cr","croatia":"hr","cuba":"cu","curaçao":"cw","cyprus":"cy","czech republic":"cz",
+  "denmark":"dk","djibouti":"dj","dominica":"dm","dominican republic":"do","dr congo":"cd",
+  "ecuador":"ec","egypt":"eg","el salvador":"sv","england":"gb","equatorial guinea":"gq","eritrea":"er","estonia":"ee","eswatini":"sz","ethiopia":"et",
+  "faroe islands":"fo","fiji":"fj","finland":"fi","france":"fr",
+  "gabon":"ga","gambia":"gm","georgia":"ge","germany":"de","ghana":"gh","gibraltar":"gi","greece":"gr","grenada":"gd","guam":"gu","guatemala":"gt","guinea":"gn","guinea-bissau":"gw","guyana":"gy",
+  "haiti":"ht","honduras":"hn","hong kong":"hk","hungary":"hu",
+  "iceland":"is","india":"in","indonesia":"id","iran":"ir","iraq":"iq","ireland":"ie","israel":"il","italy":"it","ivory coast":"ci",
+  "jamaica":"jm","japan":"jp","jordan":"jo",
+  "kazakhstan":"kz","kenya":"ke","kosovo":"xk","kuwait":"kw","kyrgyzstan":"kg",
+  "laos":"la","latvia":"lv","lebanon":"lb","lesotho":"ls","liberia":"lr","libya":"ly","liechtenstein":"li","lithuania":"lt","luxembourg":"lu",
+  "macau":"mo","madagascar":"mg","malawi":"mw","malaysia":"my","maldives":"mv","mali":"ml","malta":"mt","mauritania":"mr","mauritius":"mu","mexico":"mx","moldova":"md","monaco":"mc","mongolia":"mn","montenegro":"me","montserrat":"ms","morocco":"ma","mozambique":"mz","myanmar":"mm",
+  "namibia":"na","nepal":"np","netherlands":"nl","new caledonia":"nc","new zealand":"nz","nicaragua":"ni","niger":"ne","nigeria":"ng","north korea":"kp","north macedonia":"mk","northern ireland":"gb","norway":"no",
+  "oman":"om",
+  "pakistan":"pk","palestine":"ps","panama":"pa","papua new guinea":"pg","paraguay":"py","peru":"pe","philippines":"ph","poland":"pl","portugal":"pt","puerto rico":"pr",
+  "qatar":"qa",
+  "republic of ireland":"ie","romania":"ro","russia":"ru","rwanda":"rw",
+  "saint kitts and nevis":"kn","saint lucia":"lc","saint vincent and the grenadines":"vc","samoa":"ws","san marino":"sm","são tomé and príncipe":"st","saudi arabia":"sa","scotland":"gb","senegal":"sn","seychelles":"sc","sierra leone":"sl","singapore":"sg","sint maarten":"sx","slovakia":"sk","slovenia":"si","solomon islands":"sb","somalia":"so","south africa":"za","south korea":"kr","south sudan":"ss","spain":"es","sri lanka":"lk","sudan":"sd","suriname":"sr","sweden":"se","switzerland":"ch","syria":"sy",
+  "tahiti":"pf","taiwan":"tw","tajikistan":"tj","tanzania":"tz","thailand":"th","timor-leste":"tl","togo":"tg","tonga":"to","trinidad and tobago":"tt","tunisia":"tn","turkey":"tr","turkmenistan":"tm","turks and caicos islands":"tc",
+  "u.s. virgin islands":"vi","uganda":"ug","uk":"gb","ukraine":"ua","united arab emirates":"ae","united kingdom":"gb","united states":"us","uruguay":"uy","usa":"us","uzbekistan":"uz",
+  "vanuatu":"vu","venezuela":"ve","vietnam":"vn",
+  "wales":"gb",
+  "yemen":"ye",
+  "zambia":"zm","zimbabwe":"zw"
+};
 const FLAG = (code) => { if(!code)return""; const c=code.trim().toUpperCase().slice(0,2); if(c.length<2)return""; try{return String.fromCodePoint(...[...c].map(ch=>0x1F1E6-65+ch.charCodeAt(0)));}catch{return"";} };
 const regionFlag = (region) => { if(!region)return""; const iso=COUNTRY_MAP[region.trim().toLowerCase()]; return iso?FLAG(iso):""; };
 const CONMEBOL_CODES=new Set(["ARG","BOL","BRA","CHI","COL","ECU","PAR","PER","URU","VEN"]);
@@ -39,11 +65,40 @@ const DEFAULT_STANDINGS_RULES={
 const RR_LEG_MAX=12;
 const ELO_TIERS=["Tier 1","Tier 2","Tier 3","Tier 4","Tier 5"];
 const DEFAULT_ELO_TIER="Tier 4";
+const currentStagePeriod=()=>{
+  const now=new Date();
+  return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+};
+const DEFAULT_STAGE_PERIOD=currentStagePeriod();
+const normalizeStagePeriod=value=>/^\d{4}-(0[1-9]|1[0-2])$/.test(String(value||""))?String(value):"";
+const formatStagePeriod=value=>{
+  const period=normalizeStagePeriod(value);
+  if(!period)return"Choose month";
+  const[year,month]=period.split("-").map(Number);
+  return new Intl.DateTimeFormat(undefined,{month:"short",year:"numeric"}).format(new Date(year,month-1,1));
+};
 const EloBridgeContext=createContext({
   getMatchContext:()=>null,
   loadMatchInfo:async()=>({initialized:false}),
   submitMatch:async()=>({ok:false,error:"Supabase Elo unavailable"})
 });
+
+function StagePeriodInput({value,onChange,disabled=false,compact=false}){
+  const valid=!!normalizeStagePeriod(value);
+  return <label title="Month and year when this stage is run" style={{display:"inline-flex",alignItems:"center",gap:5,padding:compact?"2px 7px":"5px 9px",borderRadius:6,border:`1px solid ${valid?"rgba(233,196,106,0.5)":"#e63946"}`,background:"var(--color-background-primary)",color:valid?"#e9c46a":"#e63946",fontSize:compact?10:11,fontWeight:900,textTransform:"uppercase",letterSpacing:"0.04em",cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.5:1,whiteSpace:"nowrap"}}>
+    <span>📅 {formatStagePeriod(value)}</span>
+    <input type="month" value={normalizeStagePeriod(value)} required disabled={disabled} onChange={event=>onChange(event.target.value)} aria-label="Stage month and year" style={{width:18,height:18,border:0,background:"transparent",color:"inherit",padding:0,cursor:disabled?"not-allowed":"pointer"}}/>
+  </label>;
+}
+
+function startedStagePeriodsFromState(state){
+  if(!state)return[];
+  if(state.formatType==="multi"){
+    return Object.keys(state.stageData||{}).map(Number).filter(Number.isFinite).map(idx=>normalizeStagePeriod(state.stages?.[idx]?.period)).filter(Boolean);
+  }
+  const started=state.formatType==="roundrobin"?(state.rrRounds||[]).length>0:!!state.bracketData;
+  return started?[normalizeStagePeriod(state.stagePeriod)].filter(Boolean):[];
+}
 
 function normalizeRoundRobinLegs(value){
   const parsed=Math.floor(Number(value));
@@ -387,6 +442,7 @@ function buildKitakanaEloPayload(match,context){
   return {
     matchCode,
     tournamentName:context.tournamentName||"Tournament",
+    stagePeriod:normalizeStagePeriod(context.stagePeriod),
     tier:context.tier||DEFAULT_ELO_TIER,
     sourceMatchId:match.id,
     teamA:match.teamA.name,
@@ -1652,18 +1708,29 @@ function MatchEloPanel({match}){
   };
   const sideForTeam=team=>team===match.teamA?"teamA":"teamB";
   const InfoCard=({team})=>{
-    const side=info?.sides?.[sideForTeam(team)]||null;
+    const sideKey=sideForTeam(team);
+    const side=info?.sides?.[sideKey]||null;
     const data=side?.info||info?.teams?.[team.name]||null;
-    const history=(side?.history||info?.history?.[team.name]||[]).slice(0,8);
+    const history=(side?.history||info?.history?.[team.name]||[]).slice(0,5);
     const trackerName=side?.trackerName||data?.name||"";
+    const matchResult=info?.match?.[sideKey]||null;
+    const postMatchElo=Number(matchResult?.postElo);
+    const eloChange=Number(matchResult?.eloChange);
+    const hasPostMatchElo=Number.isFinite(postMatchElo);
+    const hasEloChange=Number.isFinite(eloChange);
+    const changeColor=eloChange>0?"#2a9d8f":eloChange<0?"#e63946":"var(--color-text-tertiary)";
+    const changeArrow=eloChange>0?"▲":eloChange<0?"▼":"—";
     return(
       <div style={{border:`1px solid ${team.color||"var(--color-border-tertiary)"}55`,borderRadius:8,background:"rgba(255,255,255,0.035)",padding:"9px 10px",minWidth:0}}>
         <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>
           <TeamTag name={team.name} color={team.color} seed={team.seed} small/>
           {data?.currentRank&&<span style={{marginLeft:"auto",fontSize:10,color:"var(--color-text-tertiary)",fontWeight:800}}>#{data.currentRank}</span>}
         </div>
-        <div style={{fontSize:20,fontWeight:800,color:team.color||"#e9c46a",fontVariantNumeric:"tabular-nums"}}>{data?formatEloNumber(data.currentElo):"-"}</div>
-        <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginTop:2}}>{data?.code||"Not found in tracker"}{data?.continent?` · ${data.continent}`:""}</div>
+        <div style={{display:"flex",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>
+          <div style={{fontSize:20,fontWeight:800,color:team.color||"#e9c46a",fontVariantNumeric:"tabular-nums"}}>{hasPostMatchElo?formatEloNumber(postMatchElo):data?formatEloNumber(data.currentElo):"-"}</div>
+          {hasEloChange&&<span style={{fontSize:10,fontWeight:900,color:changeColor,fontVariantNumeric:"tabular-nums"}}>{changeArrow} {eloChange>0?"+":""}{formatEloNumber(eloChange)}</span>}
+        </div>
+        <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginTop:2}}>{hasPostMatchElo?"Elo after this match · ":"Current Elo · "}{data?.code||"Not found in tracker"}{data?.continent?` · ${data.continent}`:""}</div>
         {trackerName&&trackerName!==team.name&&<div style={{fontSize:9,color:"var(--color-text-tertiary)",marginTop:2}}>Tracker team: {trackerName}</div>}
         {history.length>0&&(
           <div style={{marginTop:7,display:"flex",flexDirection:"column",gap:2}}>
@@ -1675,6 +1742,7 @@ function MatchEloPanel({match}){
             ))}
           </div>
         )}
+        {info?.match?.matchOrder&&<div style={{fontSize:9,color:"var(--color-text-tertiary)",marginTop:7}}>Last {history.length} matches before this match</div>}
       </div>
     );
   };
@@ -1684,6 +1752,7 @@ function MatchEloPanel({match}){
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:9,flexWrap:"wrap"}}>
         <span style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#e9c46a"}}>Kitakana Elo</span>
         <span style={{fontSize:10,color:"var(--color-text-tertiary)",fontWeight:700}}>{context.tier||DEFAULT_ELO_TIER}</span>
+        <span style={{fontSize:10,color:"var(--color-text-tertiary)",fontWeight:700}}>📅 {formatStagePeriod(context.stagePeriod)}</span>
         {info?.backend&&<span style={{fontSize:9,color:"#2a9d8f",fontWeight:800}}>{info.backend}</span>}
         {mapped&&<span style={{fontSize:10,color:"#2a9d8f",fontWeight:800,marginLeft:"auto"}}>{mapped.resultType} · {mapped.score}</span>}
       </div>
@@ -1703,27 +1772,31 @@ function MatchEloPanel({match}){
 }
 
 function EloStandingsPanel({loadStandings,refreshToken}){
-  const[state,setState]=useState({loading:true,error:"",standings:[]});
+  const[state,setState]=useState({loading:true,error:"",standings:[],availablePeriods:[],latestPeriod:"",startPeriod:"",endPeriod:""});
   const[regionFilter,setRegionFilter]=useState("all");
   const[subregionFilter,setSubregionFilter]=useState("all");
+  const[startPeriod,setStartPeriod]=useState("all");
+  const[endPeriod,setEndPeriod]=useState("latest");
   const[openTeam,setOpenTeam]=useState("");
 
   useEffect(()=>{
     let cancelled=false;
-    setState({loading:true,error:"",standings:[]});
-    loadStandings()
+    setState(current=>({...current,loading:true,error:""}));
+    loadStandings({startPeriod,endPeriod})
       .then(data=>{
-        if(!cancelled)setState({loading:false,error:"",standings:Array.isArray(data?.standings)?data.standings:[]});
+        if(!cancelled)setState({loading:false,error:"",standings:Array.isArray(data?.standings)?data.standings:[],availablePeriods:Array.isArray(data?.availablePeriods)?data.availablePeriods:[],latestPeriod:data?.latestPeriod||"",startPeriod:data?.startPeriod||"",endPeriod:data?.endPeriod||""});
       })
       .catch(error=>{
-        if(!cancelled)setState({loading:false,error:friendlyEloError(error)||"Could not load Elo standings.",standings:[]});
+        if(!cancelled)setState(current=>({...current,loading:false,error:friendlyEloError(error)||"Could not load Elo standings.",standings:[]}));
       });
     return()=>{cancelled=true;};
-  },[refreshToken]);
+  },[refreshToken,startPeriod,endPeriod]);
 
   const regions=[...new Set(state.standings.map(team=>team.continent).filter(Boolean))].sort();
   const subregions=[...new Set(state.standings.map(eloSubregion).filter(Boolean))].sort();
   const filtered=state.standings.filter(team=>(regionFilter==="all"||team.continent===regionFilter)&&(subregionFilter==="all"||eloSubregion(team)===subregionFilter));
+  const periodOptions=state.availablePeriods||[];
+  const periodSummary=state.startPeriod||state.endPeriod?`${state.startPeriod?formatStagePeriod(state.startPeriod):"Baseline"} → ${state.endPeriod?formatStagePeriod(state.endPeriod):"Current"}`:"All historical and submitted matches";
   const outcomeColor=outcome=>outcome==="win"?"#16833b":outcome==="loss"?"#e63946":"#74798b";
   const outcomeLetter=outcome=>outcome==="win"?"W":outcome==="loss"?"L":"D";
   const shortDate=value=>{
@@ -1734,7 +1807,7 @@ function EloStandingsPanel({loadStandings,refreshToken}){
   const HistoryCard=({item})=><div style={{flex:"0 0 240px",minHeight:142,border:"1px solid var(--color-border-tertiary)",borderRadius:8,overflow:"hidden",background:"var(--color-background-primary)",boxSizing:"border-box"}}>
     <div style={{padding:"7px 10px",background:"#061c32",color:"#fff",fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.event||"Elo match"}</div>
     <div style={{padding:"10px 11px"}}>
-      <div style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:10,color:"var(--color-text-tertiary)",marginBottom:8}}><strong>{eloHistoryResult(item)}</strong><span>{shortDate(item.updatedAt)}</span></div>
+      <div style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:10,color:"var(--color-text-tertiary)",marginBottom:8}}><strong>{eloHistoryResult(item)}</strong><span>{item.periodMonth?formatStagePeriod(item.periodMonth):shortDate(item.updatedAt)}</span></div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,fontSize:13,fontWeight:800}}><span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>vs {item.opponent}</span><span>{item.score||"—"}</span></div>
       <div style={{marginTop:10,paddingTop:8,borderTop:"1px solid var(--color-border-tertiary)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
         <span style={{width:25,height:25,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",background:outcomeColor(item.outcome),color:"white",fontWeight:900,fontSize:11}}>{outcomeLetter(item.outcome)}</span>
@@ -1755,8 +1828,21 @@ function EloStandingsPanel({loadStandings,refreshToken}){
     <div style={{border:"1px solid rgba(233,196,106,0.32)",background:"rgba(233,196,106,0.04)",borderRadius:8,overflow:"hidden"}}>
       <div style={{padding:"13px 15px",borderBottom:"1px solid rgba(233,196,106,0.2)",display:"flex",alignItems:"center",gap:9,flexWrap:"wrap"}}>
         <span style={{fontSize:15,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:"#e9c46a"}}>Kitakana Elo Standings</span>
-        <span style={{fontSize:11,color:"var(--color-text-tertiary)",fontWeight:700}}>All historical and submitted matches</span>
+        <span style={{fontSize:11,color:"var(--color-text-tertiary)",fontWeight:700}}>{periodSummary}</span>
         <div style={{marginLeft:"auto",display:"flex",gap:7,flexWrap:"wrap"}}>
+          <label style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"var(--color-text-tertiary)",fontWeight:800,textTransform:"uppercase"}}>From
+            <select aria-label="Starting Elo period" value={startPeriod} onChange={event=>{const value=event.target.value;setStartPeriod(value);if(/^\d{4}-\d{2}$/.test(value)&&/^\d{4}-\d{2}$/.test(endPeriod)&&value>endPeriod)setEndPeriod(value);setOpenTeam("");}} style={{padding:"5px 8px",borderRadius:6,border:"1px solid rgba(233,196,106,0.45)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800}}>
+              <option value="all">All periods</option>
+              <option value="latest">Latest{state.latestPeriod?` (${formatStagePeriod(state.latestPeriod)})`:""}</option>
+              {periodOptions.map(period=><option key={period} value={period}>{formatStagePeriod(period)}</option>)}
+            </select>
+          </label>
+          <label style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"var(--color-text-tertiary)",fontWeight:800,textTransform:"uppercase"}}>To
+            <select aria-label="Ending Elo period" value={endPeriod} onChange={event=>{const value=event.target.value;setEndPeriod(value);if(/^\d{4}-\d{2}$/.test(value)&&/^\d{4}-\d{2}$/.test(startPeriod)&&value<startPeriod)setStartPeriod(value);setOpenTeam("");}} style={{padding:"5px 8px",borderRadius:6,border:"1px solid rgba(233,196,106,0.45)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800}}>
+              <option value="latest">Latest{state.latestPeriod?` (${formatStagePeriod(state.latestPeriod)})`:""}</option>
+              {periodOptions.map(period=><option key={period} value={period}>{formatStagePeriod(period)}</option>)}
+            </select>
+          </label>
           <select aria-label="Filter Elo standings by region" value={regionFilter} onChange={event=>{setRegionFilter(event.target.value);setOpenTeam("");}} style={{padding:"5px 8px",borderRadius:6,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800}}><option value="all">All regions</option>{regions.map(region=><option key={region} value={region}>{region}</option>)}</select>
           <select aria-label="Filter Elo standings by subregion" value={subregionFilter} onChange={event=>{setSubregionFilter(event.target.value);setOpenTeam("");}} style={{padding:"5px 8px",borderRadius:6,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800}}><option value="all">All subregions</option>{subregions.map(region=><option key={region} value={region}>{region}</option>)}</select>
         </div>
@@ -1780,6 +1866,7 @@ function EloStandingsPanel({loadStandings,refreshToken}){
             <tbody>
               {filtered.map(team=>{
                 const change=Number(team.eloChange)||0;
+                const rankChange=Number(team.rankChange)||0;
                 const history=team.history||[];
                 const bonuses=team.bonuses||[];
                 const latest=history[0];
@@ -1787,7 +1874,7 @@ function EloStandingsPanel({loadStandings,refreshToken}){
                 const open=openTeam===(team.code||team.name);
                 return <Fragment key={team.code||team.name}>
                   <tr onClick={()=>setOpenTeam(open?"":team.code||team.name)} style={{borderTop:"1px solid var(--color-border-tertiary)",background:open?"rgba(255,255,255,0.035)":"transparent",cursor:"pointer"}}>
-                    <td style={{padding:"13px 12px",fontSize:22,fontWeight:900,color:"#e9c46a"}}>{team.rank}</td>
+                    <td style={{padding:"13px 12px"}}><div style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:22,fontWeight:900,color:"#e9c46a"}}>{team.rank}</span><span title={`Rank ${team.beforeRank} → ${team.afterRank}`} style={{fontSize:10,fontWeight:900,color:rankChange>0?"#2a9d8f":rankChange<0?"#e63946":"var(--color-text-tertiary)",whiteSpace:"nowrap"}}>{rankChange>0?"▲ +":rankChange<0?"▼ ":"— "}{rankChange}</span></div></td>
                     <td style={{padding:"13px 12px",fontWeight:800}}><span style={{fontSize:18,marginRight:7}}>{regionFlag(team.name)}</span>{team.name}<div style={{fontSize:9,color:"var(--color-text-tertiary)",marginTop:2}}>{team.code} · {team.continent}{eloSubregion(team)?` · ${eloSubregion(team)}`:""}</div></td>
                     <td style={{padding:"13px 12px"}}><div style={{display:"flex",gap:4}}>{history.slice(0,5).map((item,index)=><span key={`${item.matchId}-${index}`} title={`${eloHistoryResult(item)} vs ${item.opponent}`} style={{width:20,height:20,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",background:outcomeColor(item.outcome),color:"white",fontSize:9,fontWeight:900}}>{outcomeLetter(item.outcome)}</span>)}{!history.length&&<span style={{color:"var(--color-text-tertiary)"}}>—</span>}</div></td>
                     <td style={{padding:"13px 12px",maxWidth:210}}>{latest?<><div style={{fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{eloHistoryResult(latest)} vs {latest.opponent}</div><div style={{fontSize:10,color:Number(latest.eloChange)>=0?"#2a9d8f":"#e63946",fontWeight:800}}>{Number(latest.eloChange)>=0?"+":""}{formatEloNumber(latest.eloChange)} · {latest.score||latest.event||"Historical"}</div></>:<span style={{color:"var(--color-text-tertiary)"}}>No match</span>}</td>
@@ -1813,17 +1900,36 @@ function EloStandingsPanel({loadStandings,refreshToken}){
 }
 
 function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
+  const[selectedGameIndex,setSelectedGameIndex]=useState(0);
   const ready=!!(match.teamA&&match.teamB);
   const{wA,wB,scoreA,scoreB,winner}=ready?matchResult(match):{wA:0,wB:0,scoreA:0,scoreB:0,winner:null};
   const allPlayers=ready?[...(match.teamA.players||[]).filter(p=>p.role==="player"||p.role==="substitute").map(p=>({...p,team:match.teamA})),...(match.teamB.players||[]).filter(p=>p.role==="player"||p.role==="substitute").map(p=>({...p,team:match.teamB}))]:[];
   const addGame=()=>{
     const nextGame={id:match.games.length,winnerName:null,isTie:false,scoreA:"",scoreB:"",gameMvp:null,stats:{}};
+    setSelectedGameIndex(match.games.length);
     onMatchUpdate({games:[...match.games,nextGame]});
   };
   const deleteGame=gameIdx=>{
     if(match.games.length<=1)return;
     const nextGames=match.games.filter((_,idx)=>idx!==gameIdx).map((game,idx)=>({...game,id:idx}));
+    setSelectedGameIndex(current=>Math.min(current,nextGames.length-1));
     onMatchUpdate({games:nextGames});
+  };
+  const canTie=matchAllowsTie(match);
+  const GameTableCell=({game,gameIdx,side})=>{
+    const isA=side==="A";
+    const team=isA?match.teamA:match.teamB;
+    const scoreKey=isA?"scoreA":"scoreB";
+    const otherScoreKey=isA?"scoreB":"scoreA";
+    if(match.matchMode==="score"){
+      const own=Number(game[scoreKey]);
+      const other=Number(game[otherScoreKey]);
+      const hasBoth=game[scoreKey]!==""&&game[scoreKey]!=null&&game[otherScoreKey]!==""&&game[otherScoreKey]!=null;
+      const isWinning=hasBoth&&own>other;
+      return <input type="number" min="0" step="any" aria-label={`${team.name} game ${gameIdx+1} score`} value={game[scoreKey]??""} onChange={event=>onGameUpdate(gameIdx,{[scoreKey]:event.target.value})} style={{width:70,height:38,borderRadius:6,border:`1px solid ${isWinning?team.color:"var(--color-border-tertiary)"}`,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontSize:16,fontWeight:800,fontFamily:"'Barlow Condensed',sans-serif",textAlign:"center",padding:"0 6px",boxSizing:"border-box"}}/>;
+    }
+    const selected=!game.isTie&&game.winnerName===team.name;
+    return <button onClick={()=>onGameUpdate(gameIdx,{winnerName:selected?null:team.name,isTie:false})} aria-pressed={selected} style={{width:76,height:34,borderRadius:6,border:`1px solid ${selected?team.color:"var(--color-border-tertiary)"}`,background:selected?`${team.color}33`:"var(--color-background-primary)",color:selected?team.color:"var(--color-text-secondary)",fontSize:11,fontWeight:900,fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase",cursor:"pointer"}}>{selected?"Winner":"Select"}</button>;
   };
   return(
     <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.78)",display:"flex",alignItems:"center",justifyContent:"center",padding:18}}>
@@ -1851,19 +1957,39 @@ function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
 
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:9,flexWrap:"wrap"}}>
           <div style={{fontSize:11,fontWeight:900,letterSpacing:"0.09em",textTransform:"uppercase",color:"#e9c46a"}}>Games · all in one view</div>
-          <button onClick={addGame} style={{...btn(false),padding:"4px 10px",border:"1px solid rgba(42,157,143,0.45)",color:"#2a9d8f"}}>+ Game</button>
+          <div style={{display:"flex",gap:6}}>
+            <button onClick={()=>deleteGame(match.games.length-1)} disabled={match.games.length<=1} style={{...btn(false),padding:"4px 10px",border:"1px solid rgba(230,57,70,0.45)",color:"#e63946",opacity:match.games.length<=1?0.4:1,cursor:match.games.length<=1?"not-allowed":"pointer"}}>− Game</button>
+            <button onClick={addGame} style={{...btn(false),padding:"4px 10px",border:"1px solid rgba(42,157,143,0.45)",color:"#2a9d8f"}}>+ Game</button>
+          </div>
         </div>
-        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:12}}>
-          {match.games.map((game,gameIdx)=><div key={gameIdx} style={{padding:"11px 12px",borderRadius:8,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)"}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:9}}>
-              <span style={{fontSize:12,fontWeight:900,letterSpacing:"0.07em",textTransform:"uppercase"}}>Game {gameIdx+1}</span>
-              {game.gameMvp&&<span style={{fontSize:10,color:"#e9c46a",fontWeight:800}}>⭐ {game.gameMvp}</span>}
-              {match.games.length>1&&<button onClick={()=>deleteGame(gameIdx)} aria-label={`Delete game ${gameIdx+1}`} style={{marginLeft:"auto",...btn(false),padding:"3px 8px",fontSize:10,border:"1px solid rgba(230,57,70,0.5)",color:"#e63946"}}>Delete</button>}
-            </div>
-            <GameSlot game={game} gi={gameIdx} match={match} mode={match.matchMode} onUpdate={onGameUpdate}/>
-            {allPlayers.length>0&&<div style={{marginTop:10}}><PlayerStatPanel match={match} gameIdx={gameIdx} statCols={statCols} onUpdate={onGameUpdate}/></div>}
-          </div>)}
+        <div style={{overflowX:"auto",marginBottom:12,border:"1px solid var(--color-border-tertiary)",borderRadius:8,background:"var(--color-background-secondary)"}}>
+          <table style={{width:"100%",minWidth:Math.max(420,160+match.games.length*105),borderCollapse:"collapse",fontFamily:"'Barlow Condensed',sans-serif"}}>
+            <thead>
+              <tr style={{background:"rgba(255,255,255,0.04)",borderBottom:"1px solid var(--color-border-tertiary)"}}>
+                <th style={{width:160,padding:"10px 12px",textAlign:"left",fontSize:11,fontWeight:900,letterSpacing:"0.07em",textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Participant</th>
+                {match.games.map((game,gameIdx)=><th key={game.id??gameIdx} style={{minWidth:105,padding:"7px 8px",textAlign:"center",borderLeft:"1px solid var(--color-border-tertiary)",background:selectedGameIndex===gameIdx?"rgba(233,196,106,0.06)":"transparent"}}>
+                  <button onClick={()=>setSelectedGameIndex(gameIdx)} style={{background:"none",border:0,color:selectedGameIndex===gameIdx?"#e9c46a":"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:900,letterSpacing:"0.07em",textTransform:"uppercase",cursor:"pointer",padding:2}}>Game {gameIdx+1}</button>
+                  {game.gameMvp&&<div title={`MVP: ${game.gameMvp}`} style={{fontSize:9,color:"#e9c46a",fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>⭐ {game.gameMvp}</div>}
+                  {canTie&&match.matchMode!=="score"&&<button onClick={()=>onGameUpdate(gameIdx,{winnerName:null,isTie:!game.isTie})} aria-pressed={!!game.isTie} style={{marginTop:3,padding:"2px 7px",borderRadius:4,border:"1px solid var(--color-border-tertiary)",background:game.isTie?"#e9c46a":"var(--color-background-primary)",color:game.isTie?"#2c2c00":"var(--color-text-tertiary)",fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:900,cursor:"pointer"}}>Tie</button>}
+                </th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {[match.teamA,match.teamB].map((team,teamIdx)=><tr key={team.name} style={{borderBottom:teamIdx===0?"1px solid var(--color-border-tertiary)":"none"}}>
+                <th style={{padding:"11px 12px",textAlign:"left",fontWeight:700}}><TeamTag name={team.name} color={team.color} seed={team.seed}/></th>
+                {match.games.map((game,gameIdx)=><td key={game.id??gameIdx} style={{padding:"9px 8px",textAlign:"center",borderLeft:"1px solid var(--color-border-tertiary)",background:selectedGameIndex===gameIdx?"rgba(233,196,106,0.035)":"transparent"}}><GameTableCell game={game} gameIdx={gameIdx} side={teamIdx===0?"A":"B"}/></td>)}
+              </tr>)}
+            </tbody>
+          </table>
         </div>
+
+        {allPlayers.length>0&&<div style={{padding:"10px 12px",borderRadius:8,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",marginBottom:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5,flexWrap:"wrap"}}>
+            <span style={{fontSize:11,fontWeight:900,letterSpacing:"0.07em",textTransform:"uppercase",color:"#e9c46a"}}>Game {selectedGameIndex+1} player details</span>
+            <span style={{fontSize:9,color:"var(--color-text-tertiary)"}}>Select a game heading above to edit its stats and MVP.</span>
+          </div>
+          <PlayerStatPanel match={match} gameIdx={Math.min(selectedGameIndex,match.games.length-1)} statCols={statCols} onUpdate={onGameUpdate}/>
+        </div>}
 
         {allPlayers.length>0&&(
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
@@ -2664,6 +2790,7 @@ function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=
       {/* ── Header row: stage label + format picker ── */}
       <div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderBottom:"0.5px solid var(--color-border-tertiary)",background:"rgba(0,0,0,0.05)"}}>
         <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,fontSize:13,letterSpacing:"0.07em",textTransform:"uppercase",color:"var(--color-text-primary)",minWidth:56}}>Stage {idx+1}</span>
+        <StagePeriodInput value={stage.period} onChange={period=>onChange({...stage,period})} compact/>
         <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
           {["single","double","roundrobin"].map(f=>(
             <button key={f} onClick={()=>!controlDisabled&&onChange({...stage,format:f})} disabled={controlDisabled} style={{...btn(stage.format===f),padding:"2px 8px",fontSize:10,...(controlDisabled?disabledStyle:{})}}>{FORMAT_LABELS[f]}</button>
@@ -2873,7 +3000,7 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
           return(
             <button key={idx} onClick={()=>unlocked&&setActiveStageIdx(idx)} disabled={!unlocked} style={{...btn(activeStageIdx===idx),padding:"6px 14px",fontSize:13,position:"relative",opacity:unlocked?1:0.4,cursor:unlocked?"pointer":"not-allowed"}}>
               Stage {idx+1}
-              <span style={{display:"block",fontSize:9,fontWeight:500,color:"var(--color-text-tertiary)"}}>{FORMAT_LABELS[st.format]} · {(stageData[idx]?.teams||[]).length}T</span>
+              <span style={{display:"block",fontSize:9,fontWeight:500,color:"var(--color-text-tertiary)"}}>{FORMAT_LABELS[st.format]} · {(stageData[idx]?.teams||[]).length}T · {formatStagePeriod(st.period)}</span>
               {done&&<span style={{position:"absolute",top:-4,right:-4,width:8,height:8,borderRadius:"50%",background:"#2a9d8f",border:"1.5px solid var(--color-background-primary)"}}/>}
             </button>
           );
@@ -2985,7 +3112,7 @@ const FOLDERS_KEY="tourney:folders:v1";
 const USERS_KEY="tourney:users:v1";
 const AUTH_KEY="tourney:auth:v1";
 const DEFAULT_AWARDS={weekMvps:[],stageMvps:[],finalMvps:[],finalMvpCount:1};
-const DEFAULT_STAGES=[{format:"single",teamCount:8,matchMode:"wl",gamesPerMatch:1,eloTier:DEFAULT_ELO_TIER,advance:4}];
+const DEFAULT_STAGES=[{format:"single",teamCount:8,matchMode:"wl",gamesPerMatch:1,eloTier:DEFAULT_ELO_TIER,period:DEFAULT_STAGE_PERIOD,advance:4}];
 const SUPABASE_URL=import.meta.env.VITE_SUPABASE_URL||"";
 const SUPABASE_ANON_KEY=import.meta.env.VITE_SUPABASE_ANON_KEY||"";
 const supabaseConfigured=!!(SUPABASE_URL&&SUPABASE_ANON_KEY);
@@ -3697,12 +3824,12 @@ function recalcMultiStages(stages){
       const max=Math.max(1,Math.floor((next.teamCount||2)/2));
       return {...next,splitStartCount:Math.max(1,Math.min(max,next.splitStartCount||Math.max(1,Math.floor((next.teamCount||2)/4))))};
     };
-    if(idx===0)return clampSplit({...stage,teamCount:Math.max(2,stage.teamCount||2),groupStage:stages.length===1?false:stage.groupStage});
+    if(idx===0)return clampSplit({...stage,period:normalizeStagePeriod(stage.period)||DEFAULT_STAGE_PERIOD,teamCount:Math.max(2,stage.teamCount||2),groupStage:stages.length===1?false:stage.groupStage});
     const isLast=idx===stages.length-1;
     const fromPrev=stages[idx-1]?.advance||2;
     const aat=stage.aat||0;
     const teamCount=Math.max(2,fromPrev+aat);
-    return clampSplit({...stage,aat,teamCount,groupStage:isLast?false:stage.groupStage,advance:Math.min(stage.advance||Math.floor(teamCount/2),Math.max(1,teamCount-1))});
+    return clampSplit({...stage,period:normalizeStagePeriod(stage.period)||DEFAULT_STAGE_PERIOD,aat,teamCount,groupStage:isLast?false:stage.groupStage,advance:Math.min(stage.advance||Math.floor(teamCount/2),Math.max(1,teamCount-1))});
   });
 }
 
@@ -3722,6 +3849,7 @@ export default function App(){
   const[gamesPerMatch,setGamesPerMatch]=useState(1);
   const[rrLegs,setRrLegs]=useState(1);
   const[eloTier,setEloTier]=useState(DEFAULT_ELO_TIER);
+  const[stagePeriod,setStagePeriod]=useState(DEFAULT_STAGE_PERIOD);
   const[rrStandingsRules,setRrStandingsRules]=useState(DEFAULT_STANDINGS_RULES);
   const[statCols,setStatCols]=useState(["Score"]);
   const[teams,setTeams]=useState([]);
@@ -3899,7 +4027,7 @@ export default function App(){
 
   useEffect(()=>{
     if(step!=="bracket"||!currentProjectId)return;
-    const state={step,formatType,teamCount,matchMode,gamesPerMatch,rrLegs,eloTier,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks};
+    const state={step,formatType,teamCount,matchMode,gamesPerMatch,rrLegs,eloTier,stagePeriod,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks};
     const hasBracket=isMulti?Object.keys(stageData||{}).length>0:isRR?rrRounds.length>0:!!bracketData;
     if(!hasBracket)return;
     const updatedAt=new Date().toISOString();
@@ -3910,7 +4038,7 @@ export default function App(){
       return [project,...others].slice(0,20);
     });
     setLastSavedAt(new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}));
-  },[step,currentProjectId,currentFolderId,formatType,teamCount,matchMode,gamesPerMatch,rrLegs,eloTier,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks,isMulti,isRR]);
+  },[step,currentProjectId,currentFolderId,formatType,teamCount,matchMode,gamesPerMatch,rrLegs,eloTier,stagePeriod,rrStandingsRules,statCols,teams,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks,isMulti,isRR]);
 
   useEffect(()=>{
     if(step!=="bracket"||!qualificationLinks.length)return;
@@ -3937,6 +4065,7 @@ export default function App(){
     setGamesPerMatch(s.gamesPerMatch||1);
     setRrLegs(normalizeRoundRobinLegs(s.rrLegs));
     setEloTier(ELO_TIERS.includes(s.eloTier)?s.eloTier:DEFAULT_ELO_TIER);
+    setStagePeriod(normalizeStagePeriod(s.stagePeriod)||DEFAULT_STAGE_PERIOD);
     setRrStandingsRules(normalizeStandingsRules(s.rrStandingsRules));
     setStatCols(s.statCols||["Score"]);
     setTeams(s.teams||[]);
@@ -3948,7 +4077,7 @@ export default function App(){
     setShowPlayers(s.showPlayers||false);
     setAwards(s.awards||DEFAULT_AWARDS);
     setShowAwards(s.showAwards||false);
-    setStages(s.stages||DEFAULT_STAGES);
+    setStages((s.stages||DEFAULT_STAGES).map(stage=>({...stage,period:normalizeStagePeriod(stage.period)||DEFAULT_STAGE_PERIOD})));
     setStageData(s.stageData||{});
     setActiveStageIdx(s.activeStageIdx||0);
     setQualificationLinks(s.qualificationLinks||[]);
@@ -4098,7 +4227,7 @@ export default function App(){
     if(folderImportRef.current)folderImportRef.current.value="";
   };
 
-  const goHome=()=>{setCurrentProjectId(null);setLastSavedAt(null);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setRrLegs(1);setEloTier(DEFAULT_ELO_TIER);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setPlacementTiebreaks([]);setBracketTab("tournament");setHomeEloOpen(false);};
+  const goHome=()=>{setCurrentProjectId(null);setLastSavedAt(null);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setRrLegs(1);setEloTier(DEFAULT_ELO_TIER);setStagePeriod(DEFAULT_STAGE_PERIOD);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setPlacementTiebreaks([]);setBracketTab("tournament");setHomeEloOpen(false);};
 
   const deleteProject=async(project)=>{
     if(!window.confirm(`Delete "${project.name}"? This cannot be undone.`))return;
@@ -4147,7 +4276,8 @@ export default function App(){
     setQualificationLinks(prev=>[...prev.filter(link=>link.seed!==seed),{id:`qual-${Date.now()}`,seed,sourceProjectId:qualifierSourceId,placement}].sort((a,b)=>a.seed-b.seed));
   };
   const manualTeamCapacity=Math.max(0,teamCount-qualificationLinks.length);
-  const canStartBracket=teamsWithSeed.length===teamCount&&teamsWithSeed.length>=2&&unresolvedQualificationLinks.length===0;
+  const stagePeriodsReady=isMulti?stages.every(stage=>normalizeStagePeriod(stage.period)):!!normalizeStagePeriod(stagePeriod);
+  const canStartBracket=teamsWithSeed.length===teamCount&&teamsWithSeed.length>=2&&unresolvedQualificationLinks.length===0&&stagePeriodsReady;
   const currentTournamentName=projectName.trim()||(currentProjectId?projectNameFromState({formatType,teams:teamsWithSeed}):"");
   const nonMultiMatches=isRR?rrRounds.flat():bracketData?dataMatches(bracketData):[];
   const nonMultiSettingsLocked=!isMulti&&matchesHaveEntries(nonMultiMatches);
@@ -4165,6 +4295,7 @@ export default function App(){
         projectId:projectPart,
         tournamentName,
         stageKey,
+        stagePeriod,
         tier:eloTier||DEFAULT_ELO_TIER,
         matchCode:["tourney",safeMatchCodePart(projectPart),safeMatchCodePart(stageKey),safeMatchCodePart(match.id)].join("-")
       };
@@ -4179,6 +4310,7 @@ export default function App(){
           projectId:projectPart,
           tournamentName,
           stageKey,
+          stagePeriod:normalizeStagePeriod(stages[idx]?.period),
           tier,
           matchCode:["tourney",safeMatchCodePart(projectPart),safeMatchCodePart(stageKey),safeMatchCodePart(match.id)].join("-")
         };
@@ -4216,27 +4348,50 @@ export default function App(){
 
   const loadEloMatchInfo=async(match)=>{
     await ensureEloTrackerInitialized();
+    const context=getMatchEloContext(match);
     const{data,error}=await supabase.rpc("kitakana_elo_context",{
       p_team_a:match.teamA?.name||"",
       p_team_a_region:match.teamA?.region||"",
       p_team_b:match.teamB?.name||"",
-      p_team_b_region:match.teamB?.region||""
+      p_team_b_region:match.teamB?.region||"",
+      p_match_code:context?.matchCode||""
     });
     if(error)throw error;
     return data;
   };
 
-  const loadEloStandings=async()=>{
+  const loadEloStandings=async({startPeriod="all",endPeriod="latest"}={})=>{
     await ensureEloTrackerInitialized();
     const[standingResult,matchResult,bonusResult]=await Promise.all([
-      supabase.rpc("kitakana_elo_standings"),
-      supabase.from("kitakana_elo_matches").select("match_order,source_match_id,team_a,team_b,winner,result_type,score_text,event,team_a_delta,team_b_delta,updated_at").eq("validation","OK").order("match_order",{ascending:false}).limit(3000),
+      supabase.rpc("kitakana_elo_standings",{p_start_period:startPeriod,p_end_period:endPeriod}),
+      supabase.from("kitakana_elo_matches").select("match_order,source_match_id,team_a,team_b,winner,result_type,score_text,event,team_a_delta,team_b_delta,period_month,updated_at").eq("validation","OK").order("match_order",{ascending:false}).limit(3000),
       supabase.from("kitakana_elo_bonuses").select("bonus_id,bonus_order,team_name,category,points,event").order("bonus_order",{ascending:false}).limit(3000)
     ]);
     if(standingResult.error)throw standingResult.error;
-    const matches=matchResult.error?[]:(matchResult.data||[]);
+    const projectPeriods=savedProjects.flatMap(project=>startedStagePeriodsFromState(project.state));
+    const localLatest=[...projectPeriods].sort().at(-1)||"";
+    let standingData=standingResult.data||{};
+    const serverLatest=standingData.latestPeriod||"";
+    const knownLatest=[serverLatest,localLatest].filter(Boolean).sort().at(-1)||"";
+    if(knownLatest&&knownLatest!==serverLatest&&(startPeriod==="latest"||endPeriod==="latest")){
+      const{data,error}=await supabase.rpc("kitakana_elo_standings",{
+        p_start_period:startPeriod==="latest"?knownLatest:startPeriod,
+        p_end_period:endPeriod==="latest"?knownLatest:endPeriod
+      });
+      if(error)throw error;
+      standingData=data||{};
+    }
+    const allMatches=matchResult.error?[]:(matchResult.data||[]);
     const bonuses=bonusResult.error?[]:(bonusResult.data||[]);
-    const standings=(standingResult.data?.standings||[]).map(team=>{
+    const effectiveStart=standingData.startPeriod||"";
+    const effectiveEnd=standingData.endPeriod||"";
+    const periodFiltered=!!(effectiveStart||effectiveEnd);
+    const matches=allMatches.filter(item=>{
+      if(!periodFiltered)return true;
+      const period=String(item.period_month||"").slice(0,7);
+      return !!period&&(!effectiveStart||period>=effectiveStart)&&(!effectiveEnd||period<=effectiveEnd);
+    });
+    const standings=(standingData.standings||[]).map(team=>{
       const history=matches.filter(item=>item.team_a===team.name||item.team_b===team.name).slice(0,12).map(item=>{
         const isA=item.team_a===team.name;
         const won=item.winner===(isA?"Team A":"Team B");
@@ -4248,6 +4403,7 @@ export default function App(){
           eloChange:isA?item.team_a_delta:item.team_b_delta,
           event:item.event,
           score:item.score_text,
+          periodMonth:String(item.period_month||"").slice(0,7),
           updatedAt:item.updated_at
         };
       });
@@ -4256,7 +4412,8 @@ export default function App(){
       }));
       return {...team,history,bonuses:teamBonuses};
     });
-    return {...standingResult.data,standings};
+    const availablePeriods=[...new Set([...(standingData.availablePeriods||[]),...projectPeriods])].sort();
+    return {...standingData,latestPeriod:knownLatest||standingData.latestPeriod||"",availablePeriods,standings};
   };
 
   const submitEloPayloads=async(payloads)=>{
@@ -4297,6 +4454,7 @@ export default function App(){
           projectId:projectPart,
           tournamentName,
           stageKey,
+          stagePeriod:normalizeStagePeriod(stages[idx]?.period),
           tier:stages[idx]?.eloTier||DEFAULT_ELO_TIER
         };
         dataMatches(data).forEach(match=>{
@@ -4305,7 +4463,7 @@ export default function App(){
       });
     } else {
       const stageKey=formatType||"stage-1";
-      const context={projectId:projectPart,tournamentName,stageKey,tier:eloTier||DEFAULT_ELO_TIER};
+      const context={projectId:projectPart,tournamentName,stageKey,stagePeriod,tier:eloTier||DEFAULT_ELO_TIER};
       (isRR?rrRounds.flat():bracketData?dataMatches(bracketData):[]).forEach(match=>{
         pushMatch(match,{...context,matchCode:["tourney",safeMatchCodePart(projectPart),safeMatchCodePart(stageKey),safeMatchCodePart(match.id)].join("-")});
       });
@@ -4365,6 +4523,10 @@ export default function App(){
   };
 
   const updateNonMultiSettings=(updates)=>{
+    if(Object.prototype.hasOwnProperty.call(updates,"stagePeriod")&&Object.keys(updates).every(key=>key==="stagePeriod")){
+      setStagePeriod(normalizeStagePeriod(updates.stagePeriod));
+      return;
+    }
     if(updates.rrStandingsRules&&Object.keys(updates).every(key=>key==="rrStandingsRules")){
       if(!nonMultiMetricRulesLocked)setRrStandingsRules(normalizeStandingsRules(updates.rrStandingsRules));
       return;
@@ -4388,6 +4550,9 @@ export default function App(){
 
   const updateStageConfigFromSettings=(idx,updated)=>{
     if(stageData[idx]){
+      if(normalizeStagePeriod(updated.period)){
+        updateMultiStages(prev=>prev.map((stage,i)=>i===idx?{...stage,period:normalizeStagePeriod(updated.period)}:stage));
+      }
       if(!stageDataComplete(stageData[idx])&&updated.standingsRules){
         updateMultiStages(prev=>prev.map((stage,i)=>i===idx?{...stage,standingsRules:normalizeStandingsRules(updated.standingsRules)}:stage));
       }
@@ -4498,7 +4663,7 @@ export default function App(){
     if(tb&&(fromStage.tiebreakMode||"performance")==="stage"){
       const candidates=tb.candidates.map(c=>c.row.team);
       const tiebreakFormat=fromStage.tiebreakStageFormat||"roundrobin";
-      const tiebreakStage={format:tiebreakFormat,teamCount:candidates.length,aat:0,matchMode:fromStage.matchMode,gamesPerMatch:fromStage.gamesPerMatch,rrLegs:fromStage.rrLegs||1,eloTier:fromStage.eloTier||DEFAULT_ELO_TIER,advance:tb.remainder,isTiebreak:true};
+      const tiebreakStage={format:tiebreakFormat,teamCount:candidates.length,aat:0,matchMode:fromStage.matchMode,gamesPerMatch:fromStage.gamesPerMatch,rrLegs:fromStage.rrLegs||1,eloTier:fromStage.eloTier||DEFAULT_ELO_TIER,period:normalizeStagePeriod(fromStage.period)||DEFAULT_STAGE_PERIOD,advance:tb.remainder,isTiebreak:true};
       const tiebreakData=buildStageData(tiebreakStage,candidates,{carryTeamsForNext:advancing});
       setStages(prev=>[...prev.slice(0,nextIdx),tiebreakStage,...prev.slice(nextIdx)]);
       setStageData(prev=>{
@@ -4542,7 +4707,7 @@ export default function App(){
     });
   };
 
-  const reset=()=>{if(typeof window!=="undefined")window.localStorage.removeItem(STORAGE_KEY);setCurrentProjectId(null);setLastSavedAt(null);setSaveError(false);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setRrLegs(1);setEloTier(DEFAULT_ELO_TIER);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setPlacementTiebreaks([]);setBracketTab("tournament");};
+  const reset=()=>{if(typeof window!=="undefined")window.localStorage.removeItem(STORAGE_KEY);setCurrentProjectId(null);setLastSavedAt(null);setSaveError(false);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setRrLegs(1);setEloTier(DEFAULT_ELO_TIER);setStagePeriod(DEFAULT_STAGE_PERIOD);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setPlacementTiebreaks([]);setBracketTab("tournament");};
 
   const allBracketTeams=isRR?teamsWithSeed:(bracketData?teamsWithSeed:[]);
   const allBracketMatches=playableMatches(isRR?rrRounds.flat():bracketData?dataMatches(bracketData):[]);
@@ -4550,7 +4715,7 @@ export default function App(){
   const authHint=supabaseConfigured
     ?"Projects sync online with Supabase after you log in."
     :"Local browser mode. Add Supabase env vars in Vercel for real online accounts.";
-  const liveTournamentState={step,formatType,teamCount,matchMode,gamesPerMatch,rrLegs,eloTier,rrStandingsRules,statCols,teams:teamsWithSeed,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks};
+  const liveTournamentState={step,formatType,teamCount,matchMode,gamesPerMatch,rrLegs,eloTier,stagePeriod,rrStandingsRules,statCols,teams:teamsWithSeed,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks};
   const currentTournamentComplete=step==="bracket"&&tournamentIsComplete(liveTournamentState);
   const canEndTournament=currentTournamentComplete&&!tournamentEnded;
 
@@ -4719,6 +4884,7 @@ export default function App(){
                 {ELO_TIERS.map(tier=><option key={tier} value={tier}>{tier}</option>)}
               </select>
             </label>
+            <StagePeriodInput value={stagePeriod} onChange={period=>updateNonMultiSettings({stagePeriod:period})}/>
           </div>
           {formatType==="roundrobin"&&<StandingsRulesEditor rules={rrStandingsRules} onChange={rules=>updateNonMultiSettings({rrStandingsRules:rules})} disabled={nonMultiMetricRulesLocked}/>}
         </div>
@@ -4825,7 +4991,7 @@ export default function App(){
             <p style={{margin:"4px 0 0",fontSize:13,color:"var(--color-text-tertiary)",fontFamily:"'Barlow',sans-serif"}}>
               {step==="setup"&&"Choose your format and match settings"}
               {step==="teams"&&`Seed your teams · ${teamsWithSeed.length}/${isMulti?stages[0].teamCount:teamCount} added`}
-              {step==="bracket"&&!isMulti&&`${formatType==="single"?"Single Elim":formatType==="double"?"Double Elim":"Round Robin"} · ${teamsWithSeed.length} teams · ${matchMode==="wl"?"Win/Lose":matchMode==="games"?`Best of ${gamesPerMatch}`:`Score`}${isRR?` · ${normalizeRoundRobinLegs(rrLegs)} leg${normalizeRoundRobinLegs(rrLegs)===1?"":"s"}`:""}`}
+              {step==="bracket"&&!isMulti&&`${formatType==="single"?"Single Elim":formatType==="double"?"Double Elim":"Round Robin"} · ${teamsWithSeed.length} teams · ${matchMode==="wl"?"Win/Lose":matchMode==="games"?`Best of ${gamesPerMatch}`:`Score`}${isRR?` · ${normalizeRoundRobinLegs(rrLegs)} leg${normalizeRoundRobinLegs(rrLegs)===1?"":"s"}`:""} · ${formatStagePeriod(stagePeriod)}`}
               {step==="bracket"&&isMulti&&`Multi-Stage · ${stages.length} stages · ${teamsWithSeed.length} teams`}
             </p>
           </div>
@@ -4944,6 +5110,7 @@ export default function App(){
                   {ELO_TIERS.map(tier=><option key={tier} value={tier}>{tier}</option>)}
                 </select>
               </label>
+              <StagePeriodInput value={stagePeriod} onChange={setStagePeriod}/>
             </div>
             {formatType==="roundrobin"&&<StandingsRulesEditor rules={rrStandingsRules} onChange={setRrStandingsRules}/>}
             {matchMode!=="wl"&&<div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16,padding:"12px 16px",background:"var(--color-background-secondary)",borderRadius:10,border:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap"}}><Stepper label="Games per match" value={gamesPerMatch} min={1} max={11} onChange={setGamesPerMatch}/><span style={{fontSize:12,color:"var(--color-text-tertiary)"}}>Best of {gamesPerMatch} · need {Math.ceil(gamesPerMatch/2)} to win</span></div>}
@@ -4998,7 +5165,7 @@ export default function App(){
               })}
               {stages.length<6&&<button onClick={()=>{
                 const lastAdv=stages[stages.length-1]?.advance||2;
-                updateMultiStages(p=>[...p,{format:"roundrobin",teamCount:lastAdv,aat:0,matchMode:"wl",gamesPerMatch:1,rrLegs:1,eloTier:DEFAULT_ELO_TIER,advance:Math.max(1,Math.floor(lastAdv/2))}]);
+                updateMultiStages(p=>[...p,{format:"roundrobin",teamCount:lastAdv,aat:0,matchMode:"wl",gamesPerMatch:1,rrLegs:1,eloTier:DEFAULT_ELO_TIER,period:DEFAULT_STAGE_PERIOD,advance:Math.max(1,Math.floor(lastAdv/2))}]);
               }} style={{padding:"8px 16px",borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:13,textTransform:"uppercase",letterSpacing:"0.05em",background:"var(--color-background-secondary)",color:"var(--color-text-secondary)",border:"1px dashed var(--color-border-tertiary)",cursor:"pointer"}}>+ Add Stage</button>}
             </div>
             <button onClick={()=>setStep("teams")} style={{padding:"10px 28px",borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,letterSpacing:"0.07em",textTransform:"uppercase",background:"#e9c46a",color:"#2c2c00",border:"none",cursor:"pointer",marginTop:8}}>Continue →</button>
@@ -5065,7 +5232,7 @@ export default function App(){
           )}
           <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
             <button onClick={()=>setStep("setup")} style={{padding:"9px 18px",borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:14,letterSpacing:"0.05em",textTransform:"uppercase",background:"var(--color-background-secondary)",color:"var(--color-text-secondary)",border:"0.5px solid var(--color-border-tertiary)",cursor:"pointer"}}>← Back</button>
-            <button onClick={startBracket} disabled={!canStartBracket} title={unresolvedQualificationLinks.length?"Complete every linked qualifier first":""} style={{padding:"9px 28px",borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,letterSpacing:"0.07em",textTransform:"uppercase",background:canStartBracket?"#e9c46a":"var(--color-background-secondary)",color:canStartBracket?"#2c2c00":"var(--color-text-tertiary)",border:"none",cursor:canStartBracket?"pointer":"not-allowed"}}>Generate Bracket →</button>
+            <button onClick={startBracket} disabled={!canStartBracket} title={!stagePeriodsReady?"Choose the month and year for every stage":unresolvedQualificationLinks.length?"Complete every linked qualifier first":""} style={{padding:"9px 28px",borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,letterSpacing:"0.07em",textTransform:"uppercase",background:canStartBracket?"#e9c46a":"var(--color-background-secondary)",color:canStartBracket?"#2c2c00":"var(--color-text-tertiary)",border:"none",cursor:canStartBracket?"pointer":"not-allowed"}}>Generate Bracket →</button>
           </div>
         </div>
       )}
