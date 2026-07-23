@@ -84,11 +84,67 @@ const EloBridgeContext=createContext({
 });
 
 function StagePeriodInput({value,onChange,disabled=false,compact=false}){
+  const[open,setOpen]=useState(false);
+  const rootRef=useRef(null);
+  const popupRef=useRef(null);
+  const[popupPosition,setPopupPosition]=useState({top:0,left:0});
   const valid=!!normalizeStagePeriod(value);
-  return <label title="Month and year when this stage is run" style={{display:"inline-flex",alignItems:"center",gap:5,padding:compact?"2px 7px":"5px 9px",borderRadius:6,border:`1px solid ${valid?"rgba(233,196,106,0.5)":"#e63946"}`,background:"var(--color-background-primary)",color:valid?"#e9c46a":"#e63946",fontSize:compact?10:11,fontWeight:900,textTransform:"uppercase",letterSpacing:"0.04em",cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.5:1,whiteSpace:"nowrap"}}>
-    <span>📅 {formatStagePeriod(value)}</span>
-    <input type="month" value={normalizeStagePeriod(value)} required disabled={disabled} onChange={event=>onChange(event.target.value)} aria-label="Stage month and year" style={{width:18,height:18,border:0,background:"transparent",color:"inherit",padding:0,cursor:disabled?"not-allowed":"pointer"}}/>
-  </label>;
+  const selected=normalizeStagePeriod(value)||DEFAULT_STAGE_PERIOD;
+  const[selectedYear,selectedMonth]=selected.split("-").map(Number);
+  const[displayYear,setDisplayYear]=useState(selectedYear);
+  const yearOptions=Array.from({length:301},(_,idx)=>1900+idx);
+  const monthOptions=Array.from({length:12},(_,idx)=>({
+    number:idx+1,
+    label:new Intl.DateTimeFormat(undefined,{month:"short"}).format(new Date(2020,idx,1))
+  }));
+
+  useEffect(()=>{if(open)setDisplayYear(selectedYear);},[open,selectedYear]);
+  useEffect(()=>{
+    if(!open)return;
+    const positionPopup=()=>{
+      const rect=rootRef.current?.getBoundingClientRect();
+      if(!rect)return;
+      const width=244,height=236,gap=7,padding=8;
+      const left=Math.max(padding,Math.min(rect.left,window.innerWidth-width-padding));
+      const below=rect.bottom+gap;
+      const top=below+height<=window.innerHeight-padding?below:Math.max(padding,rect.top-height-gap);
+      setPopupPosition({top,left});
+    };
+    const close=event=>{if(!rootRef.current?.contains(event.target)&&!popupRef.current?.contains(event.target))setOpen(false);};
+    positionPopup();
+    document.addEventListener("pointerdown",close);
+    window.addEventListener("resize",positionPopup);
+    window.addEventListener("scroll",positionPopup,true);
+    return()=>{
+      document.removeEventListener("pointerdown",close);
+      window.removeEventListener("resize",positionPopup);
+      window.removeEventListener("scroll",positionPopup,true);
+    };
+  },[open]);
+
+  const chooseMonth=month=>{
+    onChange(`${displayYear}-${String(month).padStart(2,"0")}`);
+    setOpen(false);
+  };
+
+  return <div ref={rootRef} style={{position:"relative",display:"inline-flex"}}>
+    <button type="button" title="Month and year when this stage is run" aria-label="Stage month and year" aria-haspopup="dialog" aria-expanded={open} disabled={disabled} onClick={()=>!disabled&&setOpen(current=>!current)} style={{display:"inline-flex",alignItems:"center",gap:6,padding:compact?"3px 8px":"6px 10px",borderRadius:7,border:`1px solid ${valid?"rgba(233,196,106,0.5)":"#e63946"}`,background:"var(--color-background-primary)",color:valid?"#e9c46a":"#e63946",fontFamily:"'Barlow Condensed',sans-serif",fontSize:compact?10:11,fontWeight:900,textTransform:"uppercase",letterSpacing:"0.04em",cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.5:1,whiteSpace:"nowrap"}}>
+      <span>📅 {formatStagePeriod(value)}</span><span aria-hidden="true" style={{fontSize:9}}>{open?"▲":"▼"}</span>
+    </button>
+    {open&&typeof document!=="undefined"&&createPortal(<div ref={popupRef} role="dialog" aria-label="Choose stage month and year" style={{position:"fixed",top:popupPosition.top,left:popupPosition.left,zIndex:5000,width:244,padding:12,borderRadius:14,border:"1px solid rgba(233,196,106,0.55)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",boxShadow:"0 18px 48px rgba(0,0,0,0.3)",boxSizing:"border-box"}}>
+      <div style={{display:"grid",gridTemplateColumns:"30px minmax(0,1fr) 30px",alignItems:"center",gap:7,marginBottom:10}}>
+        <button type="button" aria-label="Previous year" onClick={()=>setDisplayYear(year=>Math.max(1900,year-1))} style={{height:30,borderRadius:8,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",color:"var(--color-text-primary)",cursor:"pointer",fontWeight:900}}>‹</button>
+        <select aria-label="Stage year" value={displayYear} onChange={event=>setDisplayYear(Number(event.target.value))} style={{height:30,borderRadius:8,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,textAlign:"center"}}>{yearOptions.map(year=><option key={year} value={year}>{year}</option>)}</select>
+        <button type="button" aria-label="Next year" onClick={()=>setDisplayYear(year=>Math.min(2200,year+1))} style={{height:30,borderRadius:8,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",color:"var(--color-text-primary)",cursor:"pointer",fontWeight:900}}>›</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+        {monthOptions.map(month=>{
+          const active=displayYear===selectedYear&&month.number===selectedMonth;
+          return <button type="button" key={month.number} aria-pressed={active} onClick={()=>chooseMonth(month.number)} style={{height:34,borderRadius:8,border:`1px solid ${active?"#e9c46a":"var(--color-border-tertiary)"}`,background:active?"rgba(233,196,106,0.18)":"var(--color-background-secondary)",color:active?"#e9c46a":"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:900,textTransform:"uppercase",cursor:"pointer"}}>{month.label}</button>;
+        })}
+      </div>
+    </div>,document.body)}
+  </div>;
 }
 
 function startedStagePeriodsFromState(state){
@@ -524,63 +580,71 @@ function isByeMatch(match){
   return !!match?._splitDrop||!!match?._autoWinner && !(match.teamA&&match.teamB);
 }
 
-function appendRoundMatchNumbers(rounds,map,counter){
-  (rounds||[]).forEach(round=>(round||[]).forEach(match=>{
-    if(match&&!isByeMatch(match)&&!map.has(match.id))map.set(match.id,counter.value++);
-  }));
-}
+const visibleMatchBatch=round=>(round||[]).filter(match=>match&&!isByeMatch(match));
 
-function appendStageMatchNumbers(data,map,counter){
-  if(!data)return;
-  if(data.type==="roundrobin"){
-    appendRoundMatchNumbers(data.rounds,map,counter);
-    return;
-  }
+function matchBatchesForData(data){
+  if(!data)return[];
+  if(data.type==="roundrobin")return(data.rounds||[]).map(visibleMatchBatch).filter(batch=>batch.length);
   if(data.type==="groupstage"){
-    (data.groups||[]).forEach(group=>appendStageMatchNumbers(group,map,counter));
-    return;
+    const groupBatches=(data.groups||[]).map(group=>matchBatchesForData(group));
+    const batchCount=Math.max(0,...groupBatches.map(batches=>batches.length));
+    return Array.from({length:batchCount},(_,batchIdx)=>groupBatches.flatMap(batches=>batches[batchIdx]||[])).filter(batch=>batch.length);
   }
-  if(data.type==="single"){
-    appendRoundMatchNumbers(data.winners,map,counter);
-    appendRoundMatchNumbers(data.qualificationTiebreaker?.rounds,map,counter);
-    return;
-  }
-  if(data.type!=="double")return;
+  if(data.type==="single")return[
+    ...(data.winners||[]).map(visibleMatchBatch),
+    ...(data.qualificationTiebreaker?.rounds||[]).map(visibleMatchBatch)
+  ].filter(batch=>batch.length);
+  if(data.type!=="double")return[];
 
   const finalState=doubleElimFinalState(data);
   const numberedData=finalState.propagated||data;
   const winners=numberedData.winners||[];
   const losers=numberedData.losers||[];
-  const upperFinal=winners.at(-1)||[];
-  const lowerFinal=losers.at(-1)||[];
-  const upperPre=winners.slice(0,-1);
-  const lowerPre=losers.slice(0,-1);
+  const batches=[];
+  const add=round=>{const batch=visibleMatchBatch(round);if(batch.length)batches.push(batch);};
   let lowerIdx=0;
 
-  // Competition order: one upper round, then up to two lower rounds.
-  upperPre.forEach(round=>{
-    appendRoundMatchNumbers([round],map,counter);
-    for(let count=0;count<2&&lowerIdx<lowerPre.length;count++,lowerIdx++){
-      appendRoundMatchNumbers([lowerPre[lowerIdx]],map,counter);
-    }
-  });
-  while(lowerIdx<lowerPre.length){
-    appendRoundMatchNumbers([lowerPre[lowerIdx]],map,counter);
-    lowerIdx++;
+  // A real double-elimination schedule: U1, L1, U2, L2, L3, U3, ...
+  // Each lower receive round is placed after the upper round that supplies it.
+  if(winners.length)add(winners[0]);
+  if(losers.length>1)add(losers[lowerIdx++]);
+  for(let upperIdx=1;upperIdx<winners.length-1;upperIdx++){
+    add(winners[upperIdx]);
+    for(let count=0;count<2&&lowerIdx<losers.length-1;count++,lowerIdx++)add(losers[lowerIdx]);
   }
+  while(lowerIdx<losers.length-1)add(losers[lowerIdx++]);
+  (data.qualificationTiebreaker?.rounds||[]).forEach(add);
+  if(winners.length>1)add(winners.at(-1));
+  if(losers.length)add(losers.at(-1));
+  add([numberedData.grandFinal]);
+  if(finalState.resetActive)add([numberedData.grandFinalReset]);
+  return batches;
+}
 
-  appendRoundMatchNumbers(data.qualificationTiebreaker?.rounds,map,counter);
-  appendRoundMatchNumbers([upperFinal],map,counter);
-  appendRoundMatchNumbers([lowerFinal],map,counter);
-  if(numberedData.grandFinal&&!map.has(numberedData.grandFinal.id))map.set(numberedData.grandFinal.id,counter.value++);
-
-  if(finalState.resetActive&&numberedData.grandFinalReset&&!map.has(numberedData.grandFinalReset.id))map.set(numberedData.grandFinalReset.id,counter.value++);
+function appendStageMatchNumbers(data,map,counter){
+  matchBatchesForData(data).forEach(batch=>batch.forEach(match=>{
+    if(!map.has(match.id))map.set(match.id,counter.value++);
+  }));
 }
 
 function stageMatchNumberMap(data,start=1){
   const map=new Map();
   appendStageMatchNumbers(data,map,{value:start});
   return map;
+}
+
+function tournamentStageMatchNumbering(stageData,stageCount){
+  const counter={value:1};
+  const maps=Array.from({length:stageCount},(_,idx)=>{
+    const map=new Map();
+    appendStageMatchNumbers(stageData?.[idx],map,counter);
+    return map;
+  });
+  return {maps,nextNumber:counter.value};
+}
+
+function nextMatchNumberFromMap(map){
+  return Math.max(0,...(map?.values?.()||[]))+1;
 }
 
 function playableMatches(matches){
@@ -1844,7 +1908,7 @@ function EloStandingsPanel({loadStandings,refreshToken}){
   useEffect(()=>{
     let cancelled=false;
     setState(current=>({...current,loading:true,error:""}));
-    loadStandings({startPeriod,endPeriod})
+    loadStandings({startPeriod,endPeriod:startPeriod==="all"?"all":endPeriod})
       .then(data=>{
         if(!cancelled)setState({loading:false,error:"",standings:Array.isArray(data?.standings)?data.standings:[],availablePeriods:Array.isArray(data?.availablePeriods)?data.availablePeriods:[],latestPeriod:data?.latestPeriod||"",startPeriod:data?.startPeriod||"",endPeriod:data?.endPeriod||""});
       })
@@ -1858,7 +1922,7 @@ function EloStandingsPanel({loadStandings,refreshToken}){
   const subregions=[...new Set(state.standings.map(eloSubregion).filter(Boolean))].sort();
   const filtered=state.standings.filter(team=>(regionFilter==="all"||team.continent===regionFilter)&&(subregionFilter==="all"||eloSubregion(team)===subregionFilter));
   const periodOptions=state.availablePeriods||[];
-  const periodSummary=state.startPeriod||state.endPeriod?`${state.startPeriod?formatStagePeriod(state.startPeriod):"Baseline"} → ${state.endPeriod?formatStagePeriod(state.endPeriod):"Current"}`:"All historical and submitted matches";
+  const periodSummary=startPeriod==="all"?"All historical and submitted matches":state.startPeriod||state.endPeriod?`${state.startPeriod?formatStagePeriod(state.startPeriod):"Baseline"} → ${state.endPeriod?formatStagePeriod(state.endPeriod):"Current"}`:"All historical and submitted matches";
   const outcomeColor=outcome=>outcome==="win"?"#16833b":outcome==="loss"?"#e63946":"#74798b";
   const outcomeLetter=outcome=>outcome==="win"?"W":outcome==="loss"?"L":"D";
   const shortDate=value=>{
@@ -1893,14 +1957,15 @@ function EloStandingsPanel({loadStandings,refreshToken}){
         <span style={{fontSize:11,color:"var(--color-text-tertiary)",fontWeight:700}}>{periodSummary}</span>
         <div style={{marginLeft:"auto",display:"flex",gap:7,flexWrap:"wrap"}}>
           <label style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"var(--color-text-tertiary)",fontWeight:800,textTransform:"uppercase"}}>From
-            <select aria-label="Starting Elo period" value={startPeriod} onChange={event=>{const value=event.target.value;setStartPeriod(value);if(/^\d{4}-\d{2}$/.test(value)&&/^\d{4}-\d{2}$/.test(endPeriod)&&value>endPeriod)setEndPeriod(value);setOpenTeam("");}} style={{padding:"5px 8px",borderRadius:6,border:"1px solid rgba(233,196,106,0.45)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800}}>
+            <select aria-label="Starting Elo period" value={startPeriod} onChange={event=>{const value=event.target.value;setStartPeriod(value);if(value==="all")setEndPeriod("all");else if(endPeriod==="all")setEndPeriod("latest");else if(/^\d{4}-\d{2}$/.test(value)&&/^\d{4}-\d{2}$/.test(endPeriod)&&value>endPeriod)setEndPeriod(value);setOpenTeam("");}} style={{padding:"5px 8px",borderRadius:6,border:"1px solid rgba(233,196,106,0.45)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800}}>
               <option value="all">All periods</option>
               <option value="latest">Latest{state.latestPeriod?` (${formatStagePeriod(state.latestPeriod)})`:""}</option>
               {periodOptions.map(period=><option key={period} value={period}>{formatStagePeriod(period)}</option>)}
             </select>
           </label>
           <label style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"var(--color-text-tertiary)",fontWeight:800,textTransform:"uppercase"}}>To
-            <select aria-label="Ending Elo period" value={endPeriod} onChange={event=>{const value=event.target.value;setEndPeriod(value);if(/^\d{4}-\d{2}$/.test(value)&&/^\d{4}-\d{2}$/.test(startPeriod)&&value<startPeriod)setStartPeriod(value);setOpenTeam("");}} style={{padding:"5px 8px",borderRadius:6,border:"1px solid rgba(233,196,106,0.45)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800}}>
+            <select aria-label="Ending Elo period" value={startPeriod==="all"?"all":endPeriod} disabled={startPeriod==="all"} onChange={event=>{const value=event.target.value;setEndPeriod(value);if(/^\d{4}-\d{2}$/.test(value)&&/^\d{4}-\d{2}$/.test(startPeriod)&&value<startPeriod)setStartPeriod(value);setOpenTeam("");}} style={{padding:"5px 8px",borderRadius:6,border:"1px solid rgba(233,196,106,0.45)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,opacity:startPeriod==="all"?0.5:1,cursor:startPeriod==="all"?"not-allowed":"pointer"}}>
+              <option value="all">All matches</option>
               <option value="latest">Latest{state.latestPeriod?` (${formatStagePeriod(state.latestPeriod)})`:""}</option>
               {periodOptions.map(period=><option key={period} value={period}>{formatStagePeriod(period)}</option>)}
             </select>
@@ -2259,10 +2324,10 @@ function ElimBracket({rounds,onGameUpdate,onMatchUpdate,statCols,labelPrefix,mat
   );
 }
 
-function PlacementTiebreakView({tiebreak,onGameUpdate,onMatchUpdate,statCols}){
+function PlacementTiebreakView({tiebreak,onGameUpdate,onMatchUpdate,statCols,matchNumbers:providedMatchNumbers}){
   const synced=syncPlacementTiebreak(tiebreak);
   const finalTeams=placementTiebreakFinalTeams(synced);
-  const matchNumbers=stageMatchNumberMap({type:"single",winners:synced.rounds||[]});
+  const matchNumbers=providedMatchNumbers||stageMatchNumberMap({type:"single",winners:synced.rounds||[]});
   return(
     <div style={{border:"1px solid rgba(42,157,143,0.35)",borderRadius:10,background:"rgba(42,157,143,0.045)",padding:"12px 14px"}}>
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
@@ -2495,7 +2560,7 @@ function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreak
   );
 }
 
-function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,matchMode,statCols,standingsRules,stageConfig={},isLast=false}){
+function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,matchMode,statCols,standingsRules,stageConfig={},isLast=false,matchNumbers:providedMatchNumbers}){
   const[activeGroup,setActiveGroup]=useState(0);
   const groups=data.groups||[];
   const poolChoice=data.poolChoice;
@@ -2505,7 +2570,7 @@ function GroupStageView({data,onStageUpdate,onGameUpdate,onMatchUpdate,matchMode
   const mode=data.matchMode||matchMode;
   const format=data.stageFormat||stageConfig.format||"roundrobin";
   const cfg={...stageConfig,format,matchMode:mode,gamesPerMatch:gpm,groupCount,teamCount:data.teams?.length||stageConfig.teamCount};
-  const matchNumbers=stageMatchNumberMap(data);
+  const matchNumbers=providedMatchNumbers||stageMatchNumberMap(data);
 
   const choosePools=()=>{
     onStageUpdate(d=>({...d,poolChoice:true,pools:makePools(d.teams||[],d.groupCount||2),poolsConfirmed:false,groups:[]}));
@@ -2974,12 +3039,13 @@ function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=
 }
 
 // ─── Multi-Stage view ─────────────────────────────────────────────────────────
-function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpdate,onStageUpdate,onAdvance,onStagePeriodChange,activeStageIdx,setActiveStageIdx}){
+function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpdate,onStageUpdate,onAdvance,onStagePeriodChange,matchNumberMaps,activeStageIdx,setActiveStageIdx}){
   const[playerSort,setPlayerSort]=useState("mw");
   const[showPlayers,setShowPlayers]=useState(false);
 
   const stage=stages[activeStageIdx];
   const data=stageData[activeStageIdx];
+  const matchNumbers=matchNumberMaps?.[activeStageIdx]||stageMatchNumberMap(data);
   const allMatches=Object.values(stageData).flatMap(sd=>{
     if(!sd)return[];
     if(sd.type==="roundrobin")return(sd.rounds||[]).flat();
@@ -3088,10 +3154,10 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
 
       {/* Stage content */}
       {data&&(
-        data.type==="single"?<SingleElimView bracketData={data} qualificationStatus={activeStageIdx===stages.length-1?null:stageQualificationStatus(data,stages[activeStageIdx],false)} statCols={statCols} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)}/>
-        :data.type==="double"?<DoubleElimView bracketData={data} qualificationStatus={activeStageIdx===stages.length-1?null:stageQualificationStatus(data,stages[activeStageIdx],false)} statCols={statCols} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)}/>
-        :data.type==="roundrobin"?<RoundRobinView rrRounds={data.rounds} teams={getStageTeams(activeStageIdx)} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)} onAddTiebreakRound={round=>onStageUpdate(activeStageIdx,d=>({...d,rounds:[...d.rounds,round]}))} matchMode={stages[activeStageIdx]?.matchMode||"wl"} statCols={statCols} standingsRules={stages[activeStageIdx]?.standingsRules}/>
-        :data.type==="groupstage"?<GroupStageView data={data} stageConfig={stages[activeStageIdx]} isLast={activeStageIdx===stages.length-1} onStageUpdate={updater=>onStageUpdate(activeStageIdx,updater)} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)} matchMode={stages[activeStageIdx]?.matchMode||"wl"} statCols={statCols} standingsRules={stages[activeStageIdx]?.standingsRules}/>
+        data.type==="single"?<SingleElimView bracketData={data} matchNumbers={matchNumbers} qualificationStatus={activeStageIdx===stages.length-1?null:stageQualificationStatus(data,stages[activeStageIdx],false)} statCols={statCols} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)}/>
+        :data.type==="double"?<DoubleElimView bracketData={data} matchNumbers={matchNumbers} qualificationStatus={activeStageIdx===stages.length-1?null:stageQualificationStatus(data,stages[activeStageIdx],false)} statCols={statCols} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)}/>
+        :data.type==="roundrobin"?<RoundRobinView rrRounds={data.rounds} teams={getStageTeams(activeStageIdx)} matchNumbers={matchNumbers} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)} onAddTiebreakRound={round=>onStageUpdate(activeStageIdx,d=>({...d,rounds:[...d.rounds,round]}))} matchMode={stages[activeStageIdx]?.matchMode||"wl"} statCols={statCols} standingsRules={stages[activeStageIdx]?.standingsRules}/>
+        :data.type==="groupstage"?<GroupStageView data={data} matchNumbers={matchNumbers} stageConfig={stages[activeStageIdx]} isLast={activeStageIdx===stages.length-1} onStageUpdate={updater=>onStageUpdate(activeStageIdx,updater)} onGameUpdate={(mid,gi,upd)=>onGameUpdate(activeStageIdx,mid,gi,upd)} onMatchUpdate={(mid,upd)=>onMatchUpdate(activeStageIdx,mid,upd)} matchMode={stages[activeStageIdx]?.matchMode||"wl"} statCols={statCols} standingsRules={stages[activeStageIdx]?.standingsRules}/>
         :null
       )}
 
@@ -4432,8 +4498,9 @@ export default function App(){
 
   const loadEloStandings=async({startPeriod="all",endPeriod="latest"}={})=>{
     await ensureEloTrackerInitialized();
+    const requestedEnd=startPeriod==="all"?"all":endPeriod;
     const[standingResult,matchResult,bonusResult]=await Promise.all([
-      supabase.rpc("kitakana_elo_standings",{p_start_period:startPeriod,p_end_period:endPeriod}),
+      supabase.rpc("kitakana_elo_standings",{p_start_period:startPeriod,p_end_period:requestedEnd}),
       supabase.from("kitakana_elo_matches").select("match_order,source_match_id,team_a,team_b,winner,result_type,score_text,event,team_a_delta,team_b_delta,period_month,updated_at").eq("validation","OK").order("match_order",{ascending:false}).limit(3000),
       supabase.from("kitakana_elo_bonuses").select("bonus_id,bonus_order,team_name,category,points,event").order("bonus_order",{ascending:false}).limit(3000)
     ]);
@@ -4443,10 +4510,10 @@ export default function App(){
     let standingData=standingResult.data||{};
     const serverLatest=standingData.latestPeriod||"";
     const knownLatest=[serverLatest,localLatest].filter(Boolean).sort().at(-1)||"";
-    if(knownLatest&&knownLatest!==serverLatest&&(startPeriod==="latest"||endPeriod==="latest")){
+    if(knownLatest&&knownLatest!==serverLatest&&(startPeriod==="latest"||requestedEnd==="latest")){
       const{data,error}=await supabase.rpc("kitakana_elo_standings",{
         p_start_period:startPeriod==="latest"?knownLatest:startPeriod,
-        p_end_period:endPeriod==="latest"?knownLatest:endPeriod
+        p_end_period:requestedEnd==="latest"?knownLatest:requestedEnd
       });
       if(error)throw error;
       standingData=data||{};
@@ -4462,7 +4529,7 @@ export default function App(){
       return !!period&&(!effectiveStart||period>=effectiveStart)&&(!effectiveEnd||period<=effectiveEnd);
     });
     const standings=(standingData.standings||[]).map(team=>{
-      const history=matches.filter(item=>item.team_a===team.name||item.team_b===team.name).slice(0,12).map(item=>{
+      const history=matches.filter(item=>item.team_a===team.name||item.team_b===team.name).map(item=>{
         const isA=item.team_a===team.name;
         const won=item.winner===(isA?"Team A":"Team B");
         return {
@@ -4786,6 +4853,10 @@ export default function App(){
     ?"Projects sync online with Supabase after you log in."
     :"Local browser mode. Add Supabase env vars in Vercel for real online accounts.";
   const liveTournamentState={step,formatType,teamCount,matchMode,gamesPerMatch,rrLegs,eloTier,stagePeriod,rrStandingsRules,statCols,teams:teamsWithSeed,deletedTeams,teamInput,bracketData,rrRounds,playerSort,showPlayers,awards,showAwards,stages,stageData,activeStageIdx,qualificationLinks,projectName,tournamentEnded,resultPlacements,placementTiebreaks};
+  const multiMatchNumbering=tournamentStageMatchNumbering(stageData,stages.length);
+  const nonMultiNumberData=isRR?{type:"roundrobin",rounds:rrRounds}:bracketData;
+  const nonMultiMatchNumbers=stageMatchNumberMap(nonMultiNumberData);
+  const tournamentNextMatchNumber=isMulti?multiMatchNumbering.nextNumber:nextMatchNumberFromMap(nonMultiMatchNumbers);
   const currentTournamentComplete=step==="bracket"&&tournamentIsComplete(liveTournamentState);
   const canEndTournament=currentTournamentComplete&&!tournamentEnded;
 
@@ -4859,6 +4930,14 @@ export default function App(){
       ...tiedGroups.map(group=>({key:group.key,group,tiebreak:placementTiebreaks.find(item=>item.key===group.key)})),
       ...placementTiebreaks.filter(item=>!tiedKeys.has(item.key)).map(item=>({key:item.key||item.id,group:null,tiebreak:item}))
     ];
+    const placementCounter={value:tournamentNextMatchNumber};
+    const placementNumberMaps=new Map();
+    bracketSections.forEach(({tiebreak})=>{
+      if(!tiebreak)return;
+      const map=new Map();
+      appendStageMatchNumbers({type:"single",winners:syncPlacementTiebreak(tiebreak).rounds||[]},map,placementCounter);
+      placementNumberMaps.set(tiebreak.id,map);
+    });
     return(
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div style={{padding:"14px 16px",borderRadius:10,border:"1px solid rgba(233,196,106,0.45)",background:"rgba(233,196,106,0.07)"}}>
@@ -4905,6 +4984,7 @@ export default function App(){
                     {tiebreak
                       ?<PlacementTiebreakView
                         tiebreak={tiebreak}
+                        matchNumbers={placementNumberMaps.get(tiebreak.id)}
                         statCols={statCols}
                         onGameUpdate={(matchId,gi,upd)=>handlePlacementGameUpdate(tiebreak.id,matchId,gi,upd)}
                         onMatchUpdate={(matchId,upd)=>handlePlacementMatchUpdate(tiebreak.id,matchId,upd)}
@@ -5344,13 +5424,13 @@ export default function App(){
             </div>
           )}
 
-          {isMulti&&<MultiStageView stages={stages} stageData={stageData} teams={teamsWithSeed} statCols={statCols} onGameUpdate={handleStageGameUpdate} onMatchUpdate={handleStageMatchUpdate} onStageUpdate={handleStageDataUpdate} onAdvance={handleAdvance} onStagePeriodChange={(idx,period)=>{const normalized=normalizeStagePeriod(period);if(!normalized)return;updateMultiStages(prev=>prev.map((stage,stageIdx)=>stageIdx===idx?{...stage,period:normalized}:stage));setEloSyncState({loading:false,message:"Stage date changed. Sync Elo to update completed matches.",error:false});}} activeStageIdx={activeStageIdx} setActiveStageIdx={setActiveStageIdx}/>}
+          {isMulti&&<MultiStageView stages={stages} stageData={stageData} teams={teamsWithSeed} statCols={statCols} matchNumberMaps={multiMatchNumbering.maps} onGameUpdate={handleStageGameUpdate} onMatchUpdate={handleStageMatchUpdate} onStageUpdate={handleStageDataUpdate} onAdvance={handleAdvance} onStagePeriodChange={(idx,period)=>{const normalized=normalizeStagePeriod(period);if(!normalized)return;updateMultiStages(prev=>prev.map((stage,stageIdx)=>stageIdx===idx?{...stage,period:normalized}:stage));setEloSyncState({loading:false,message:"Stage date changed. Sync Elo to update completed matches.",error:false});}} activeStageIdx={activeStageIdx} setActiveStageIdx={setActiveStageIdx}/>}
 
-          {!isMulti&&isRR&&<RoundRobinView rrRounds={rrRounds} teams={teamsWithSeed} onGameUpdate={handleGameUpdate} onMatchUpdate={handleMatchUpdate} onAddTiebreakRound={round=>setRrRounds(prev=>[...prev,round])} matchMode={matchMode} statCols={statCols} standingsRules={rrStandingsRules}/>}
+          {!isMulti&&isRR&&<RoundRobinView rrRounds={rrRounds} teams={teamsWithSeed} matchNumbers={nonMultiMatchNumbers} onGameUpdate={handleGameUpdate} onMatchUpdate={handleMatchUpdate} onAddTiebreakRound={round=>setRrRounds(prev=>[...prev,round])} matchMode={matchMode} statCols={statCols} standingsRules={rrStandingsRules}/>}
 
           {!isMulti&&!isRR&&bracketData&&(isDE
-            ?<DoubleElimView bracketData={bracketData} onGameUpdate={handleGameUpdate} onMatchUpdate={handleMatchUpdate} statCols={statCols}/>
-            :<SingleElimView bracketData={bracketData} onGameUpdate={handleGameUpdate} onMatchUpdate={handleMatchUpdate} statCols={statCols}/>
+            ?<DoubleElimView bracketData={bracketData} matchNumbers={nonMultiMatchNumbers} onGameUpdate={handleGameUpdate} onMatchUpdate={handleMatchUpdate} statCols={statCols}/>
+            :<SingleElimView bracketData={bracketData} matchNumbers={nonMultiMatchNumbers} onGameUpdate={handleGameUpdate} onMatchUpdate={handleMatchUpdate} statCols={statCols}/>
           )}
 
           {/* Standings for non-RR single formats */}
