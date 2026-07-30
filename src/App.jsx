@@ -3437,6 +3437,26 @@ function matchScorePair(match){
   return parsed?[Number(parsed[1]),Number(parsed[2])]:[null,null];
 }
 
+function kitakanaPointPair(match){
+  const[scoreA,scoreB]=matchScorePair(match);
+  let winner=match.winner;
+  let winnerPoints=0,loserPoints=0;
+  if(scoreA!==null&&scoreB!==null){
+    if(scoreA===scoreB)return[1,1];
+    winner=scoreA>scoreB?"Team A":"Team B";
+    const diff=Math.abs(scoreA-scoreB);
+    winnerPoints=diff>5?3:diff===5?2:1.5;
+    loserPoints=diff<5?0.5:0;
+  }else{
+    const resultType=String(match.result_type||"");
+    if(winner==="Tie"||resultType==="Renga")return[1,1];
+    if(resultType==="Hoshin-Tora")winnerPoints=3;
+    else if(resultType==="Hoshin-Kai")winnerPoints=2;
+    else if(resultType==="Hoshin-Renga"){winnerPoints=1.5;loserPoints=0.5;}
+  }
+  return winner==="Team A"?[winnerPoints,loserPoints]:winner==="Team B"?[loserPoints,winnerPoints]:[0,0];
+}
+
 function eloExportSheets(data){
   const standings=data.standings||[];
   const matches=data.exportMatches||[];
@@ -3467,18 +3487,19 @@ function eloExportSheets(data){
   };
   const countryStats=new Map();
   standings.forEach(team=>{
-    const iso=COUNTRY_MAP[String(team.name||"").trim().toLowerCase()];
-    if(!iso)return;
-    countryStats.set(team.name,{team,iso,matches:0,wins:0,draws:0,losses:0,scoreFor:0,scoreAgainst:0,scoredMatches:0});
+    const iso=COUNTRY_MAP[String(team.name||"").trim().toLowerCase()]||"";
+    countryStats.set(team.name,{team,iso,matches:0,wins:0,draws:0,losses:0,kitakanaPoints:0,scoreFor:0,scoreAgainst:0,scoredMatches:0});
   });
   matches.forEach(match=>{
     const[scoreA,scoreB]=matchScorePair(match);
+    const[pointsA,pointsB]=kitakanaPointPair(match);
     [[match.team_a,true],[match.team_b,false]].forEach(([name,isA])=>{
       const stat=countryStats.get(name);if(!stat)return;
       stat.matches++;
       if(match.winner==="Tie")stat.draws++;
       else if((isA&&match.winner==="Team A")||(!isA&&match.winner==="Team B"))stat.wins++;
       else stat.losses++;
+      stat.kitakanaPoints+=isA?pointsA:pointsB;
       if(scoreA!==null&&scoreB!==null){
         stat.scoredMatches++;
         stat.scoreFor+=isA?scoreA:scoreB;
@@ -3488,8 +3509,11 @@ function eloExportSheets(data){
   });
   const countriesSheet={
     name:"Countries",
-    headers:["Region","Subregion","Country","ISO2","Flag","Code","Rank","Current Elo","Matches","Wins","Draws","Losses","Score For","Score Conceded","Score Difference","Matches With Score"],
-    rows:[...countryStats.values()].sort((a,b)=>(a.team.rank||9999)-(b.team.rank||9999)).map(stat=>[stat.team.continent||"",eloSubregion(stat.team),stat.team.name,stat.iso.toUpperCase(),FLAG(stat.iso),stat.team.code||"",Number(stat.team.rank)||"",Number(stat.team.currentElo)||0,stat.matches,stat.wins,stat.draws,stat.losses,stat.scoreFor,stat.scoreAgainst,stat.scoreFor-stat.scoreAgainst,stat.scoredMatches])
+    headers:["Region","Subregion","Country / Team","ISO2","Flag","Code","Rank","Current Elo","Matches","Wins","Draws","Losses","Kitakana Points","Score For","Score Conceded","Score Difference","Matches With Score"],
+    rows:[...countryStats.values()].sort((a,b)=>(a.team.rank||9999)-(b.team.rank||9999)).map(stat=>{
+      const hasScores=stat.scoredMatches>0;
+      return[stat.team.continent||"",eloSubregion(stat.team),stat.team.name,stat.iso.toUpperCase(),FLAG(stat.iso),stat.team.code||"",Number(stat.team.rank)||"",Number(stat.team.currentElo)||0,stat.matches,stat.wins,stat.draws,stat.losses,stat.kitakanaPoints,hasScores?stat.scoreFor:"",hasScores?stat.scoreAgainst:"",hasScores?stat.scoreFor-stat.scoreAgainst:"",stat.scoredMatches];
+    })
   };
   return[standingsSheet,historySheet,bonusesSheet,countriesSheet];
 }
@@ -3583,23 +3607,21 @@ function refreshKitakanaElo() {
     })
   );
 
-  const countryNames = ${JSON.stringify(Object.keys(COUNTRY_MAP))};
   const countryIso = ${JSON.stringify(COUNTRY_MAP)};
-  const countryLookup = {};
-  countryNames.forEach(function(name) { countryLookup[name.toLowerCase()] = true; });
   const stats = {};
   teams.forEach(function(team) {
-    if (!countryLookup[String(team.name||"").toLowerCase()]) return;
-    stats[team.name] = {team:team, matches:0, wins:0, draws:0, losses:0, scoreFor:0, scoreAgainst:0, scoredMatches:0};
+    stats[team.name] = {team:team, matches:0, wins:0, draws:0, losses:0, kitakanaPoints:0, scoreFor:0, scoreAgainst:0, scoredMatches:0};
   });
   matches.forEach(function(match) {
     const scores=kitakanaScorePair_(match);
+    const points=kitakanaPointPair_(match);
     [[match.teamA,true],[match.teamB,false]].forEach(function(side) {
       const stat=stats[side[0]]; if (!stat) return;
       const isA=side[1]; stat.matches++;
       if (match.winner==="Tie") stat.draws++;
       else if ((isA&&match.winner==="Team A")||(!isA&&match.winner==="Team B")) stat.wins++;
       else stat.losses++;
+      stat.kitakanaPoints += isA?points[0]:points[1];
       if (scores[0]!==""&&scores[1]!=="") {
         stat.scoredMatches++;
         stat.scoreFor += isA?number_(scores[0]):number_(scores[1]);
@@ -3609,10 +3631,11 @@ function refreshKitakanaElo() {
   });
   const countryRows=Object.keys(stats).map(function(name) {
     const stat=stats[name], team=stat.team, iso=countryIso[name.toLowerCase()]||"";
-    return [team.continent||"",kitakanaSubregion_(team),name,iso.toUpperCase(),flag_(iso),team.code||"",team.rank||"",number_(team.currentElo),stat.matches,stat.wins,stat.draws,stat.losses,stat.scoreFor,stat.scoreAgainst,stat.scoreFor-stat.scoreAgainst,stat.scoredMatches];
+    const hasScores=stat.scoredMatches>0;
+    return [team.continent||"",kitakanaSubregion_(team),name,iso.toUpperCase(),flag_(iso),team.code||"",team.rank||"",number_(team.currentElo),stat.matches,stat.wins,stat.draws,stat.losses,stat.kitakanaPoints,hasScores?stat.scoreFor:"",hasScores?stat.scoreAgainst:"",hasScores?stat.scoreFor-stat.scoreAgainst:"",stat.scoredMatches];
   }).sort(function(a,b){return number_(a[6]||9999)-number_(b[6]||9999);});
   writeKitakanaSheet_("Countries",
-    ["Region","Subregion","Country","ISO2","Flag","Code","Rank","Current Elo","Matches","Wins","Draws","Losses","Score For","Score Conceded","Score Difference","Matches With Score"],
+    ["Region","Subregion","Country / Team","ISO2","Flag","Code","Rank","Current Elo","Matches","Wins","Draws","Losses","Kitakana Points","Score For","Score Conceded","Score Difference","Matches With Score"],
     countryRows
   );
   SpreadsheetApp.getActive().toast("Kitakana Elo updated " + new Date().toLocaleString());
@@ -3646,6 +3669,24 @@ function kitakanaScorePair_(match) {
   if (match.scoreA!==null&&match.scoreA!==""&&match.scoreB!==null&&match.scoreB!=="") return [number_(match.scoreA),number_(match.scoreB)];
   const parsed=String(match.score||"").match(/(-?\\d+(?:\\.\\d+)?)\\s*[-:–]\\s*(-?\\d+(?:\\.\\d+)?)/);
   return parsed?[number_(parsed[1]),number_(parsed[2])]:["",""];
+}
+
+function kitakanaPointPair_(match) {
+  const scores=kitakanaScorePair_(match);
+  let winner=match.winner, winnerPoints=0, loserPoints=0;
+  if (scores[0]!==""&&scores[1]!=="") {
+    if (number_(scores[0])===number_(scores[1])) return [1,1];
+    winner=number_(scores[0])>number_(scores[1])?"Team A":"Team B";
+    const diff=Math.abs(number_(scores[0])-number_(scores[1]));
+    winnerPoints=diff>5?3:diff===5?2:1.5;
+    loserPoints=diff<5?0.5:0;
+  } else {
+    if (winner==="Tie"||match.resultType==="Renga") return [1,1];
+    if (match.resultType==="Hoshin-Tora") winnerPoints=3;
+    else if (match.resultType==="Hoshin-Kai") winnerPoints=2;
+    else if (match.resultType==="Hoshin-Renga") { winnerPoints=1.5; loserPoints=0.5; }
+  }
+  return winner==="Team A"?[winnerPoints,loserPoints]:winner==="Team B"?[loserPoints,winnerPoints]:[0,0];
 }
 
 function number_(value) { const number=Number(value); return isNaN(number)?0:number; }
