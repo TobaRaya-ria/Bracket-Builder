@@ -1897,20 +1897,21 @@ function MatchEloPanel({match}){
   );
 }
 
-function EloStandingsPanel({loadStandings,refreshToken}){
-  const[state,setState]=useState({loading:true,error:"",standings:[],availablePeriods:[],latestPeriod:"",startPeriod:"",endPeriod:""});
+function EloStandingsPanel({loadStandings,refreshToken,createAutoSync,autoSyncAvailable=false}){
+  const[state,setState]=useState({loading:true,error:"",standings:[],availablePeriods:[],latestPeriod:"",startPeriod:"",endPeriod:"",exportMatches:[],exportBonuses:[]});
   const[regionFilter,setRegionFilter]=useState("all");
   const[subregionFilter,setSubregionFilter]=useState("all");
   const[startPeriod,setStartPeriod]=useState("all");
   const[endPeriod,setEndPeriod]=useState("latest");
   const[openTeam,setOpenTeam]=useState("");
+  const[autoSyncState,setAutoSyncState]=useState({loading:false,message:"",error:false});
 
   useEffect(()=>{
     let cancelled=false;
     setState(current=>({...current,loading:true,error:""}));
     loadStandings({startPeriod,endPeriod:startPeriod==="all"?"all":endPeriod})
       .then(data=>{
-        if(!cancelled)setState({loading:false,error:"",standings:Array.isArray(data?.standings)?data.standings:[],availablePeriods:Array.isArray(data?.availablePeriods)?data.availablePeriods:[],latestPeriod:data?.latestPeriod||"",startPeriod:data?.startPeriod||"",endPeriod:data?.endPeriod||""});
+        if(!cancelled)setState({loading:false,error:"",standings:Array.isArray(data?.standings)?data.standings:[],availablePeriods:Array.isArray(data?.availablePeriods)?data.availablePeriods:[],latestPeriod:data?.latestPeriod||"",startPeriod:data?.startPeriod||"",endPeriod:data?.endPeriod||"",exportMatches:Array.isArray(data?.exportMatches)?data.exportMatches:[],exportBonuses:Array.isArray(data?.exportBonuses)?data.exportBonuses:[]});
       })
       .catch(error=>{
         if(!cancelled)setState(current=>({...current,loading:false,error:friendlyEloError(error)||"Could not load Elo standings.",standings:[]}));
@@ -1949,6 +1950,16 @@ function EloStandingsPanel({loadStandings,refreshToken}){
       <div style={{marginTop:"auto",paddingTop:8,borderTop:"1px solid rgba(233,196,106,0.22)",fontSize:20,fontWeight:900,color:Number(item.points)>=0?"#2a9d8f":"#e63946"}}>{Number(item.points)>=0?"+":""}{formatEloNumber(item.points)}</div>
     </div>
   </div>;
+  const setupAutoSync=async()=>{
+    if(!createAutoSync)return;
+    setAutoSyncState({loading:true,message:"",error:false});
+    try{
+      const result=await createAutoSync();
+      setAutoSyncState({loading:false,message:result?.message||"Google Sheets sync script downloaded.",error:false});
+    }catch(error){
+      setAutoSyncState({loading:false,message:friendlyEloError(error)||error?.message||"Could not create the sync script.",error:true});
+    }
+  };
 
   return(
     <div style={{border:"1px solid rgba(233,196,106,0.32)",background:"rgba(233,196,106,0.04)",borderRadius:8,overflow:"hidden"}}>
@@ -1956,6 +1967,9 @@ function EloStandingsPanel({loadStandings,refreshToken}){
         <span style={{fontSize:15,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:"#e9c46a"}}>Kitakana Elo Standings</span>
         <span style={{fontSize:11,color:"var(--color-text-tertiary)",fontWeight:700}}>{periodSummary}</span>
         <div style={{marginLeft:"auto",display:"flex",gap:7,flexWrap:"wrap"}}>
+          <button onClick={()=>downloadEloSpreadsheet(state)} disabled={state.loading||state.standings.length===0} style={{...btn(false),padding:"5px 9px",fontSize:10,borderColor:"rgba(42,157,143,0.5)",color:"#2a9d8f",opacity:state.loading||state.standings.length===0?0.45:1,cursor:state.loading||state.standings.length===0?"not-allowed":"pointer"}}>Export for Google Sheets</button>
+          <button onClick={setupAutoSync} disabled={!autoSyncAvailable||autoSyncState.loading} title={autoSyncAvailable?"Download a read-only Apps Script that refreshes this workbook hourly":"Log in with Supabase to enable automatic Google Sheets updates"} style={{...btn(false),padding:"5px 9px",fontSize:10,borderColor:"rgba(69,123,157,0.5)",color:"#457b9d",opacity:!autoSyncAvailable||autoSyncState.loading?0.45:1,cursor:!autoSyncAvailable||autoSyncState.loading?"not-allowed":"pointer"}}>{autoSyncState.loading?"Preparing Sync...":"Auto-update Setup"}</button>
+          <a href="https://sheets.new" target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",padding:"5px 9px",borderRadius:6,border:"1px solid var(--color-border-tertiary)",color:"var(--color-text-secondary)",textDecoration:"none",fontSize:10,fontWeight:800,textTransform:"uppercase"}}>Open Google Sheets ↗</a>
           <label style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"var(--color-text-tertiary)",fontWeight:800,textTransform:"uppercase"}}>From
             <select aria-label="Starting Elo period" value={startPeriod} onChange={event=>{const value=event.target.value;setStartPeriod(value);if(value==="all")setEndPeriod("all");else if(endPeriod==="all")setEndPeriod("latest");else if(/^\d{4}-\d{2}$/.test(value)&&/^\d{4}-\d{2}$/.test(endPeriod)&&value>endPeriod)setEndPeriod(value);setOpenTeam("");}} style={{padding:"5px 8px",borderRadius:6,border:"1px solid rgba(233,196,106,0.45)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800}}>
               <option value="all">All periods</option>
@@ -1973,6 +1987,7 @@ function EloStandingsPanel({loadStandings,refreshToken}){
           <select aria-label="Filter Elo standings by region" value={regionFilter} onChange={event=>{setRegionFilter(event.target.value);setOpenTeam("");}} style={{padding:"5px 8px",borderRadius:6,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800}}><option value="all">All regions</option>{regions.map(region=><option key={region} value={region}>{region}</option>)}</select>
           <select aria-label="Filter Elo standings by subregion" value={subregionFilter} onChange={event=>{setSubregionFilter(event.target.value);setOpenTeam("");}} style={{padding:"5px 8px",borderRadius:6,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800}}><option value="all">All subregions</option>{subregions.map(region=><option key={region} value={region}>{region}</option>)}</select>
         </div>
+        {autoSyncState.message&&<div style={{flexBasis:"100%",fontSize:10,fontWeight:700,color:autoSyncState.error?"#e63946":"#2a9d8f"}}>{autoSyncState.message}</div>}
       </div>
       {state.loading&&<div style={{padding:18,color:"var(--color-text-tertiary)",fontWeight:700}}>Loading tracker...</div>}
       {!state.loading&&state.error&&<div style={{padding:18,color:"#e63946",fontWeight:700}}>{state.error}</div>}
@@ -3330,6 +3345,319 @@ function downloadBlob(blob,fileName){
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
+function xmlEscape(value){
+  return String(value??"")
+    .replace(/[^\u0009\u000A\u000D\u0020-\uD7FF\uE000-\uFFFD]/g,"")
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+function spreadsheetColumnName(index){
+  let value=index+1,name="";
+  while(value>0){value--;name=String.fromCharCode(65+value%26)+name;value=Math.floor(value/26);}
+  return name;
+}
+
+function spreadsheetSheetXml(headers,rows){
+  const allRows=[headers,...rows];
+  const rowXml=allRows.map((row,rowIdx)=>{
+    const cells=headers.map((_,colIdx)=>{
+      const ref=`${spreadsheetColumnName(colIdx)}${rowIdx+1}`;
+      const value=row[colIdx];
+      const style=rowIdx===0?' s="1"':"";
+      if(typeof value==="number"&&Number.isFinite(value))return`<c r="${ref}"${style} t="n"><v>${value}</v></c>`;
+      if(typeof value==="boolean")return`<c r="${ref}"${style} t="b"><v>${value?1:0}</v></c>`;
+      return`<c r="${ref}"${style} t="inlineStr"><is><t xml:space="preserve">${xmlEscape(value)}</t></is></c>`;
+    }).join("");
+    return`<row r="${rowIdx+1}">${cells}</row>`;
+  }).join("");
+  const lastColumn=spreadsheetColumnName(Math.max(0,headers.length-1));
+  const lastRow=Math.max(1,allRows.length);
+  const widths=headers.map((header,idx)=>{
+    const sampleLength=Math.max(String(header).length,...rows.slice(0,200).map(row=>String(row[idx]??"").length));
+    return`<col min="${idx+1}" max="${idx+1}" width="${Math.max(10,Math.min(34,sampleLength+2))}" customWidth="1"/>`;
+  }).join("");
+  return`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+  <cols>${widths}</cols>
+  <sheetData>${rowXml}</sheetData>
+  <autoFilter ref="A1:${lastColumn}${lastRow}"/>
+</worksheet>`;
+}
+
+function createSpreadsheetWorkbook(sheets){
+  const files={};
+  const overrides=sheets.map((_,idx)=>`<Override PartName="/xl/worksheets/sheet${idx+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("");
+  files["[Content_Types].xml"]=strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+  ${overrides}
+</Types>`);
+  files["_rels/.rels"]=strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`);
+  files["xl/workbook.xml"]=strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>${sheets.map((sheet,idx)=>`<sheet name="${xmlEscape(sheet.name.slice(0,31))}" sheetId="${idx+1}" r:id="rId${idx+1}"/>`).join("")}</sheets>
+</workbook>`);
+  files["xl/_rels/workbook.xml.rels"]=strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  ${sheets.map((_,idx)=>`<Relationship Id="rId${idx+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${idx+1}.xml"/>`).join("")}
+  <Relationship Id="rId${sheets.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`);
+  files["xl/styles.xml"]=strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="2"><font><sz val="11"/><name val="Arial"/></font><font><b/><color rgb="FF2C2C00"/><sz val="11"/><name val="Arial"/></font></fonts>
+  <fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE9C46A"/><bgColor indexed="64"/></patternFill></fill></fills>
+  <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs>
+</styleSheet>`);
+  const now=new Date().toISOString();
+  files["docProps/core.xml"]=strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Kitakana Elo Export</dc:title><dc:creator>Tourney</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created></cp:coreProperties>`);
+  files["docProps/app.xml"]=strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>Tourney</Application><TitlesOfParts><vt:vector size="${sheets.length}" baseType="lpstr">${sheets.map(sheet=>`<vt:lpstr>${xmlEscape(sheet.name)}</vt:lpstr>`).join("")}</vt:vector></TitlesOfParts></Properties>`);
+  sheets.forEach((sheet,idx)=>{files[`xl/worksheets/sheet${idx+1}.xml`]=strToU8(spreadsheetSheetXml(sheet.headers,sheet.rows));});
+  return new Blob([zipSync(files,{level:6})],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+}
+
+function matchScorePair(match){
+  const directA=Number(match.score_a),directB=Number(match.score_b);
+  if(match.score_a!==null&&match.score_a!==""&&match.score_b!==null&&match.score_b!==""&&Number.isFinite(directA)&&Number.isFinite(directB))return[directA,directB];
+  const parsed=String(match.score_text||"").match(/(-?\d+(?:\.\d+)?)\s*[-:–]\s*(-?\d+(?:\.\d+)?)/);
+  return parsed?[Number(parsed[1]),Number(parsed[2])]:[null,null];
+}
+
+function eloExportSheets(data){
+  const standings=data.standings||[];
+  const matches=data.exportMatches||[];
+  const bonuses=data.exportBonuses||[];
+  const teamMap=new Map(standings.map(team=>[team.name,team]));
+  const teamMeta=name=>{
+    const team=teamMap.get(name)||{};
+    return{...team,subregion:eloSubregion(team)};
+  };
+  const standingsSheet={
+    name:"Elo Standings",
+    headers:["Region","Subregion","Rank","Rank Change","Team","Code","Starting Elo","Period Start Elo","Current Elo","Elo Change","Matches"],
+    rows:standings.map(team=>[team.continent||"",eloSubregion(team),Number(team.rank)||"",Number(team.rankChange)||0,team.name,team.code||"",Number(team.startingElo)||0,Number(team.periodStartElo)||0,Number(team.currentElo)||0,Number(team.eloChange)||0,Number(team.matches)||0])
+  };
+  const historySheet={
+    name:"Match History",
+    headers:["Team A Region","Team A Subregion","Team B Region","Team B Subregion","Match Order","Period","Event","Tier","Result Type","Team A","Team A Code","Team A Score","Team A Pre Elo","Team A Elo Change","Team A Post Elo","Team B","Team B Code","Team B Score","Team B Pre Elo","Team B Elo Change","Team B Post Elo","Winner","Score","Source Match ID","Updated At"],
+    rows:matches.map(match=>{
+      const teamA=teamMeta(match.team_a),teamB=teamMeta(match.team_b);
+      const[scoreA,scoreB]=matchScorePair(match);
+      return[teamA.continent||"",teamA.subregion,teamB.continent||"",teamB.subregion,Number(match.match_order)||"",String(match.period_month||"").slice(0,7),match.event||"",match.tier||"",match.result_type||"",match.team_a,teamA.code||"",scoreA??"",Number(match.team_a_pre_elo)||"",Number(match.team_a_delta)||0,Number(match.team_a_post_elo)||"",match.team_b,teamB.code||"",scoreB??"",Number(match.team_b_pre_elo)||"",Number(match.team_b_delta)||0,Number(match.team_b_post_elo)||"",match.winner||"",match.score_text||"",match.source_match_id||"",match.updated_at||""];
+    })
+  };
+  const bonusesSheet={
+    name:"Bonuses",
+    headers:["Region","Subregion","Bonus Order","Bonus ID","Team","Code","Category","Points","Event"],
+    rows:bonuses.map(bonus=>{const team=teamMeta(bonus.team_name);return[team.continent||"",team.subregion,Number(bonus.bonus_order)||"",Number(bonus.bonus_id)||"",bonus.team_name,team.code||"",bonus.category||"",Number(bonus.points)||0,bonus.event||""];})
+  };
+  const countryStats=new Map();
+  standings.forEach(team=>{
+    const iso=COUNTRY_MAP[String(team.name||"").trim().toLowerCase()];
+    if(!iso)return;
+    countryStats.set(team.name,{team,iso,matches:0,wins:0,draws:0,losses:0,scoreFor:0,scoreAgainst:0,scoredMatches:0});
+  });
+  matches.forEach(match=>{
+    const[scoreA,scoreB]=matchScorePair(match);
+    [[match.team_a,true],[match.team_b,false]].forEach(([name,isA])=>{
+      const stat=countryStats.get(name);if(!stat)return;
+      stat.matches++;
+      if(match.winner==="Tie")stat.draws++;
+      else if((isA&&match.winner==="Team A")||(!isA&&match.winner==="Team B"))stat.wins++;
+      else stat.losses++;
+      if(scoreA!==null&&scoreB!==null){
+        stat.scoredMatches++;
+        stat.scoreFor+=isA?scoreA:scoreB;
+        stat.scoreAgainst+=isA?scoreB:scoreA;
+      }
+    });
+  });
+  const countriesSheet={
+    name:"Countries",
+    headers:["Region","Subregion","Country","ISO2","Flag","Code","Rank","Current Elo","Matches","Wins","Draws","Losses","Score For","Score Conceded","Score Difference","Matches With Score"],
+    rows:[...countryStats.values()].sort((a,b)=>(a.team.rank||9999)-(b.team.rank||9999)).map(stat=>[stat.team.continent||"",eloSubregion(stat.team),stat.team.name,stat.iso.toUpperCase(),FLAG(stat.iso),stat.team.code||"",Number(stat.team.rank)||"",Number(stat.team.currentElo)||0,stat.matches,stat.wins,stat.draws,stat.losses,stat.scoreFor,stat.scoreAgainst,stat.scoreFor-stat.scoreAgainst,stat.scoredMatches])
+  };
+  return[standingsSheet,historySheet,bonusesSheet,countriesSheet];
+}
+
+function downloadEloSpreadsheet(data){
+  const workbook=createSpreadsheetWorkbook(eloExportSheets(data));
+  downloadBlob(workbook,`kitakana-elo-${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+function randomSheetSyncToken(){
+  const bytes=new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return[...bytes].map(value=>value.toString(16).padStart(2,"0")).join("");
+}
+
+function googleSheetsSyncScript({supabaseUrl,anonKey,token}){
+  const config=`const KITAKANA_SYNC = ${JSON.stringify({supabaseUrl,anonKey,token})};`;
+  return`${config}
+
+/**
+ * Kitakana Elo → Google Sheets read-only sync.
+ * 1. Open a blank Google Sheet.
+ * 2. Open Extensions → Apps Script and replace the editor with this file.
+ * 3. Run setupKitakanaElo once and approve the requested permissions.
+ * The workbook refreshes immediately and then once per hour.
+ */
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu("Kitakana Elo")
+    .addItem("Refresh now", "refreshKitakanaElo")
+    .addItem("Enable hourly refresh", "enableKitakanaHourlyRefresh")
+    .addItem("Disable auto refresh", "disableKitakanaAutoRefresh")
+    .addToUi();
+}
+
+function setupKitakanaElo() {
+  refreshKitakanaElo();
+  enableKitakanaHourlyRefresh();
+}
+
+function enableKitakanaHourlyRefresh() {
+  disableKitakanaAutoRefresh();
+  ScriptApp.newTrigger("refreshKitakanaElo").timeBased().everyHours(1).create();
+  SpreadsheetApp.getActive().toast("Hourly Kitakana Elo refresh enabled.");
+}
+
+function disableKitakanaAutoRefresh() {
+  ScriptApp.getProjectTriggers().forEach(function(trigger) {
+    if (trigger.getHandlerFunction() === "refreshKitakanaElo") ScriptApp.deleteTrigger(trigger);
+  });
+}
+
+function refreshKitakanaElo() {
+  const response = UrlFetchApp.fetch(KITAKANA_SYNC.supabaseUrl + "/rest/v1/rpc/kitakana_elo_sheet_export", {
+    method: "post",
+    contentType: "application/json",
+    headers: { apikey: KITAKANA_SYNC.anonKey, Authorization: "Bearer " + KITAKANA_SYNC.anonKey },
+    payload: JSON.stringify({ p_sync_token: KITAKANA_SYNC.token }),
+    muteHttpExceptions: true
+  });
+  if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) {
+    throw new Error("Kitakana sync failed: " + response.getContentText());
+  }
+  const data = JSON.parse(response.getContentText());
+  const teams = data.teams || [];
+  const matches = data.matches || [];
+  const bonuses = data.bonuses || [];
+  const teamMap = {};
+  teams.forEach(function(team) { teamMap[team.name] = team; });
+
+  writeKitakanaSheet_("Elo Standings",
+    ["Region","Subregion","Rank","Team","Code","Starting Elo","Current Elo","Elo Change","Matches"],
+    teams.map(function(team) {
+      return [team.continent || "", kitakanaSubregion_(team), team.rank || "", team.name, team.code || "", number_(team.startingElo), number_(team.currentElo), number_(team.currentElo)-number_(team.startingElo), team.matches || 0];
+    })
+  );
+
+  writeKitakanaSheet_("Match History",
+    ["Team A Region","Team A Subregion","Team B Region","Team B Subregion","Match Order","Period","Event","Tier","Result Type","Team A","Team A Code","Team A Score","Team A Pre Elo","Team A Elo Change","Team A Post Elo","Team B","Team B Code","Team B Score","Team B Pre Elo","Team B Elo Change","Team B Post Elo","Winner","Score","Source Match ID","Updated At"],
+    matches.map(function(match) {
+      const teamA=teamMap[match.teamA] || {}, teamB=teamMap[match.teamB] || {};
+      const scores=kitakanaScorePair_(match);
+      return [teamA.continent||"",kitakanaSubregion_(teamA),teamB.continent||"",kitakanaSubregion_(teamB),match.matchOrder||"",String(match.periodMonth||"").slice(0,7),match.event||"",match.tier||"",match.resultType||"",match.teamA,teamA.code||"",scores[0],valueOrBlank_(match.teamAPreElo),number_(match.teamADelta),valueOrBlank_(match.teamAPostElo),match.teamB,teamB.code||"",scores[1],valueOrBlank_(match.teamBPreElo),number_(match.teamBDelta),valueOrBlank_(match.teamBPostElo),match.winner||"",match.score||"",match.sourceMatchId||"",match.updatedAt||""];
+    })
+  );
+
+  writeKitakanaSheet_("Bonuses",
+    ["Region","Subregion","Bonus Order","Bonus ID","Team","Code","Category","Points","Event"],
+    bonuses.map(function(bonus) {
+      const team=teamMap[bonus.teamName] || {};
+      return [team.continent||"",kitakanaSubregion_(team),bonus.bonusOrder||"",bonus.bonusId||"",bonus.teamName,team.code||"",bonus.category||"",number_(bonus.points),bonus.event||""];
+    })
+  );
+
+  const countryNames = ${JSON.stringify(Object.keys(COUNTRY_MAP))};
+  const countryIso = ${JSON.stringify(COUNTRY_MAP)};
+  const countryLookup = {};
+  countryNames.forEach(function(name) { countryLookup[name.toLowerCase()] = true; });
+  const stats = {};
+  teams.forEach(function(team) {
+    if (!countryLookup[String(team.name||"").toLowerCase()]) return;
+    stats[team.name] = {team:team, matches:0, wins:0, draws:0, losses:0, scoreFor:0, scoreAgainst:0, scoredMatches:0};
+  });
+  matches.forEach(function(match) {
+    const scores=kitakanaScorePair_(match);
+    [[match.teamA,true],[match.teamB,false]].forEach(function(side) {
+      const stat=stats[side[0]]; if (!stat) return;
+      const isA=side[1]; stat.matches++;
+      if (match.winner==="Tie") stat.draws++;
+      else if ((isA&&match.winner==="Team A")||(!isA&&match.winner==="Team B")) stat.wins++;
+      else stat.losses++;
+      if (scores[0]!==""&&scores[1]!=="") {
+        stat.scoredMatches++;
+        stat.scoreFor += isA?number_(scores[0]):number_(scores[1]);
+        stat.scoreAgainst += isA?number_(scores[1]):number_(scores[0]);
+      }
+    });
+  });
+  const countryRows=Object.keys(stats).map(function(name) {
+    const stat=stats[name], team=stat.team, iso=countryIso[name.toLowerCase()]||"";
+    return [team.continent||"",kitakanaSubregion_(team),name,iso.toUpperCase(),flag_(iso),team.code||"",team.rank||"",number_(team.currentElo),stat.matches,stat.wins,stat.draws,stat.losses,stat.scoreFor,stat.scoreAgainst,stat.scoreFor-stat.scoreAgainst,stat.scoredMatches];
+  }).sort(function(a,b){return number_(a[6]||9999)-number_(b[6]||9999);});
+  writeKitakanaSheet_("Countries",
+    ["Region","Subregion","Country","ISO2","Flag","Code","Rank","Current Elo","Matches","Wins","Draws","Losses","Score For","Score Conceded","Score Difference","Matches With Score"],
+    countryRows
+  );
+  SpreadsheetApp.getActive().toast("Kitakana Elo updated " + new Date().toLocaleString());
+}
+
+function writeKitakanaSheet_(name, headers, rows) {
+  const spreadsheet=SpreadsheetApp.getActive();
+  let sheet=spreadsheet.getSheetByName(name);
+  if (!sheet) sheet=spreadsheet.insertSheet(name);
+  if (sheet.getFilter()) sheet.getFilter().remove();
+  sheet.clear();
+  const values=[headers].concat(rows);
+  sheet.getRange(1,1,values.length,headers.length).setValues(values);
+  sheet.setFrozenRows(1);
+  sheet.getRange(1,1,1,headers.length).setFontWeight("bold").setBackground("#e9c46a").setFontColor("#2c2c00");
+  sheet.getRange(1,1,values.length,headers.length).createFilter();
+  sheet.autoResizeColumns(1,headers.length);
+}
+
+function kitakanaSubregion_(team) {
+  const region=String(team.continent||"").toUpperCase(), code=String(team.code||"").toUpperCase();
+  if (region==="EURO") return "UEFA";
+  if (region==="ASIA") return "AFC";
+  if (region==="AFRICA") return "CAF";
+  if (region==="OCEANIA") return "OFC";
+  if (region==="AMER") return ["ARG","BOL","BRA","CHI","COL","ECU","PAR","PER","URU","VEN"].indexOf(code)>=0?"CONMEBOL":"CONCACAF";
+  return "";
+}
+
+function kitakanaScorePair_(match) {
+  if (match.scoreA!==null&&match.scoreA!==""&&match.scoreB!==null&&match.scoreB!=="") return [number_(match.scoreA),number_(match.scoreB)];
+  const parsed=String(match.score||"").match(/(-?\\d+(?:\\.\\d+)?)\\s*[-:–]\\s*(-?\\d+(?:\\.\\d+)?)/);
+  return parsed?[number_(parsed[1]),number_(parsed[2])]:["",""];
+}
+
+function number_(value) { const number=Number(value); return isNaN(number)?0:number; }
+function valueOrBlank_(value) { return value===null||value===""||typeof value==="undefined"?"":number_(value); }
+function flag_(code) {
+  code=String(code||"").toUpperCase();
+  if (code.length!==2) return "";
+  return String.fromCodePoint(127397+code.charCodeAt(0),127397+code.charCodeAt(1));
+}
+`;
+}
+
 function tournamentEnvelope(project){
   return {schema:"tourney-tournament",version:1,exportedAt:new Date().toISOString(),project};
 }
@@ -4501,8 +4829,8 @@ export default function App(){
     const requestedEnd=startPeriod==="all"?"all":endPeriod;
     const[standingResult,matchResult,bonusResult]=await Promise.all([
       supabase.rpc("kitakana_elo_standings",{p_start_period:startPeriod,p_end_period:requestedEnd}),
-      supabase.from("kitakana_elo_matches").select("match_order,source_match_id,team_a,team_b,winner,result_type,score_text,event,team_a_delta,team_b_delta,period_month,updated_at").eq("validation","OK").order("match_order",{ascending:false}).limit(3000),
-      supabase.from("kitakana_elo_bonuses").select("bonus_id,bonus_order,team_name,category,points,event").order("bonus_order",{ascending:false}).limit(3000)
+      supabase.from("kitakana_elo_matches").select("match_order,source_match_id,team_a,team_b,winner,result_type,tier,score_a,score_b,score_text,event,team_a_pre_elo,team_b_pre_elo,team_a_delta,team_b_delta,team_a_post_elo,team_b_post_elo,period_month,updated_at").eq("validation","OK").order("match_order",{ascending:false}).limit(3000),
+      supabase.from("kitakana_elo_bonuses").select("bonus_id,bonus_order,team_name,category,points,event,created_at").order("bonus_order",{ascending:false}).limit(3000)
     ]);
     if(standingResult.error)throw standingResult.error;
     const projectPeriods=savedProjects.flatMap(project=>startedStagePeriodsFromState(project.state));
@@ -4550,7 +4878,18 @@ export default function App(){
       return {...team,history,bonuses:teamBonuses};
     });
     const availablePeriods=[...new Set([...(standingData.availablePeriods||[]),...projectPeriods])].sort();
-    return {...standingData,latestPeriod:knownLatest||standingData.latestPeriod||"",availablePeriods,standings};
+    return {...standingData,latestPeriod:knownLatest||standingData.latestPeriod||"",availablePeriods,standings,exportMatches:matches,exportBonuses:bonuses};
+  };
+
+  const createEloSheetAutoSync=async()=>{
+    requireSupabaseElo();
+    const token=randomSheetSyncToken();
+    const{data,error}=await supabase.rpc("kitakana_create_sheet_sync_token",{p_sync_token:token});
+    if(error)throw error;
+    if(!data?.ok)throw new Error("Could not create a Google Sheets sync token.");
+    const script=googleSheetsSyncScript({supabaseUrl:SUPABASE_URL,anonKey:SUPABASE_ANON_KEY,token});
+    downloadBlob(new Blob([script],{type:"text/plain;charset=utf-8"}),`kitakana-elo-google-sheets-sync-${new Date().toISOString().slice(0,10)}.gs`);
+    return{message:"Sync script downloaded. Open a blank Google Sheet → Extensions → Apps Script, paste the file, then run setupKitakanaElo()."};
   };
 
   const submitEloPayloads=async(payloads)=>{
@@ -5217,7 +5556,7 @@ export default function App(){
                 <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)"}}>Previous Projects</div>
                 <button onClick={()=>setHomeEloOpen(open=>!open)} style={{...btn(homeEloOpen),padding:"6px 11px",fontSize:11,border:"1px solid rgba(233,196,106,0.48)",color:homeEloOpen?"#2c2c00":"#b8921a"}}>{homeEloOpen?"Close Elo Standings":"Open Elo Standings"}</button>
               </div>
-              {homeEloOpen&&<div style={{marginBottom:12}}><EloStandingsPanel loadStandings={loadEloStandings} refreshToken={eloRefreshKey}/></div>}
+              {homeEloOpen&&<div style={{marginBottom:12}}><EloStandingsPanel loadStandings={loadEloStandings} refreshToken={eloRefreshKey} createAutoSync={createEloSheetAutoSync} autoSyncAvailable={!!(supabaseConfigured&&currentUser?.supabase)}/></div>}
               {visibleProjects.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
                 {visibleProjects.map(project=>(
                   <div key={project.id} onClick={()=>loadProject(project)} style={{position:"relative",textAlign:"left",padding:"12px 38px 34px 14px",minHeight:116,borderRadius:8,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",boxSizing:"border-box"}}>
@@ -5486,7 +5825,7 @@ export default function App(){
           })()}
             </>
           )}
-          {bracketTab==="elo"&&<EloStandingsPanel loadStandings={loadEloStandings} refreshToken={eloRefreshKey}/>}
+          {bracketTab==="elo"&&<EloStandingsPanel loadStandings={loadEloStandings} refreshToken={eloRefreshKey} createAutoSync={createEloSheetAutoSync} autoSyncAvailable={!!(supabaseConfigured&&currentUser?.supabase)}/>}
           {bracketTab==="settings"&&renderSettingsTab()}
           {bracketTab==="participants"&&renderParticipantsTab()}
           {bracketTab==="result"&&renderResultTab()}

@@ -101,10 +101,18 @@ create index if not exists kitakana_elo_matches_owner_order_idx
 create index if not exists kitakana_elo_matches_owner_period_idx
   on public.kitakana_elo_matches (owner_user_id, period_month, match_order);
 
+create table if not exists public.kitakana_elo_sheet_sync_tokens (
+  owner_user_id uuid primary key references auth.users(id) on delete cascade,
+  token_hash text not null unique,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 alter table public.kitakana_elo_trackers enable row level security;
 alter table public.kitakana_elo_teams enable row level security;
 alter table public.kitakana_elo_bonuses enable row level security;
 alter table public.kitakana_elo_matches enable row level security;
+alter table public.kitakana_elo_sheet_sync_tokens enable row level security;
 
 drop policy if exists "Users can read own Kitakana tracker" on public.kitakana_elo_trackers;
 drop policy if exists "Users can read own Kitakana teams" on public.kitakana_elo_teams;
@@ -131,6 +139,7 @@ revoke all on public.kitakana_elo_trackers from anon, authenticated;
 revoke all on public.kitakana_elo_teams from anon, authenticated;
 revoke all on public.kitakana_elo_bonuses from anon, authenticated;
 revoke all on public.kitakana_elo_matches from anon, authenticated;
+revoke all on public.kitakana_elo_sheet_sync_tokens from anon, authenticated;
 grant select on public.kitakana_elo_trackers to authenticated;
 grant select on public.kitakana_elo_teams to authenticated;
 grant select on public.kitakana_elo_bonuses to authenticated;
@@ -775,6 +784,134 @@ begin
 end;
 $$;
 
+create or replace function public.kitakana_create_sheet_sync_token(p_sync_token text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_owner uuid := auth.uid();
+begin
+  if v_owner is null then
+    raise exception 'Authentication required';
+  end if;
+  if coalesce(p_sync_token, '') !~ '^[a-f0-9]{64}$' then
+    raise exception 'Invalid Google Sheets sync token';
+  end if;
+
+  insert into public.kitakana_elo_sheet_sync_tokens (
+    owner_user_id, token_hash, created_at, updated_at
+  ) values (
+    v_owner, md5(p_sync_token), now(), now()
+  )
+  on conflict (owner_user_id) do update set
+    token_hash = excluded.token_hash,
+    updated_at = now();
+
+  return jsonb_build_object('ok', true, 'createdAt', now());
+end;
+$$;
+
+create or replace function public.kitakana_elo_sheet_export(p_sync_token text)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_owner uuid;
+  v_teams jsonb;
+  v_matches jsonb;
+  v_bonuses jsonb;
+begin
+  if coalesce(p_sync_token, '') !~ '^[a-f0-9]{64}$' then
+    raise exception 'Invalid Google Sheets sync token';
+  end if;
+
+  select token.owner_user_id
+  into v_owner
+  from public.kitakana_elo_sheet_sync_tokens token
+  where token.token_hash = md5(p_sync_token);
+
+  if v_owner is null then
+    raise exception 'Google Sheets sync token is invalid or has been replaced';
+  end if;
+
+  with ranked as (
+    select
+      team.*,
+      rank() over (order by team.current_elo desc, team.name) as export_rank,
+      (
+        select count(*)
+        from public.kitakana_elo_matches match
+        where match.owner_user_id = v_owner
+          and match.validation = 'OK'
+          and team.name in (match.team_a, match.team_b)
+      ) as match_count
+    from public.kitakana_elo_teams team
+    where team.owner_user_id = v_owner
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'rank', ranked.export_rank,
+    'name', ranked.name,
+    'code', ranked.code,
+    'continent', ranked.continent,
+    'startingElo', ranked.starting_elo,
+    'currentElo', ranked.current_elo,
+    'matches', ranked.match_count
+  ) order by ranked.export_rank, ranked.name), '[]'::jsonb)
+  into v_teams
+  from ranked;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'matchOrder', match.match_order,
+    'sourceMatchId', match.source_match_id,
+    'periodMonth', case when match.period_month is null then null else to_char(match.period_month, 'YYYY-MM') end,
+    'event', match.event,
+    'tier', match.tier,
+    'resultType', match.result_type,
+    'teamA', match.team_a,
+    'teamB', match.team_b,
+    'winner', match.winner,
+    'scoreA', match.score_a,
+    'scoreB', match.score_b,
+    'score', match.score_text,
+    'teamAPreElo', match.team_a_pre_elo,
+    'teamBPreElo', match.team_b_pre_elo,
+    'teamADelta', match.team_a_delta,
+    'teamBDelta', match.team_b_delta,
+    'teamAPostElo', match.team_a_post_elo,
+    'teamBPostElo', match.team_b_post_elo,
+    'updatedAt', match.updated_at
+  ) order by match.match_order desc), '[]'::jsonb)
+  into v_matches
+  from public.kitakana_elo_matches match
+  where match.owner_user_id = v_owner
+    and match.validation = 'OK';
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'bonusId', bonus.bonus_id,
+    'bonusOrder', bonus.bonus_order,
+    'teamName', bonus.team_name,
+    'category', bonus.category,
+    'points', bonus.points,
+    'event', bonus.event
+  ) order by bonus.bonus_order desc, bonus.bonus_id desc), '[]'::jsonb)
+  into v_bonuses
+  from public.kitakana_elo_bonuses bonus
+  where bonus.owner_user_id = v_owner;
+
+  return jsonb_build_object(
+    'generatedAt', now(),
+    'teams', v_teams,
+    'matches', v_matches,
+    'bonuses', v_bonuses
+  );
+end;
+$$;
+
 create or replace function public.kitakana_submit_matches(p_matches jsonb)
 returns jsonb
 language plpgsql
@@ -925,9 +1062,13 @@ revoke all on function public.kitakana_elo_status() from public, anon;
 revoke all on function public.kitakana_import_seed(jsonb) from public, anon;
 revoke all on function public.kitakana_elo_context(text, text, text, text, text) from public, anon;
 revoke all on function public.kitakana_elo_standings(text, text) from public, anon;
+revoke all on function public.kitakana_create_sheet_sync_token(text) from public, anon;
+revoke all on function public.kitakana_elo_sheet_export(text) from public, anon, authenticated;
 revoke all on function public.kitakana_submit_matches(jsonb) from public, anon;
 grant execute on function public.kitakana_elo_status() to authenticated;
 grant execute on function public.kitakana_import_seed(jsonb) to authenticated;
 grant execute on function public.kitakana_elo_context(text, text, text, text, text) to authenticated;
 grant execute on function public.kitakana_elo_standings(text, text) to authenticated;
+grant execute on function public.kitakana_create_sheet_sync_token(text) to authenticated;
+grant execute on function public.kitakana_elo_sheet_export(text) to anon, authenticated;
 grant execute on function public.kitakana_submit_matches(jsonb) to authenticated;
