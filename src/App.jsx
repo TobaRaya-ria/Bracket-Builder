@@ -2629,28 +2629,26 @@ function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreak
         )}
       </div>
 
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
-        <div style={{fontFamily:"'Barlow Condensed',sans-serif"}}>
-          <span style={{fontSize:17,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",color:"var(--color-text-primary)"}}>{curRound.some(m=>m._tiebreak)?"Tiebreaker Round":currentRoundLabel}</span>
-          <span style={{fontSize:12,color:"var(--color-text-tertiary)",marginLeft:10}}>{curRound.length} match{curRound.length===1?"":"es"}</span>
-          {currentRoundSchedule&&<span style={{fontSize:12,color:"#c0a15c",marginLeft:10,fontWeight:800}}>{currentRoundSchedule.dateLabel}</span>}
-        </div>
-        <button onClick={()=>setShowPlayers(p=>!p)} style={{...btn(showPlayers),padding:"4px 10px"}}>
-          {showPlayers?"🏆 Teams":"👤 Players"}
-        </button>
-      </div>
+      <div className="classic-round-layout">
+        <section className="classic-match-center classic-panel">
+          <div className="classic-match-center-head">
+            <div>
+              <span className="classic-eyebrow">Match center</span>
+              <strong>{curRound.some(m=>m._tiebreak)?"Tiebreaker Round":currentRoundLabel}</strong>
+              <span>{curRound.length} match{curRound.length===1?"":"es"}{currentRoundSchedule?` · ${currentRoundSchedule.dateLabel}`:""}</span>
+            </div>
+            <button onClick={()=>setShowPlayers(p=>!p)} style={{...btn(showPlayers),padding:"5px 11px"}}>{showPlayers?"🏆 Teams":"👤 Players"}</button>
+          </div>
+          <BracketCanvas style={{padding:"14px 10px 2px"}}>
+            <div className="classic-round-match-grid">{curRound.map(m=><MatchCard key={m.id} match={m} matchNumber={matchNumbers.get(m.id)} statCols={statCols} onGameUpdate={(gi,upd)=>onGameUpdate(m.id,gi,upd)} onMatchUpdate={upd=>onMatchUpdate(m.id,upd)}/>)}</div>
+          </BracketCanvas>
+        </section>
 
-      <BracketCanvas style={{padding:"16px 14px 2px"}}>
-        <div style={{marginBottom:20}}>
-          <div style={{fontSize:11,fontWeight:700,color:"var(--color-text-tertiary)",letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:8,fontFamily:"'Barlow Condensed',sans-serif"}}>{curRound.some(m=>m._tiebreak)?"Tiebreaker Round":currentRoundLabel}{currentRoundSchedule&&<span style={{color:"#c0a15c"}}> · {currentRoundSchedule.dateLabel}</span>}</div>
-          <div style={{display:"flex",gap:28,flexWrap:"wrap",paddingLeft:10}}>{curRound.map(m=><MatchCard key={m.id} match={m} matchNumber={matchNumbers.get(m.id)} statCols={statCols} onGameUpdate={(gi,upd)=>onGameUpdate(m.id,gi,upd)} onMatchUpdate={upd=>onMatchUpdate(m.id,upd)}/>)}</div>
-        </div>
-      </BracketCanvas>
-
-      <div style={{marginTop:24}}>
-        {!showPlayers
-          ?<TeamStandingsTable teams={teams} matches={matchesUpToRound} title={`Team Standings — through ${currentRoundLabel}`} showScore={matchMode==="score"} standingsRules={standingsRules} compactRecords/>
-          :<PlayerStandingsTable teams={teams} matches={matchesUpToRound} statCols={statCols} title={`Player Standings — through ${currentRoundLabel}`} sortBy={playerSort} onSortBy={setPlayerSort}/>}
+        <aside className="classic-live-standings">
+          {!showPlayers
+            ?<TeamStandingsTable teams={teams} matches={matchesUpToRound} title={`Live Standings — through ${currentRoundLabel}`} showScore={matchMode==="score"} standingsRules={standingsRules} compactRecords/>
+            :<PlayerStandingsTable teams={teams} matches={matchesUpToRound} statCols={statCols} title={`Player Standings — through ${currentRoundLabel}`} sortBy={playerSort} onSortBy={setPlayerSort}/>}
+        </aside>
       </div>
     </div>
   );
@@ -4456,7 +4454,7 @@ export default function App(){
   const[savedFolders,setSavedFolders]=useState(initialFoldersRef.current);
   const[currentUser,setCurrentUser]=useState(initialUserRef.current);
   const[authMode,setAuthMode]=useState("login");
-  const[authOpen,setAuthOpen]=useState(!initialUserRef.current);
+  const[authOpen,setAuthOpen]=useState(false);
   const[authName,setAuthName]=useState("");
   const[authEmail,setAuthEmail]=useState("");
   const[authPassword,setAuthPassword]=useState("");
@@ -5707,58 +5705,110 @@ export default function App(){
 
       {/* ── STEP 1: Setup ────────────────────────────────────────────── */}
       {step==="setup"&&(
-        <div id="shell-home" className="tourney-section-anchor">
-          <div id="shell-files" className="tourney-section-anchor" style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:10}}>Tournament Files & Folders</div>
-          <div className="classic-panel" style={{padding:"12px 14px",border:"1px solid var(--color-border-tertiary)",borderRadius:10,background:"var(--color-background-secondary)",marginBottom:22}}>
-            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-              <select value={currentFolderId||""} onChange={e=>setCurrentFolderId(e.target.value||null)} style={{minWidth:180,padding:"7px 9px",borderRadius:7,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700}}>
-                <option value="">Standalone tournaments</option>
-                {savedFolders.map(folder=><option key={folder.id} value={folder.id}>{folder.name} ({(folder.projectIds||[]).length})</option>)}
-              </select>
-              <input value={folderNameInput} onChange={e=>setFolderNameInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&createFolder()} placeholder="New folder name…" style={{minWidth:150,padding:"7px 9px",borderRadius:7,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif"}}/>
-              <button onClick={createFolder} disabled={!folderNameInput.trim()} style={{...btn(false),padding:"7px 11px",opacity:folderNameInput.trim()?1:0.45}}>+ Folder</button>
-              {currentFolder&&<button onClick={()=>exportFolder(currentFolder)} style={{...btn(false),padding:"7px 11px",borderColor:"rgba(79,119,115,0.45)",color:"#4f7773"}}>Download folder ZIP</button>}
-              <button onClick={()=>tournamentImportRef.current?.click()} style={{...btn(false),padding:"7px 11px"}}>Upload tournament</button>
-              <button onClick={()=>folderImportRef.current?.click()} style={{...btn(false),padding:"7px 11px"}}>Upload folder ZIP</button>
-              <input ref={tournamentImportRef} type="file" accept=".json,.tourney.json,application/json" onChange={e=>importTournamentFile(e.target.files?.[0])} style={{display:"none"}}/>
-              <input ref={folderImportRef} type="file" accept=".zip,.tourney-folder.zip,application/zip" onChange={e=>importFolderFile(e.target.files?.[0])} style={{display:"none"}}/>
+        <div id="shell-home" className="tourney-section-anchor classic-dashboard">
+          <section className="classic-home-hero">
+            <div className="classic-hero-copy">
+              <span className="classic-eyebrow">Tournament command center</span>
+              <h2>Build the bracket.<br/>Own the arena.</h2>
+              <p>Create, manage, and share tournaments with flexible formats, clear standings, and every match tool in one focused workspace.</p>
+              <div className="classic-hero-actions">
+                <button className="classic-primary-button" onClick={()=>focusShellSection("format")}>Create tournament <span aria-hidden="true">→</span></button>
+                <button className="classic-secondary-button" onClick={()=>focusShellSection("tournaments")}>View tournaments</button>
+              </div>
             </div>
-            <div style={{fontSize:11,color:"var(--color-text-tertiary)",marginTop:7,fontFamily:"'Barlow',sans-serif"}}>{currentFolder?`New and imported tournaments will be stored in “${currentFolder.name}”.`:`Standalone mode. Select or create a folder to link qualifiers.`}</div>
-          </div>
-          <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:12}}>Format</div>
-          <div className="classic-choice-grid" style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:20}}>
-            {[["single","Single Elimination","Seeded, one loss out"],["double","Double Elimination","Two chances, seeded"],["roundrobin","Round Robin","Everyone plays everyone"],["multi","Multi-Stage","Chain multiple formats"]].map(([id,label,sub])=>(
-              <div className={`classic-choice-card ${formatType===id?"is-selected":""}`} key={id} onClick={()=>setFormatType(id)} style={{border:formatType===id?"2px solid #b99a55":"1.5px solid var(--color-border-tertiary)",borderRadius:10,padding:"14px 20px",cursor:"pointer",minWidth:150,background:formatType===id?"rgba(185,154,85,0.07)":"var(--color-background-primary)",transition:"border-color 0.15s"}}>
-                <div style={{fontSize:14,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em",color:"var(--color-text-primary)"}}>{label}</div>
-                <div style={{fontSize:11,color:"var(--color-text-tertiary)",marginTop:3}}>{sub}</div>
-              </div>
-            ))}
-          </div>
+            <div className="classic-hero-visual" aria-hidden="true">
+              <span className="classic-bracket-line line-a"/><span className="classic-bracket-line line-b"/><span className="classic-bracket-line line-c"/>
+              <div className="classic-hero-logo"><img src="/tourney-logo.png" alt=""/></div>
+            </div>
+          </section>
 
-          <div id="shell-tournaments" className="tourney-section-anchor" style={{marginBottom:22}}>
-              <div style={{display:"flex",alignItems:"center",gap:9,justifyContent:"space-between",flexWrap:"wrap",marginBottom:10}}>
-                <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)"}}>Previous Projects</div>
-                <button onClick={()=>setHomeEloOpen(open=>!open)} style={{...btn(homeEloOpen),padding:"6px 11px",fontSize:11,border:"1px solid rgba(185,154,85,0.48)",color:homeEloOpen?"#17130b":"#c0a15c"}}>{homeEloOpen?"Close Elo Standings":"Open Elo Standings"}</button>
+          <section id="shell-format" className="tourney-section-anchor classic-home-section">
+            <div className="classic-section-heading">
+              <div><span className="classic-eyebrow">Choose a format</span><h3>Start a new tournament</h3></div>
+              <p>Select a structure. You can configure participants and match rules next.</p>
+            </div>
+            <div className="classic-format-grid">
+              {[
+                ["single","Single Elimination","Seeded, one loss out","⌜","3–64 teams"],
+                ["double","Double Elimination","Two chances, seeded","⇆","3–64 teams"],
+                ["roundrobin","Round Robin","Everyone plays everyone","◌","3–64 teams"],
+                ["multi","Multi-Stage","Chain multiple formats","♜","3–64 teams"]
+              ].map(([id,label,sub,icon,hint])=>(
+                <button type="button" className={`classic-format-card ${formatType===id?"is-selected":""}`} key={id} onClick={()=>setFormatType(id)} aria-pressed={formatType===id}>
+                  <span className="classic-format-icon" aria-hidden="true">{icon}</span>
+                  <span className="classic-format-title">{label}</span>
+                  <span className="classic-format-copy">{sub}</span>
+                  <span className="classic-format-meta">{hint}</span>
+                  {formatType===id&&<span className="classic-selected-check" aria-hidden="true">✓</span>}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <div className="classic-dashboard-grid">
+            <section id="shell-tournaments" className="tourney-section-anchor classic-home-section classic-panel classic-tournaments-panel">
+              <div className="classic-section-heading compact">
+                <div><span className="classic-eyebrow">Your tournaments</span><h3>Continue where you left off</h3></div>
+                <button className="classic-link-button" onClick={()=>setHomeEloOpen(open=>!open)}>{homeEloOpen?"Close Elo standings":"Open Elo standings"} <span aria-hidden="true">→</span></button>
               </div>
-              {homeEloOpen&&<div id="shell-elo" className="tourney-section-anchor classic-panel" style={{marginBottom:12}}><EloStandingsPanel loadStandings={loadEloStandings} refreshToken={eloRefreshKey} createAutoSync={createEloSheetAutoSync} autoSyncAvailable={!!(supabaseConfigured&&currentUser?.supabase)}/></div>}
-              {visibleProjects.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
-                {visibleProjects.map(project=>(
-                  <div className="classic-project-card" key={project.id} onClick={()=>loadProject(project)} style={{position:"relative",textAlign:"left",padding:"12px 38px 34px 14px",minHeight:116,borderRadius:8,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",boxSizing:"border-box"}}>
-                    <button onClick={e=>{e.stopPropagation();deleteProject(project);}} title="Delete project" style={{position:"absolute",top:8,right:8,width:22,height:22,borderRadius:5,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",color:"var(--color-text-tertiary)",cursor:"pointer",fontSize:14,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-                    <button onClick={e=>{e.stopPropagation();exportProject(project);}} title="Download tournament file" style={{position:"absolute",top:36,right:8,width:22,height:22,borderRadius:5,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",color:"var(--color-text-tertiary)",cursor:"pointer",fontSize:12,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>↓</button>
-                    <button onClick={e=>{e.stopPropagation();shareProject(project);}} title="Copy share link" style={{position:"absolute",top:64,right:8,width:22,height:22,borderRadius:5,border:"0.5px solid rgba(185,154,85,0.55)",background:"var(--color-background-secondary)",color:"#c0a15c",cursor:"pointer",fontSize:12,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>↗</button>
-                    <button onClick={e=>{e.stopPropagation();renameSavedProject(project);}} title="Rename tournament" style={{position:"absolute",top:92,right:8,width:22,height:22,borderRadius:5,border:"0.5px solid rgba(97,123,137,0.55)",background:"var(--color-background-secondary)",color:"#617b89",cursor:"pointer",fontSize:12,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>✎</button>
-                    <div style={{fontSize:14,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",color:"var(--color-text-primary)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{project.name}</div>
-                    <div style={{fontSize:11,color:"var(--color-text-tertiary)",marginTop:3,textTransform:"uppercase",letterSpacing:"0.04em"}}>
-                      {project.formatType==="single"?"Single Elim":project.formatType==="double"?"Double Elim":project.formatType==="roundrobin"?"Round Robin":"Multi-Stage"} · {project.teamCount} teams
+              {homeEloOpen&&<div id="shell-elo" className="tourney-section-anchor classic-elo-home"><EloStandingsPanel loadStandings={loadEloStandings} refreshToken={eloRefreshKey} createAutoSync={createEloSheetAutoSync} autoSyncAvailable={!!(supabaseConfigured&&currentUser?.supabase)}/></div>}
+              {!homeEloOpen&&visibleProjects.length>0&&<div className="classic-project-grid">
+                {visibleProjects.map(project=>{
+                  const inProgress=hasTournamentProgress(project.state);
+                  const formatLabel=project.formatType==="single"?"Single Elim":project.formatType==="double"?"Double Elim":project.formatType==="roundrobin"?"Round Robin":"Multi-Stage";
+                  return <article className="classic-project-card" key={project.id} onClick={()=>loadProject(project)} onKeyDown={event=>{if(event.key==="Enter")loadProject(project);}} role="button" tabIndex={0}>
+                    <div className="classic-project-card-head">
+                      <span className="classic-project-emblem" aria-hidden="true">◉</span>
+                      <div><h4>{project.name}</h4><p>{formatLabel} · {project.teamCount} teams</p></div>
+                      <span className={`classic-status-badge ${inProgress?"is-active":""}`}>{inProgress?"Active":"Ready"}</span>
                     </div>
-                    <div style={{fontSize:11,color:"#4f7773",marginTop:6,fontWeight:700}}>Open bracket →</div>
-                  </div>
-                ))}
+                    <div className="classic-project-progress"><span style={{width:inProgress?"60%":"12%"}}/></div>
+                    <div className="classic-project-card-foot">
+                      <span>{inProgress?"Tournament in progress":"Ready to begin"}</span>
+                      <strong>Open bracket →</strong>
+                    </div>
+                    <div className="classic-project-actions">
+                      <button onClick={event=>{event.stopPropagation();exportProject(project);}} title="Download tournament file">↓</button>
+                      <button onClick={event=>{event.stopPropagation();shareProject(project);}} title="Copy share link">↗</button>
+                      <button onClick={event=>{event.stopPropagation();renameSavedProject(project);}} title="Rename tournament">✎</button>
+                      <button className="is-danger" onClick={event=>{event.stopPropagation();deleteProject(project);}} title="Delete project">×</button>
+                    </div>
+                  </article>;
+                })}
               </div>}
-          </div>
+              {!homeEloOpen&&visibleProjects.length===0&&<div className="classic-empty-state"><span>♜</span><strong>No tournaments yet</strong><p>Choose a format above to create your first competition.</p></div>}
+            </section>
 
-          {formatType&&!isMulti&&(<>
+            <aside className="classic-dashboard-side">
+              <section id="shell-files" className="tourney-section-anchor classic-home-section classic-panel classic-files-panel">
+                <div className="classic-section-heading compact"><div><span className="classic-eyebrow">Files & folders</span><h3>Organize projects</h3></div></div>
+                <label className="classic-field-label">Current location</label>
+                <select value={currentFolderId||""} onChange={event=>setCurrentFolderId(event.target.value||null)}>
+                  <option value="">Standalone tournaments</option>
+                  {savedFolders.map(folder=><option key={folder.id} value={folder.id}>{folder.name} ({(folder.projectIds||[]).length})</option>)}
+                </select>
+                <div className="classic-folder-create">
+                  <input value={folderNameInput} onChange={event=>setFolderNameInput(event.target.value)} onKeyDown={event=>event.key==="Enter"&&createFolder()} placeholder="New folder name…"/>
+                  <button onClick={createFolder} disabled={!folderNameInput.trim()}>+</button>
+                </div>
+                <div className="classic-file-actions">
+                  <button onClick={()=>tournamentImportRef.current?.click()}><span aria-hidden="true">↥</span> Upload tournament</button>
+                  <button onClick={()=>folderImportRef.current?.click()}><span aria-hidden="true">▱</span> Upload folder ZIP</button>
+                  {currentFolder&&<button onClick={()=>exportFolder(currentFolder)}><span aria-hidden="true">↓</span> Download folder ZIP</button>}
+                </div>
+                <p className="classic-files-note">{currentFolder?`New tournaments will be stored in “${currentFolder.name}”.`:"Standalone mode. Create a folder to link qualifier events."}</p>
+              </section>
+              <section className="classic-activity-card">
+                <span className="classic-activity-icon" aria-hidden="true">✓</span>
+                <div><span className="classic-eyebrow">Activity</span><strong>All changes saved</strong><p>{saveStatusText}</p></div>
+              </section>
+            </aside>
+          </div>
+          <input ref={tournamentImportRef} type="file" accept=".json,.tourney.json,application/json" onChange={event=>importTournamentFile(event.target.files?.[0])} style={{display:"none"}}/>
+          <input ref={folderImportRef} type="file" accept=".zip,.tourney-folder.zip,application/zip" onChange={event=>importFolderFile(event.target.files?.[0])} style={{display:"none"}}/>
+
+          {formatType&&!isMulti&&(<section className="classic-config-panel classic-panel">
+            <div className="classic-section-heading compact"><div><span className="classic-eyebrow">Quick config</span><h3>Tournament settings</h3></div><span className="classic-config-summary">{teamCount} teams · {formatType==="roundrobin"?`${rrTotalRounds} rounds`:formatType==="double"?"Double bracket":"Knockout bracket"}</span></div>
             <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:12}}>Participants</div>
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,padding:"14px 18px",background:"var(--color-background-secondary)",borderRadius:10,border:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap"}}>
               <Stepper label="Teams" value={teamCount} min={3} max={64} onChange={setTeamCount}/>
@@ -5789,13 +5839,14 @@ export default function App(){
             {formatType==="roundrobin"&&<StandingsRulesEditor rules={rrStandingsRules} onChange={setRrStandingsRules}/>}
             {matchMode!=="wl"&&<div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16,padding:"12px 16px",background:"var(--color-background-secondary)",borderRadius:10,border:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap"}}><Stepper label="Games per match" value={gamesPerMatch} min={1} max={11} onChange={setGamesPerMatch}/><span style={{fontSize:12,color:"var(--color-text-tertiary)"}}>Best of {gamesPerMatch} · need {Math.ceil(gamesPerMatch/2)} to win</span></div>}
             <button onClick={()=>setStep("teams")} style={{padding:"10px 28px",borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,letterSpacing:"0.07em",textTransform:"uppercase",background:"#b99a55",color:"#17130b",border:"none",cursor:"pointer",marginTop:8}}>Continue →</button>
-          </>)}
+          </section>)}
 
           {formatType==="multi"&&(()=>{
             const totalAat=stages.slice(1).reduce((sum,stage)=>sum+(stage.aat||0),0);
             const requiredTeams=requiredMultiTeams(stages);
             const setupRanges=stageDateRanges(stages.map(stage=>stage.period));
-            return(<>
+            return(<section className="classic-config-panel classic-panel">
+            <div className="classic-section-heading compact"><div><span className="classic-eyebrow">Quick config</span><h3>Multi-stage settings</h3></div><span className="classic-config-summary">{stages.length} stages · {teamCount} teams</span></div>
             <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:8}}>Total Teams</div>
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18,padding:"12px 16px",background:"var(--color-background-secondary)",borderRadius:10,border:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap"}}>
               <Stepper label="Total teams" value={teamCount} min={3} max={64} onChange={v=>{
@@ -5845,13 +5896,13 @@ export default function App(){
               }} style={{padding:"8px 16px",borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:13,textTransform:"uppercase",letterSpacing:"0.05em",background:"var(--color-background-secondary)",color:"var(--color-text-secondary)",border:"1px dashed var(--color-border-tertiary)",cursor:"pointer"}}>+ Add Stage</button>}
             </div>
             <button onClick={()=>setStep("teams")} style={{padding:"10px 28px",borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,letterSpacing:"0.07em",textTransform:"uppercase",background:"#b99a55",color:"#17130b",border:"none",cursor:"pointer",marginTop:8}}>Continue →</button>
-          </>);})()}
+          </section>);})()}
         </div>
       )}
 
       {/* ── STEP 2: Teams ─────────────────────────────────────────────── */}
       {step==="teams"&&(
-        <div>
+        <div className="classic-builder-panel classic-panel">
           <div style={{fontSize:11,color:"var(--color-text-tertiary)",marginBottom:14,fontFamily:"'Barlow',sans-serif"}}>
             Teams are <strong>seeded by order</strong>. Drag to reorder. Click <strong>▼ Edit</strong> for region & roster.
             {isMulti&&(()=>{
@@ -5916,11 +5967,11 @@ export default function App(){
       {/* ── STEP 3: Bracket ───────────────────────────────────────────── */}
       {step==="bracket"&&(
         <div id="shell-bracket-workspace" className="tourney-section-anchor">
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
-            <input value={currentTournamentName} onChange={e=>setProjectName(e.target.value)} onBlur={()=>{if(!projectName.trim())setProjectName(projectNameFromState({formatType,teams:teamsWithSeed}));}} style={{flex:"1 1 260px",minWidth:0,fontFamily:"'Barlow Condensed',sans-serif",fontSize:22,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",padding:"8px 10px",borderRadius:8,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)"}}/>
-            <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+          <div className="classic-workspace-header">
+            <div className="classic-workspace-identity"><span className="classic-project-emblem" aria-hidden="true">◉</span><input className="classic-workspace-title" value={currentTournamentName} onChange={e=>setProjectName(e.target.value)} onBlur={()=>{if(!projectName.trim())setProjectName(projectNameFromState({formatType,teams:teamsWithSeed}));}}/></div>
+            <div className="classic-workspace-tabs">
               {[["tournament","Tournament"],["elo","Elo"],["settings","Setting"],["participants","Participant"],...(tournamentEnded?[["result","Result"]]:[])].map(([id,label])=>(
-                <button key={id} onClick={()=>setBracketTab(id)} style={{...btn(bracketTab===id),padding:"7px 13px",fontSize:12}}>{label}</button>
+                <button className={`classic-workspace-tab ${bracketTab===id?"is-active":""}`} key={id} onClick={()=>setBracketTab(id)}>{label}</button>
               ))}
             </div>
             {canEndTournament&&<button onClick={endTournament} style={{...btn(false),padding:"7px 13px",fontSize:12,borderColor:"rgba(79,119,115,0.45)",color:"#4f7773"}}>End Tournament</button>}
@@ -5928,7 +5979,7 @@ export default function App(){
           {bracketTab==="tournament"&&(
             <>
           {!isMulti&&(
-            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"10px 14px",background:"var(--color-background-secondary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap"}}>
+            <div className="classic-workspace-toolbar" style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"10px 14px",background:"var(--color-background-secondary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap"}}>
               <span style={{padding:"3px 10px",borderRadius:5,background:"rgba(185,154,85,0.12)",border:"1px solid rgba(185,154,85,0.3)",fontSize:12,fontWeight:700,color:"#c0a15c",fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase",letterSpacing:"0.05em"}}>{matchMode==="wl"?"Win/Lose":matchMode==="games"?"Game Wins":"Score"}{matchMode!=="wl"&&` · Bo${effectiveGames}`}</span>
               <span style={{fontSize:10,color:"var(--color-text-tertiary)",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.06em"}}>Stage end month</span>
               <StagePeriodInput value={stagePeriod} onChange={period=>{setStagePeriod(normalizeStagePeriod(period));setEloSyncState({loading:false,message:"Stage date changed. Sync Elo to update completed matches.",error:false});}} compact/>
@@ -5942,7 +5993,7 @@ export default function App(){
             </div>
           )}
           {isMulti&&(
-            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"10px 14px",background:"var(--color-background-secondary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap"}}>
+            <div className="classic-workspace-toolbar" style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"10px 14px",background:"var(--color-background-secondary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap"}}>
               <span style={{fontSize:11,color:"var(--color-text-tertiary)",fontWeight:700,fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:"0.05em",textTransform:"uppercase"}}>Multi-Stage · {teams.length} teams</span>
               <button onClick={()=>setShowAwards(p=>!p)} style={{...btn(showAwards),padding:"4px 10px",fontSize:11,borderColor:showAwards?"#b99a55":"rgba(185,154,85,0.3)",color:showAwards?"#b99a55":"rgba(185,154,85,0.7)"}}>⭐ MVP Awards</button>
               <button onClick={syncCompletedEloMatches} disabled={eloSyncState.loading} style={{...btn(false),padding:"4px 10px",fontSize:11,borderColor:"rgba(79,119,115,0.45)",color:"#4f7773",opacity:eloSyncState.loading?0.55:1,cursor:eloSyncState.loading?"not-allowed":"pointer"}}>{eloSyncState.loading?"Syncing Elo":"Sync Elo"}</button>
