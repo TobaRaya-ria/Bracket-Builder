@@ -60,6 +60,7 @@ create table if not exists public.kitakana_elo_matches (
   result_type text not null check (result_type in ('Hoshin-Tora', 'Hoshin-Kai', 'Hoshin-Renga', 'Renga')),
   tier text not null check (tier in ('Tier 1', 'Tier 2', 'Tier 3', 'Tier 4', 'Tier 5')),
   period_month date,
+  played_at timestamptz,
   score_a double precision,
   score_b double precision,
   score_text text,
@@ -95,11 +96,17 @@ create table if not exists public.kitakana_elo_matches (
 alter table public.kitakana_elo_matches
   add column if not exists period_month date;
 
+alter table public.kitakana_elo_matches
+  add column if not exists played_at timestamptz;
+
 create index if not exists kitakana_elo_matches_owner_order_idx
   on public.kitakana_elo_matches (owner_user_id, match_order desc);
 
 create index if not exists kitakana_elo_matches_owner_period_idx
   on public.kitakana_elo_matches (owner_user_id, period_month, match_order);
+
+create index if not exists kitakana_elo_matches_owner_played_at_idx
+  on public.kitakana_elo_matches (owner_user_id, played_at, match_order);
 
 create table if not exists public.kitakana_elo_sheet_sync_tokens (
   owner_user_id uuid primary key references auth.users(id) on delete cascade,
@@ -165,6 +172,42 @@ as $$
     )
   order by case when lower(btrim(team.name)) = lower(btrim(coalesce(p_name, ''))) then 0 else 1 end
   limit 1;
+$$;
+
+create or replace function public.kitakana_resequence_match_orders_internal(p_owner uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_imported_max bigint;
+begin
+  select coalesce(max(match_order), 0)
+  into v_imported_max
+  from public.kitakana_elo_matches
+  where owner_user_id = p_owner and is_imported;
+
+  -- Move submitted matches out of the positive sequence first, avoiding unique
+  -- conflicts while dates are used to rebuild their authoritative chronology.
+  update public.kitakana_elo_matches
+  set match_order = -abs(match_order)
+  where owner_user_id = p_owner and not is_imported;
+
+  with ordered as (
+    select match_code,
+      row_number() over (
+        order by played_at asc nulls last, period_month asc nulls last, match_code asc
+      )::bigint as sequence_number
+    from public.kitakana_elo_matches
+    where owner_user_id = p_owner and not is_imported
+  )
+  update public.kitakana_elo_matches match
+  set match_order = v_imported_max + ordered.sequence_number
+  from ordered
+  where match.owner_user_id = p_owner
+    and match.match_code = ordered.match_code;
+end;
 $$;
 
 create or replace function public.kitakana_recalculate_internal(p_owner uuid)
@@ -543,6 +586,7 @@ begin
       'eloChange', case when match.team_a = p_team then match.team_a_delta else match.team_b_delta end,
       'event', match.event,
       'score', match.score_text,
+      'playedAt', match.played_at,
       'updatedAt', match.updated_at
     ) as item
     from public.kitakana_elo_matches match
@@ -605,6 +649,7 @@ begin
     'match', case when v_match_found then jsonb_build_object(
       'matchCode', v_match.match_code,
       'matchOrder', v_match.match_order,
+      'playedAt', v_match.played_at,
       'teamA', jsonb_build_object(
         'postElo', v_match.team_a_post_elo,
         'eloChange', v_match.team_a_delta
@@ -869,6 +914,7 @@ begin
     'matchOrder', match.match_order,
     'sourceMatchId', match.source_match_id,
     'periodMonth', case when match.period_month is null then null else to_char(match.period_month, 'YYYY-MM') end,
+    'playedAt', match.played_at,
     'event', match.event,
     'tier', match.tier,
     'resultType', match.result_type,
@@ -928,6 +974,7 @@ declare
   v_result_type text;
   v_tier text;
   v_period_month date;
+  v_played_at timestamptz;
   v_order bigint;
   v_count integer := 0;
   v_results jsonb := '[]'::jsonb;
@@ -976,6 +1023,15 @@ begin
       raise exception 'Stage month and year are required';
     end if;
     v_period_month := ((item->>'stagePeriod') || '-01')::date;
+    begin
+      v_played_at := case
+        when btrim(coalesce(item->>'playedAt', '')) = ''
+          then ((v_period_month::text || ' 13:00:00+07')::timestamptz)
+        else (item->>'playedAt')::timestamptz
+      end;
+    exception when others then
+      raise exception 'Invalid match date/time for %', v_code;
+    end;
     if v_winner not in ('Team A', 'Team B', 'Tie') then raise exception 'Invalid winner'; end if;
     if v_result_type not in ('Hoshin-Tora', 'Hoshin-Kai', 'Hoshin-Renga', 'Renga') then raise exception 'Invalid result type'; end if;
     if v_tier not in ('Tier 1', 'Tier 2', 'Tier 3', 'Tier 4', 'Tier 5') then raise exception 'Invalid tier'; end if;
@@ -993,7 +1049,7 @@ begin
     insert into public.kitakana_elo_matches (
       owner_user_id, match_code, match_order, source_match_id, is_imported,
       team_a, team_b, website_team_a, website_team_b,
-      winner, result_type, tier, period_month, score_a, score_b, score_text,
+      winner, result_type, tier, period_month, played_at, score_a, score_b, score_text,
       event, notes, validation, submitted_by, updated_at
     ) values (
       v_owner,
@@ -1009,6 +1065,7 @@ begin
       v_result_type,
       v_tier,
       v_period_month,
+      v_played_at,
       nullif(item->>'scoreA', '')::double precision,
       nullif(item->>'scoreB', '')::double precision,
       coalesce(item->>'score', ''),
@@ -1032,6 +1089,7 @@ begin
       result_type = excluded.result_type,
       tier = excluded.tier,
       period_month = excluded.period_month,
+      played_at = excluded.played_at,
       score_a = excluded.score_a,
       score_b = excluded.score_b,
       score_text = excluded.score_text,
@@ -1042,19 +1100,29 @@ begin
       updated_at = excluded.updated_at;
 
     v_count := v_count + 1;
-    v_results := v_results || jsonb_build_array(jsonb_build_object(
-      'matchCode', v_code,
-      'matchOrder', v_order,
-      'updatedAt', v_updated_at
-    ));
   end loop;
 
+  perform public.kitakana_resequence_match_orders_internal(v_owner);
   perform public.kitakana_recalculate_internal(v_owner);
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'matchCode', match.match_code,
+    'matchOrder', match.match_order,
+    'playedAt', match.played_at,
+    'updatedAt', match.updated_at
+  ) order by submitted.ordinality), '[]'::jsonb)
+  into v_results
+  from jsonb_array_elements(p_matches) with ordinality as submitted(item, ordinality)
+  join public.kitakana_elo_matches match
+    on match.owner_user_id = v_owner
+   and match.match_code = btrim(coalesce(submitted.item->>'matchCode', ''));
+
   return jsonb_build_object('ok', true, 'submitted', v_count, 'results', v_results, 'errors', '[]'::jsonb);
 end;
 $$;
 
 revoke all on function public.kitakana_resolve_team_internal(uuid, text, text) from public, anon, authenticated;
+revoke all on function public.kitakana_resequence_match_orders_internal(uuid) from public, anon, authenticated;
 revoke all on function public.kitakana_recalculate_internal(uuid) from public, anon, authenticated;
 revoke all on function public.kitakana_side_context_internal(uuid, text, bigint) from public, anon, authenticated;
 
