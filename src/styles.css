@@ -1,0 +1,571 @@
+:root {
+  color-scheme: dark;
+  --color-background-primary: #0d141b;
+  --color-background-secondary: #151d25;
+  --color-border-secondary: rgba(185, 154, 85, 0.38);
+  --color-border-tertiary: rgba(185, 154, 85, 0.24);
+  --color-text-primary: #efe9dc;
+  --color-text-secondary: #c7c0b2;
+  --color-text-tertiary: #90989d;
+  --classic-canvas: #090f14;
+  --classic-panel: #0d151c;
+  --classic-panel-raised: #151d25;
+  --classic-gold: #b99a55;
+  --classic-gold-bright: #d0ad63;
+  --classic-teal: #4f7773;
+  --classic-sage: #879a67;
+  --classic-oxblood: #74404a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: var(--classic-canvas);
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 82% 8%, rgba(79, 119, 115, 0.09), transparent 30rem),
+    radial-gradient(circle at 18% 92%, rgba(185, 154, 85, 0.07), transparent 34rem),
+    linear-gradient(135deg, #080d12 0%, #0b1218 50%, #090f14 100%);
+  color: var(--color-text-primary);
+  font-family: "Barlow", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+body::before {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  content: "";
+  opacity: 0.2;
+  background-image:
+    linear-gradient(rgba(185, 154, 85, 0.026) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(185, 154, 85, 0.026) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(to bottom, black, transparent 82%);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+[role="button"] {
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, transform 160ms ease, filter 160ms ease;
+}
+
+button:hover:not(:disabled),
+[role="button"]:hover {
+  filter: brightness(1.08);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--classic-gold-bright);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(185, 154, 85, 0.34);
+  color: var(--color-text-primary);
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a1117;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid #0a1117;
+  border-radius: 999px;
+  background: #4d5352;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--classic-gold);
+}
+
+.tourney-app-shell {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  min-height: 100vh;
+  background: linear-gradient(135deg, rgba(8, 14, 19, 0.94), rgba(11, 18, 24, 0.96));
+}
+
+.tourney-sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+  min-height: 100vh;
+  padding: 24px 12px 18px;
+  border-right: 1px solid rgba(185, 154, 85, 0.28);
+  background:
+    linear-gradient(180deg, rgba(13, 21, 28, 0.98), rgba(8, 14, 19, 0.98)),
+    var(--classic-panel);
+  box-shadow: 18px 0 48px rgba(0, 0, 0, 0.18);
+}
+
+.tourney-sidebar::after {
+  position: absolute;
+  inset: 8px 8px auto auto;
+  width: 30px;
+  height: 30px;
+  pointer-events: none;
+  content: "";
+  border-top: 1px solid rgba(185, 154, 85, 0.38);
+  border-right: 1px solid rgba(185, 154, 85, 0.38);
+}
+
+.tourney-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 88px;
+  padding: 10px 11px 18px;
+  border: 0;
+  border-bottom: 1px solid rgba(185, 154, 85, 0.22);
+  background: transparent;
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tourney-brand:hover {
+  filter: none;
+}
+
+.tourney-brand img {
+  width: 56px;
+  height: 48px;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
+.tourney-brand-copy {
+  display: grid;
+  gap: 1px;
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 0.92;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.tourney-brand-copy strong {
+  color: var(--classic-gold-bright);
+  font-weight: 800;
+}
+
+.tourney-nav {
+  display: grid;
+  gap: 5px;
+  margin-top: 18px;
+}
+
+.tourney-nav-button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 13px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tourney-nav-button:hover {
+  border-color: rgba(185, 154, 85, 0.18);
+  background: rgba(185, 154, 85, 0.06);
+  color: var(--color-text-primary);
+}
+
+.tourney-nav-button.is-active {
+  border-color: rgba(185, 154, 85, 0.25);
+  background: linear-gradient(90deg, rgba(185, 154, 85, 0.15), rgba(185, 154, 85, 0.035));
+  color: #f4ead5;
+}
+
+.tourney-nav-button.is-active::before {
+  position: absolute;
+  inset: 7px auto 7px -13px;
+  width: 3px;
+  content: "";
+  border-radius: 0 3px 3px 0;
+  background: var(--classic-gold-bright);
+  box-shadow: 0 0 12px rgba(185, 154, 85, 0.26);
+}
+
+.tourney-nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 23px;
+  height: 23px;
+  flex: 0 0 23px;
+  color: var(--classic-gold);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.tourney-sidebar-status {
+  margin-top: auto;
+  padding: 13px 14px;
+  border: 1px solid rgba(185, 154, 85, 0.24);
+  border-radius: 8px;
+  background: rgba(21, 29, 37, 0.72);
+}
+
+.tourney-sidebar-status strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--color-text-secondary);
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tourney-sidebar-status strong::before {
+  width: 7px;
+  height: 7px;
+  content: "";
+  border-radius: 50%;
+  background: var(--classic-sage);
+  box-shadow: 0 0 9px rgba(135, 154, 103, 0.32);
+}
+
+.tourney-sidebar-status span {
+  display: block;
+  margin-top: 5px;
+  color: var(--color-text-tertiary);
+  font-family: "Barlow", sans-serif;
+  font-size: 11px;
+}
+
+.tourney-main {
+  min-width: 0;
+}
+
+.tourney-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 78px;
+  padding: 13px clamp(18px, 3vw, 42px);
+  border-bottom: 1px solid rgba(185, 154, 85, 0.2);
+  background: rgba(9, 15, 20, 0.9);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(18px);
+}
+
+.tourney-page-heading {
+  min-width: 0;
+}
+
+.tourney-page-heading h1 {
+  overflow: hidden;
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: clamp(22px, 2.1vw, 30px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.025em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.tourney-page-heading p {
+  margin: 6px 0 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.tourney-topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tourney-content {
+  width: min(100%, 1580px);
+  min-height: calc(100vh - 78px);
+  margin: 0 auto;
+  padding: 28px clamp(18px, 3vw, 42px) 48px;
+}
+
+.tourney-content > div {
+  animation: tourney-panel-enter 220ms ease-out both;
+}
+
+.tourney-section-anchor {
+  scroll-margin-top: 104px;
+}
+
+.classic-panel {
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.018), 0 18px 44px rgba(0, 0, 0, 0.1);
+}
+
+.classic-panel::after {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 26px;
+  height: 26px;
+  pointer-events: none;
+  content: "";
+  border-top: 1px solid rgba(185, 154, 85, 0.45);
+  border-right: 1px solid rgba(185, 154, 85, 0.45);
+}
+
+.classic-choice-grid {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+}
+
+.classic-choice-card {
+  position: relative;
+  min-height: 104px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.018);
+}
+
+.classic-choice-card::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 28px;
+  height: 28px;
+  content: "";
+  border-top: 1px solid rgba(185, 154, 85, 0.34);
+  border-right: 1px solid rgba(185, 154, 85, 0.34);
+}
+
+.classic-choice-card:hover,
+.classic-project-card:hover {
+  border-color: rgba(185, 154, 85, 0.58) !important;
+  background: linear-gradient(135deg, rgba(185, 154, 85, 0.075), rgba(79, 119, 115, 0.03)) !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
+  transform: translateY(-2px);
+}
+
+.classic-choice-card.is-selected {
+  background: linear-gradient(135deg, rgba(185, 154, 85, 0.13), rgba(185, 154, 85, 0.025)) !important;
+  box-shadow: inset 0 0 0 1px rgba(185, 154, 85, 0.3), 0 12px 30px rgba(0, 0, 0, 0.16);
+}
+
+.classic-project-card {
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.tourney-content input,
+.tourney-content select,
+.tourney-content textarea {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.016);
+}
+
+.tourney-content input::placeholder,
+.tourney-content textarea::placeholder {
+  color: #717a80;
+}
+
+.tourney-content table {
+  border-collapse: collapse;
+}
+
+.tourney-content tr {
+  transition: background-color 140ms ease;
+}
+
+.tourney-content tbody tr:hover {
+  background: rgba(185, 154, 85, 0.04) !important;
+}
+
+.match-card:hover {
+  border-color: rgba(185, 154, 85, 0.56) !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25) !important;
+  transform: translateY(-1px);
+}
+
+@keyframes tourney-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 1080px) {
+  .tourney-app-shell {
+    grid-template-columns: 82px minmax(0, 1fr);
+  }
+
+  .tourney-sidebar {
+    padding-inline: 9px;
+  }
+
+  .tourney-brand {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .tourney-brand img {
+    width: 55px;
+  }
+
+  .tourney-brand-copy,
+  .tourney-nav-label,
+  .tourney-sidebar-status {
+    display: none;
+  }
+
+  .tourney-nav-button {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .tourney-nav-button.is-active::before {
+    left: -10px;
+  }
+
+  .classic-choice-grid {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .tourney-app-shell {
+    display: block;
+  }
+
+  .tourney-sidebar {
+    position: sticky;
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    min-height: 0;
+    padding: 7px 10px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(185, 154, 85, 0.25);
+  }
+
+  .tourney-sidebar::after,
+  .tourney-brand-copy,
+  .tourney-sidebar-status {
+    display: none;
+  }
+
+  .tourney-brand {
+    min-height: 48px;
+    padding: 0;
+    border: 0;
+  }
+
+  .tourney-brand img {
+    width: 48px;
+    height: 40px;
+  }
+
+  .tourney-nav {
+    display: flex;
+    min-width: 0;
+    margin: 0;
+    overflow-x: auto;
+  }
+
+  .tourney-nav-button {
+    width: 48px;
+    min-width: 48px;
+    min-height: 48px;
+  }
+
+  .tourney-nav-button.is-active::before {
+    inset: auto 8px -7px;
+    width: auto;
+    height: 3px;
+  }
+
+  .tourney-topbar {
+    position: relative;
+    align-items: flex-start;
+    min-height: auto;
+    padding: 16px;
+  }
+
+  .tourney-page-heading h1 {
+    max-width: 52vw;
+    font-size: 22px;
+  }
+
+  .tourney-page-heading p {
+    display: none;
+  }
+
+  .tourney-topbar-actions {
+    max-width: 48vw;
+  }
+
+  .tourney-content {
+    min-height: auto;
+    padding: 18px 14px 36px;
+  }
+
+  .classic-choice-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
