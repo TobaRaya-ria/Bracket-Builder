@@ -2113,6 +2113,80 @@ function EloStandingsPanel({loadStandings,refreshToken,createAutoSync,autoSyncAv
   );
 }
 
+function EloBonusPage({loadStandings,submitBonus,refreshToken,available=false}){
+  const[data,setData]=useState({loading:available,error:"",standings:[],bonuses:[]});
+  const[teamName,setTeamName]=useState("");
+  const[category,setCategory]=useState("Tournament bonus");
+  const[points,setPoints]=useState("");
+  const[event,setEvent]=useState("");
+  const[submitState,setSubmitState]=useState({loading:false,message:"",error:false});
+
+  useEffect(()=>{
+    if(!available){
+      setData({loading:false,error:"Log in with Supabase to add country bonuses.",standings:[],bonuses:[]});
+      return;
+    }
+    let cancelled=false;
+    setData(current=>({...current,loading:true,error:""}));
+    loadStandings({startPeriod:"all",endPeriod:"all"})
+      .then(result=>{
+        if(cancelled)return;
+        const standings=Array.isArray(result?.standings)?result.standings:[];
+        setData({loading:false,error:"",standings,bonuses:Array.isArray(result?.exportBonuses)?result.exportBonuses:[]});
+        setTeamName(current=>current||standings[0]?.name||"");
+      })
+      .catch(error=>{
+        if(!cancelled)setData({loading:false,error:friendlyEloError(error)||"Could not load countries.",standings:[],bonuses:[]});
+      });
+    return()=>{cancelled=true;};
+  },[available,refreshToken]);
+
+  const selected=data.standings.find(team=>team.name===teamName);
+  const pointValue=Number(points);
+  const valid=!!selected&&Number.isFinite(pointValue)&&pointValue!==0&&event.trim();
+  const handleSubmit=async submitEvent=>{
+    submitEvent.preventDefault();
+    if(!valid||submitState.loading)return;
+    setSubmitState({loading:true,message:"Applying bonus and recalculating Elo…",error:false});
+    try{
+      const result=await submitBonus({teamName:selected.name,category:category.trim()||"Tournament bonus",points:pointValue,event:event.trim()});
+      if(!result?.ok)throw new Error(result?.error||"Bonus could not be applied.");
+      setPoints("");
+      setEvent("");
+      setSubmitState({loading:false,message:`${pointValue>0?"+":""}${formatEloNumber(pointValue)} applied to ${selected.name}.`,error:false});
+    }catch(error){
+      setSubmitState({loading:false,message:friendlyEloError(error)||error?.message||"Bonus could not be applied.",error:true});
+    }
+  };
+
+  return <div className="classic-page-stack">
+    <section className="classic-page-intro classic-panel">
+      <div><span className="classic-eyebrow">Country adjustments</span><h2>Elo Bonuses</h2><p>Add a positive reward or negative adjustment to any country in the Kitakana Elo tracker. The new value is applied before the next submitted match.</p></div>
+      <span className="classic-page-icon" aria-hidden="true">＋</span>
+    </section>
+    <div className="classic-bonus-layout">
+      <form className="classic-panel classic-bonus-form" onSubmit={handleSubmit}>
+        <div className="classic-section-heading compact"><div><span className="classic-eyebrow">New bonus</span><h3>Adjust a country</h3></div></div>
+        <label className="classic-form-field"><span>Country</span><select value={teamName} onChange={e=>setTeamName(e.target.value)} disabled={data.loading||!!data.error}><option value="">Choose a country…</option>{data.standings.map(team=><option key={team.name} value={team.name}>{regionFlag(team.name)} {team.name} · {team.code||team.continent||"Elo team"}</option>)}</select></label>
+        {selected&&<div className="classic-selected-country"><span>{regionFlag(selected.name)}</span><div><strong>{selected.name}</strong><small>Rank #{selected.rank||"—"} · Current Elo {formatEloNumber(selected.currentElo)}</small></div></div>}
+        <div className="classic-bonus-fields">
+          <label className="classic-form-field"><span>Category</span><input value={category} onChange={e=>setCategory(e.target.value)} placeholder="Tournament bonus"/></label>
+          <label className="classic-form-field"><span>Points</span><input type="number" step="0.1" value={points} onChange={e=>setPoints(e.target.value)} placeholder="e.g. 12.5 or -5"/></label>
+        </div>
+        <label className="classic-form-field"><span>Reason / event</span><textarea rows="4" value={event} onChange={e=>setEvent(e.target.value)} placeholder="Explain why this country receives the adjustment…"/></label>
+        <button className="classic-primary-button" type="submit" disabled={!valid||submitState.loading}>{submitState.loading?"Applying bonus…":"Apply Elo bonus"}<span aria-hidden="true">→</span></button>
+        {(data.error||submitState.message)&&<p className={`classic-form-message ${(data.error||submitState.error)?"is-error":""}`}>{data.error||submitState.message}</p>}
+      </form>
+      <section className="classic-panel classic-bonus-history">
+        <div className="classic-section-heading compact"><div><span className="classic-eyebrow">Recent activity</span><h3>Latest bonuses</h3></div><span className="classic-config-summary">{data.bonuses.length} total</span></div>
+        {data.loading&&<div className="classic-empty-state"><strong>Loading countries…</strong></div>}
+        {!data.loading&&!data.bonuses.length&&<div className="classic-empty-state"><span>＋</span><strong>No bonuses found</strong><p>New country adjustments will appear here.</p></div>}
+        {!data.loading&&data.bonuses.length>0&&<div className="classic-bonus-list">{data.bonuses.slice(0,12).map((bonus,index)=><article key={`${bonus.bonus_id||bonus.bonusId}-${index}`}><span className="classic-bonus-flag">{regionFlag(bonus.team_name||bonus.teamName)}</span><div><strong>{bonus.team_name||bonus.teamName}</strong><p>{bonus.category||"Elo bonus"} · {bonus.event||"No explanation"}</p></div><b className={Number(bonus.points)>=0?"is-positive":"is-negative"}>{Number(bonus.points)>=0?"+":""}{formatEloNumber(bonus.points)}</b></article>)}</div>}
+      </section>
+    </div>
+  </div>;
+}
+
 function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
   const[selectedGameIndex,setSelectedGameIndex]=useState(0);
   const ready=!!(match.teamA&&match.teamB);
@@ -4287,6 +4361,20 @@ function hasTournamentProgress(state){
   );
 }
 
+function tournamentProgress(state){
+  if(!state)return{percent:0,label:"Ready to begin",complete:false};
+  const resultVisible=!!state.tournamentEnded&&Array.isArray(state.resultPlacements)&&state.resultPlacements.length>0;
+  if(resultVisible)return{percent:100,label:"Tournament completed",complete:true};
+  const dataSets=state.formatType==="multi"
+    ?Object.keys(state.stageData||{}).map(Number).sort((a,b)=>a-b).map(idx=>state.stageData[idx]).filter(Boolean)
+    :[finalProjectData(state)].filter(Boolean);
+  const matches=dataSets.flatMap(data=>playableMatches(dataMatches(data))).filter(match=>!isByeMatch(match));
+  if(!matches.length)return{percent:hasTournamentProgress(state)?8:0,label:hasTournamentProgress(state)?"Setup in progress":"Ready to begin",complete:false};
+  const completed=matches.filter(matchIsComplete).length;
+  const percent=Math.max(8,Math.min(96,Math.round((completed/matches.length)*100)));
+  return{percent,label:`${completed} of ${matches.length} matches completed`,complete:false};
+}
+
 function countryToIso(value){
   const v=(value||"").trim();
   if(!v)return "";
@@ -4465,7 +4553,7 @@ export default function App(){
   const[shareMessage,setShareMessage]=useState("");
   const[projectName,setProjectName]=useState("");
   const[bracketTab,setBracketTab]=useState("tournament");
-  const[homeEloOpen,setHomeEloOpen]=useState(false);
+  const[shellPage,setShellPage]=useState("home");
   const[tournamentEnded,setTournamentEnded]=useState(false);
   const[resultPlacements,setResultPlacements]=useState([]);
   const[placementTiebreaks,setPlacementTiebreaks]=useState([]);
@@ -4647,6 +4735,7 @@ export default function App(){
     const s=project.state;
     if(!s)return;
     setCurrentProjectId(project.shared?null:project.id);
+    setShellPage("workspace");
     setStep("bracket");
     setFormatType(s.formatType||null);
     setTeamCount(s.teamCount||8);
@@ -4675,7 +4764,6 @@ export default function App(){
     setResultPlacements(Array.isArray(s.resultPlacements)&&s.resultPlacements.length?s.resultPlacements:s.tournamentEnded?resultPlacementsFromState(s):[]);
     setPlacementTiebreaks(Array.isArray(s.placementTiebreaks)?s.placementTiebreaks.map(syncPlacementTiebreak):[]);
     setBracketTab("tournament");
-    setHomeEloOpen(false);
     setCurrentFolderId(project.shared?null:project.folderId||null);
     setLastSavedAt(new Date(project.updatedAt||Date.now()).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}));
   };
@@ -4816,7 +4904,7 @@ export default function App(){
     if(folderImportRef.current)folderImportRef.current.value="";
   };
 
-  const goHome=()=>{setCurrentProjectId(null);setLastSavedAt(null);setStep("setup");setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setRrLegs(1);setEloTier(DEFAULT_ELO_TIER);setStagePeriod(DEFAULT_STAGE_PERIOD);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setPlacementTiebreaks([]);setBracketTab("tournament");setHomeEloOpen(false);};
+  const goHome=(page="home")=>{setCurrentProjectId(null);setLastSavedAt(null);setStep("setup");setShellPage(page);setFormatType(null);setTeams([]);setDeletedTeams([]);setTeamInput("");setBracketData(null);setRrRounds([]);setTeamCount(8);setGamesPerMatch(1);setRrLegs(1);setEloTier(DEFAULT_ELO_TIER);setStagePeriod(DEFAULT_STAGE_PERIOD);setMatchMode("wl");setRrStandingsRules(DEFAULT_STANDINGS_RULES);setStatCols(["Score"]);setStages(DEFAULT_STAGES);setStageData({});setActiveStageIdx(0);setShowPlayers(false);setAwards(DEFAULT_AWARDS);setShowAwards(false);setQualificationLinks([]);setProjectName("");setTournamentEnded(false);setResultPlacements([]);setPlacementTiebreaks([]);setBracketTab("tournament");};
 
   const deleteProject=async(project)=>{
     if(!window.confirm(`Delete "${project.name}"? This cannot be undone.`))return;
@@ -4877,9 +4965,27 @@ export default function App(){
   const[eloRefreshKey,setEloRefreshKey]=useState(0);
 
   const getMatchEloContext=(match)=>{
-    if(!match?.teamA||!match?.teamB||match._placementMatch)return null;
+    if(!match?.teamA||!match?.teamB)return null;
     const tournamentName=currentTournamentName||projectNameFromState({formatType,teams:teamsWithSeed});
     const projectPart=currentProjectId||safeMatchCodePart(tournamentName);
+    if(match._placementMatch){
+      const tiebreak=placementTiebreaks.find(item=>(item.rounds||[]).some(round=>round.some(itemMatch=>itemMatch.id===match.id)));
+      if(!tiebreak)return null;
+      const stageKey=`final-stage-tiebreak-${tiebreak.key||tiebreak.id}`;
+      const finalStage=isMulti?stages.at(-1):null;
+      const schedule=placementMatchScheduleMaps.get(tiebreak.id)?.get(match.id);
+      return {
+        projectId:projectPart,
+        tournamentName,
+        stageKey,
+        stagePeriod:isMulti?normalizeStagePeriod(finalStage?.period):stagePeriod,
+        tier:isMulti?(finalStage?.eloTier||DEFAULT_ELO_TIER):(eloTier||DEFAULT_ELO_TIER),
+        playedAt:schedule?.playedAt||"",
+        scheduleLabel:schedule?.label||"",
+        matchNumber:placementMatchNumberMaps.get(tiebreak.id)?.get(match.id),
+        matchCode:["tourney",safeMatchCodePart(projectPart),safeMatchCodePart(stageKey),safeMatchCodePart(match.id)].join("-")
+      };
+    }
     if(!isMulti){
       const stageKey=formatType||"stage-1";
       const schedule=nonMultiMatchSchedule.get(match.id);
@@ -5051,7 +5157,20 @@ export default function App(){
     }
   };
 
-  const collectCompletedEloPayloads=()=>{
+  const submitEloBonus=async bonus=>{
+    await ensureEloTrackerInitialized();
+    const{data,error}=await supabase.rpc("kitakana_submit_bonus",{
+      p_team_name:bonus.teamName,
+      p_category:bonus.category,
+      p_points:bonus.points,
+      p_event:bonus.event
+    });
+    if(error)throw error;
+    if(data?.ok)setEloRefreshKey(value=>value+1);
+    return data;
+  };
+
+  const collectCompletedEloPayloads=({stageIdx=null}={})=>{
     const payloads=new Map();
     const pushMatch=(match,context)=>{
       if(!match?.teamA||!match?.teamB||isByeMatch(match)||!matchIsComplete(match))return;
@@ -5063,6 +5182,7 @@ export default function App(){
     if(isMulti){
       Object.entries(stageData||{}).forEach(([idxKey,data])=>{
         const idx=Number(idxKey);
+        if(stageIdx!==null&&idx!==stageIdx)return;
         const stageKey=`stage-${idx+1}`;
         const context={
           projectId:projectPart,
@@ -5084,7 +5204,40 @@ export default function App(){
         pushMatch(match,{...context,playedAt:schedule?.playedAt||"",matchNumber:nonMultiMatchNumbers.get(match.id),matchCode:["tourney",safeMatchCodePart(projectPart),safeMatchCodePart(stageKey),safeMatchCodePart(match.id)].join("-")});
       });
     }
-    return [...payloads.values()].sort((a,b)=>String(a.playedAt||"").localeCompare(String(b.playedAt||""))||(Number(a.matchNumber)||0)-(Number(b.matchNumber)||0)||a.matchCode.localeCompare(b.matchCode));
+    if(stageIdx===null){
+      placementTiebreaks.forEach(tiebreak=>{
+        (syncPlacementTiebreak(tiebreak).rounds||[]).flat().forEach(match=>pushMatch(match,getMatchEloContext(match)));
+      });
+    }
+    return [...payloads.values()].sort((a,b)=>(Number(a.matchNumber)||0)-(Number(b.matchNumber)||0)||String(a.playedAt||"").localeCompare(String(b.playedAt||""))||a.matchCode.localeCompare(b.matchCode));
+  };
+
+  const resubmitEloSequentially=async({stageIdx=null,label="Tournament"}={})=>{
+    const matches=collectCompletedEloPayloads({stageIdx});
+    if(!matches.length){
+      setEloSyncState({loading:false,message:`${label}: no completed matches to submit.`,error:true});
+      return{ok:false,submitted:0};
+    }
+    if(!supabaseConfigured||!currentUser?.supabase){
+      setEloSyncState({loading:false,message:`${label} completed. Log in with Supabase to resubmit its Elo matches.`,error:true});
+      return{ok:false,submitted:0,unavailable:true};
+    }
+    setEloSyncState({loading:true,message:`${label}: resubmitting match 1 of ${matches.length}…`,error:false});
+    let submitted=0;
+    try{
+      for(const payload of matches){
+        setEloSyncState({loading:true,message:`${label}: resubmitting match ${submitted+1} of ${matches.length}…`,error:false});
+        const data=await submitEloPayloads([payload]);
+        if(!data?.ok)throw new Error(`Elo resubmission stopped at match ${payload.matchNumber||submitted+1}.`);
+        submitted++;
+      }
+      setEloRefreshKey(value=>value+1);
+      setEloSyncState({loading:false,message:`${label}: ${submitted} match${submitted===1?"":"es"} resubmitted in number order.`,error:false});
+      return{ok:true,submitted};
+    }catch(error){
+      setEloSyncState({loading:false,message:`${label}: ${submitted} of ${matches.length} submitted. ${friendlyEloError(error)}`,error:true});
+      return{ok:false,submitted,error};
+    }
   };
 
   const syncCompletedEloMatches=async()=>{
@@ -5181,6 +5334,7 @@ export default function App(){
     if(!canStartBracket)return;
     const projectId=currentProjectId||`project-${Date.now()}`;
     setCurrentProjectId(projectId);
+    setShellPage("workspace");
     if(!projectName.trim())setProjectName(projectNameFromState({formatType,teams:teamsWithSeed}));
     setBracketTab("tournament");
     setTournamentEnded(false);
@@ -5269,7 +5423,8 @@ export default function App(){
     return {...prev,[stageIdx]:syncStageQualificationData(raw,stages[stageIdx],stageIdx===stages.length-1)};
   });
 
-  const handleAdvance=(fromStageIdx,advancing)=>{
+  const handleAdvance=async(fromStageIdx,advancing)=>{
+    await resubmitEloSequentially({stageIdx:fromStageIdx,label:`Stage ${fromStageIdx+1}`});
     const nextIdx=fromStageIdx+1;
     const st=stages[nextIdx];
     if(!st)return;
@@ -5339,16 +5494,27 @@ export default function App(){
   const nonMultiStageRange=stageDateRanges([stagePeriod])[0];
   const nonMultiMatchSchedule=stageMatchScheduleMap(nonMultiNumberData,nonMultiStageRange);
   const tournamentNextMatchNumber=isMulti?multiMatchNumbering.nextNumber:nextMatchNumberFromMap(nonMultiMatchNumbers);
+  const placementMatchNumberMaps=new Map();
+  const placementMatchScheduleMaps=new Map();
+  const placementMatchCounter={value:tournamentNextMatchNumber};
+  const finalStageRange=isMulti?multiMatchScheduling.ranges.at(-1):nonMultiStageRange;
+  placementTiebreaks.forEach(tiebreak=>{
+    const placementData={type:"single",winners:syncPlacementTiebreak(tiebreak).rounds||[]};
+    const numberMap=new Map();
+    appendStageMatchNumbers(placementData,numberMap,placementMatchCounter);
+    placementMatchNumberMaps.set(tiebreak.id,numberMap);
+    placementMatchScheduleMaps.set(tiebreak.id,stageMatchScheduleMap(placementData,finalStageRange));
+  });
   const currentTournamentComplete=step==="bracket"&&tournamentIsComplete(liveTournamentState);
   const canEndTournament=currentTournamentComplete&&!tournamentEnded;
 
-  const endTournament=()=>{
+  const endTournament=async()=>{
     const placements=resultPlacementsFromState(liveTournamentState);
     if(!placements.length)return;
     setResultPlacements(placements);
-    setPlacementTiebreaks([]);
     setTournamentEnded(true);
     setBracketTab("result");
+    await resubmitEloSequentially({label:"Tournament"});
   };
 
   const sameResultRank=(a,b)=>a&&b&&a.rankFrom===b.rankFrom&&a.rankTo===b.rankTo;
@@ -5367,15 +5533,15 @@ export default function App(){
     setResultPlacements(prev=>applyPlacementTiebreaksToPlacements(prev,placementTiebreaks));
   },[tournamentEnded,placementTiebreaks]);
 
-  const resultTieGroups=()=>{
+  const resultTieGroups=(placements=resultPlacements)=>{
     const groups=[];
     let idx=0;
-    while(idx<resultPlacements.length){
-      const item=resultPlacements[idx];
+    while(idx<placements.length){
+      const item=placements[idx];
       const teams=[];
       let end=idx;
-      while(end<resultPlacements.length&&sameResultRank(item,resultPlacements[end])){
-        teams.push(resultPlacements[end].team);
+      while(end<placements.length&&sameResultRank(item,placements[end])){
+        teams.push(placements[end].team);
         end++;
       }
       if(item?.rankFrom<item?.rankTo&&teams.length>1){
@@ -5405,27 +5571,71 @@ export default function App(){
   const handlePlacementGameUpdate=(tiebreakId,matchId,gi,upd)=>updatePlacementTiebreakMatch(tiebreakId,matchId,match=>({...match,games:match.games.map((game,idx)=>idx===gi?{...game,...upd}:game)}));
   const handlePlacementMatchUpdate=(tiebreakId,matchId,upd)=>updatePlacementTiebreakMatch(tiebreakId,matchId,match=>({...match,...upd}));
 
-  const renderResultTab=()=>{
-    const tiedGroups=resultTieGroups();
+  const renderFinalStageTiebreakPanel=()=>{
+    if(isMulti&&activeStageIdx!==stages.length-1)return null;
+    if(!currentTournamentComplete&&!placementTiebreaks.length)return null;
+    const placements=tournamentEnded&&resultPlacements.length?resultPlacements:resultPlacementsFromState(liveTournamentState);
+    const tiedGroups=resultTieGroups(placements);
     const tiedKeys=new Set(tiedGroups.map(group=>group.key));
-    const bracketSections=[
+    const sections=[
       ...tiedGroups.map(group=>({key:group.key,group,tiebreak:placementTiebreaks.find(item=>item.key===group.key)})),
       ...placementTiebreaks.filter(item=>!tiedKeys.has(item.key)).map(item=>({key:item.key||item.id,group:null,tiebreak:item}))
     ];
-    const placementCounter={value:tournamentNextMatchNumber};
-    const placementNumberMaps=new Map();
-    bracketSections.forEach(({tiebreak})=>{
-      if(!tiebreak)return;
-      const map=new Map();
-      appendStageMatchNumbers({type:"single",winners:syncPlacementTiebreak(tiebreak).rounds||[]},map,placementCounter);
-      placementNumberMaps.set(tiebreak.id,map);
-    });
+    if(!sections.length)return null;
+    return(
+      <section className="classic-final-tiebreak-panel" aria-labelledby="final-stage-tiebreak-title">
+        <div className="classic-final-tiebreak-intro">
+          <div>
+            <div className="classic-eyebrow">Final stage</div>
+            <h3 id="final-stage-tiebreak-title">Placement tiebreaks</h3>
+            <p>Resolve tied final positions here. Completed tiebreak matches can be submitted from their match details and are included in the tournament’s numbered Elo resubmission.</p>
+          </div>
+          <span className="classic-final-tiebreak-count">{sections.length} tied range{sections.length===1?"":"s"}</span>
+        </div>
+        <div className="classic-final-tiebreak-list">
+          {sections.map(({key,group,tiebreak})=>{
+            const range=group||tiebreak;
+            const finalTeams=tiebreak?placementTiebreakFinalTeams(tiebreak):null;
+            const listedTeams=group?.teams||finalTeams||tiebreak?.teams||[];
+            return(
+              <div className="classic-final-tiebreak-section" key={key}>
+                <div className="classic-final-tiebreak-head">
+                  <div>
+                    <span className="classic-final-tiebreak-rank">Rank {resultRankLabel(range)}</span>
+                    <span className={`classic-final-tiebreak-status ${finalTeams?"is-resolved":tiebreak?"is-active":""}`}>{finalTeams?"Resolved":tiebreak?"In progress":"Not started"}</span>
+                  </div>
+                  <div className="classic-final-tiebreak-teams">
+                    {listedTeams.map(team=><TeamTag key={team.name} name={team.name} color={team.color} seed={team.seed} small/>)}
+                  </div>
+                  {!tiebreak&&<button onClick={()=>createPlacementTiebreakForRange(group)} style={{...btn(false),padding:"6px 11px",fontSize:11,borderColor:"rgba(79,119,115,0.45)",color:"#8fafab",marginLeft:"auto"}}>Create Tiebreak</button>}
+                </div>
+                {tiebreak&&(
+                  <MatchScheduleContext.Provider value={placementMatchScheduleMaps.get(tiebreak.id)||new Map()}>
+                    <PlacementTiebreakView
+                      tiebreak={tiebreak}
+                      matchNumbers={placementMatchNumberMaps.get(tiebreak.id)}
+                      statCols={statCols}
+                      onGameUpdate={(matchId,gi,upd)=>handlePlacementGameUpdate(tiebreak.id,matchId,gi,upd)}
+                      onMatchUpdate={(matchId,upd)=>handlePlacementMatchUpdate(tiebreak.id,matchId,upd)}
+                    />
+                  </MatchScheduleContext.Provider>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    );
+  };
+
+  const renderResultTab=()=>{
     return(
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div style={{padding:"14px 16px",borderRadius:10,border:"1px solid rgba(185,154,85,0.45)",background:"rgba(185,154,85,0.07)"}}>
           <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"#c0a15c",marginBottom:8}}>Winner</div>
           {resultPlacements[0]?.team?<TeamTag name={resultPlacements[0].team.name} color={resultPlacements[0].team.color} seed={resultPlacements[0].team.seed}/>:<span style={{fontSize:12,color:"var(--color-text-tertiary)"}}>No winner recorded</span>}
         </div>
+        {eloSyncState.message&&<div style={{padding:"10px 13px",borderRadius:8,border:`1px solid ${eloSyncState.error?"rgba(183,91,100,0.45)":"rgba(79,119,115,0.45)"}`,background:eloSyncState.error?"rgba(183,91,100,0.06)":"rgba(79,119,115,0.07)",color:eloSyncState.error?"#d07780":"#8fafab",fontSize:11,fontWeight:800}}>{eloSyncState.loading?"◌ ":"✓ "}{eloSyncState.message}</div>}
         <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:10,padding:"12px 14px"}}>
           <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:10}}>Final Results</div>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -5446,38 +5656,6 @@ export default function App(){
             })}
           </div>
         </div>
-        {bracketSections.length>0&&(
-          <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:10,padding:"12px 14px"}}>
-            <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:10}}>Placement Brackets</div>
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              {bracketSections.map(({key,group,tiebreak})=>{
-                const range=group||tiebreak;
-                const finalTeams=tiebreak?placementTiebreakFinalTeams(tiebreak):null;
-                const teams=group?.teams||finalTeams||tiebreak?.teams||[];
-                return(
-                  <div key={key} style={{border:"0.5px solid var(--color-border-tertiary)",borderRadius:8,padding:"10px",background:"var(--color-background-secondary)"}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
-                      <span style={{fontSize:11,fontWeight:800,color:"#4f7773",letterSpacing:"0.08em",textTransform:"uppercase"}}>Rank {resultRankLabel(range)}</span>
-                      <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                        {teams.map(team=><TeamTag key={team.name} name={team.name} color={team.color} seed={team.seed} small/>)}
-                      </div>
-                      {!tiebreak&&<button onClick={()=>createPlacementTiebreakForRange(group)} style={{...btn(false),padding:"5px 10px",fontSize:11,borderColor:"rgba(79,119,115,0.45)",color:"#4f7773",marginLeft:"auto"}}>Add Placement Bracket</button>}
-                    </div>
-                    {tiebreak
-                      ?<PlacementTiebreakView
-                        tiebreak={tiebreak}
-                        matchNumbers={placementNumberMaps.get(tiebreak.id)}
-                        statCols={statCols}
-                        onGameUpdate={(matchId,gi,upd)=>handlePlacementGameUpdate(tiebreak.id,matchId,gi,upd)}
-                        onMatchUpdate={(matchId,upd)=>handlePlacementMatchUpdate(tiebreak.id,matchId,upd)}
-                      />
-                      :<div style={{fontSize:11,color:"var(--color-text-tertiary)",fontStyle:"italic"}}>Optional placement bracket not generated.</div>}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </div>
     );
   };
@@ -5575,32 +5753,50 @@ export default function App(){
     </div>
   );
 
-  const focusShellSection=(section)=>{
-    const scrollTo=id=>{
-      if(typeof window==="undefined")return;
-      window.setTimeout(()=>document.getElementById(id)?.scrollIntoView({behavior:"smooth",block:"start"}),0);
-    };
-    if(section==="settings"&&step==="bracket"){
-      setBracketTab("settings");
-      scrollTo("shell-bracket-workspace");
-      return;
-    }
-    if(step!=="setup")goHome();
-    if(section==="elo"){
-      setHomeEloOpen(true);
-      scrollTo("shell-elo");
-      return;
-    }
-    setHomeEloOpen(false);
-    scrollTo(`shell-${section}`);
+  const renderProjectCard=(project,compact=false)=>{
+    const progress=tournamentProgress(project.state);
+    const hasProgress=hasTournamentProgress(project.state);
+    const formatLabel=project.formatType==="single"?"Single Elim":project.formatType==="double"?"Double Elim":project.formatType==="roundrobin"?"Round Robin":"Multi-Stage";
+    const status=progress.complete?"Completed":hasProgress?"Active":"Ready";
+    return <article className={`classic-project-card ${compact?"is-compact":""}`} key={project.id} onClick={()=>loadProject(project)} onKeyDown={event=>{if(event.key==="Enter")loadProject(project);}} role="button" tabIndex={0}>
+      <div className="classic-project-card-head">
+        <span className="classic-project-emblem" aria-hidden="true">◉</span>
+        <div><h4>{project.name}</h4><p>{formatLabel} · {project.teamCount} teams</p></div>
+        <span className={`classic-status-badge ${progress.complete?"is-complete":hasProgress?"is-active":""}`}>{status}</span>
+      </div>
+      <div className="classic-project-progress" aria-label={`${progress.percent}% complete`}><span style={{width:`${progress.percent}%`}}/></div>
+      <div className="classic-project-card-foot"><span>{progress.label}</span><strong>{progress.complete?"View result":"Open bracket"} →</strong></div>
+      {!compact&&<div className="classic-project-actions">
+        <button onClick={event=>{event.stopPropagation();exportProject(project);}} title="Download tournament file">↓</button>
+        <button onClick={event=>{event.stopPropagation();shareProject(project);}} title="Copy share link">↗</button>
+        <button onClick={event=>{event.stopPropagation();renameSavedProject(project);}} title="Rename tournament">✎</button>
+        <button className="is-danger" onClick={event=>{event.stopPropagation();deleteProject(project);}} title="Delete project">×</button>
+      </div>}
+    </article>;
   };
 
+  const focusShellSection=(section)=>{
+    const page=section==="format"?"new":section;
+    if(step!=="setup")goHome(page);
+    else setShellPage(page);
+    if(typeof window!=="undefined")window.scrollTo({top:0,behavior:"smooth"});
+  };
+
+  const shellPageMeta={
+    home:["Tournament Hub","Build, organize, and run every competition"],
+    new:["Create Tournament","Choose a format and configure the competition"],
+    tournaments:["Tournaments","All competitions and completed results"],
+    elo:["Elo Standings","Global country ratings and recent form"],
+    bonuses:["Elo Bonuses","Apply a rating adjustment to any country"],
+    files:["Files & Folders","Organize tournament projects and qualifier chains"],
+    settings:["Settings","Account, storage, and synchronization preferences"]
+  };
   const shellTitle=step==="setup"
-    ?homeEloOpen?"Elo Standings":"Tournament Hub"
+    ?shellPageMeta[shellPage]?.[0]||"Tournament Hub"
     :step==="teams"?"Add Participants"
     :currentTournamentName||"Tournament Workspace";
   const shellSubtitle=step==="setup"
-    ?homeEloOpen?"Global team ratings and recent form":"Build, organize, and run every competition"
+    ?shellPageMeta[shellPage]?.[1]||"Build, organize, and run every competition"
     :step==="teams"?`Seed your teams · ${teamsWithSeed.length}/${isMulti?stages[0].teamCount:teamCount} added`
     :isMulti?`Multi-Stage · ${stages.length} stages · ${teamsWithSeed.length} teams`
     :`${formatType==="single"?"Single Elim":formatType==="double"?"Double Elim":"Round Robin"} · ${teamsWithSeed.length} teams · ${formatStagePeriod(stagePeriod)}`;
@@ -5650,11 +5846,12 @@ export default function App(){
           <span className="tourney-brand-copy"><span>Tournament</span><strong>Bracket</strong></span>
         </button>
         <nav className="tourney-nav">
-          <button type="button" className={`tourney-nav-button ${step==="setup"&&!homeEloOpen?"is-active":""}`} onClick={()=>focusShellSection("home")}><span className="tourney-nav-icon" aria-hidden="true">⌂</span><span className="tourney-nav-label">Home</span></button>
-          <button type="button" className={`tourney-nav-button ${step!=="setup"?"is-active":""}`} onClick={()=>focusShellSection("tournaments")}><span className="tourney-nav-icon" aria-hidden="true">♜</span><span className="tourney-nav-label">Tournaments</span></button>
-          <button type="button" className={`tourney-nav-button ${homeEloOpen||bracketTab==="elo"?"is-active":""}`} onClick={()=>focusShellSection("elo")}><span className="tourney-nav-icon" aria-hidden="true">▥</span><span className="tourney-nav-label">Elo Standings</span></button>
-          <button type="button" className="tourney-nav-button" onClick={()=>focusShellSection("files")}><span className="tourney-nav-icon" aria-hidden="true">▱</span><span className="tourney-nav-label">Files</span></button>
-          <button type="button" className={`tourney-nav-button ${bracketTab==="settings"?"is-active":""}`} onClick={()=>focusShellSection("settings")}><span className="tourney-nav-icon" aria-hidden="true">⚙</span><span className="tourney-nav-label">Settings</span></button>
+          <button type="button" className={`tourney-nav-button ${step==="setup"&&shellPage==="home"?"is-active":""}`} onClick={()=>focusShellSection("home")}><span className="tourney-nav-icon" aria-hidden="true">⌂</span><span className="tourney-nav-label">Home</span></button>
+          <button type="button" className={`tourney-nav-button ${step!=="setup"||shellPage==="tournaments"?"is-active":""}`} onClick={()=>focusShellSection("tournaments")}><span className="tourney-nav-icon" aria-hidden="true">♜</span><span className="tourney-nav-label">Tournaments</span></button>
+          <button type="button" className={`tourney-nav-button ${step==="setup"&&shellPage==="elo"?"is-active":""}`} onClick={()=>focusShellSection("elo")}><span className="tourney-nav-icon" aria-hidden="true">▥</span><span className="tourney-nav-label">Elo Standings</span></button>
+          <button type="button" className={`tourney-nav-button ${step==="setup"&&shellPage==="bonuses"?"is-active":""}`} onClick={()=>focusShellSection("bonuses")}><span className="tourney-nav-icon" aria-hidden="true">＋</span><span className="tourney-nav-label">Elo Bonuses</span></button>
+          <button type="button" className={`tourney-nav-button ${step==="setup"&&shellPage==="files"?"is-active":""}`} onClick={()=>focusShellSection("files")}><span className="tourney-nav-icon" aria-hidden="true">▱</span><span className="tourney-nav-label">Files</span></button>
+          <button type="button" className={`tourney-nav-button ${step==="setup"&&shellPage==="settings"?"is-active":""}`} onClick={()=>focusShellSection("settings")}><span className="tourney-nav-icon" aria-hidden="true">⚙</span><span className="tourney-nav-label">Settings</span></button>
         </nav>
         <div className="tourney-sidebar-status"><strong>Local autosave</strong><span>{saveStatusText}</span></div>
       </aside>
@@ -5706,6 +5903,7 @@ export default function App(){
       {/* ── STEP 1: Setup ────────────────────────────────────────────── */}
       {step==="setup"&&(
         <div id="shell-home" className="tourney-section-anchor classic-dashboard">
+          {shellPage==="home"&&<>
           <section className="classic-home-hero">
             <div className="classic-hero-copy">
               <span className="classic-eyebrow">Tournament command center</span>
@@ -5722,7 +5920,17 @@ export default function App(){
             </div>
           </section>
 
-          <section id="shell-format" className="tourney-section-anchor classic-home-section">
+          <section className="classic-home-preview classic-panel">
+            <div className="classic-section-heading compact">
+              <div><span className="classic-eyebrow">Your tournaments</span><h3>Continue where you left off</h3></div>
+              <button className="classic-link-button" onClick={()=>focusShellSection("tournaments")}>View all tournaments <span aria-hidden="true">→</span></button>
+            </div>
+            {savedProjects.length>0?<div className="classic-project-grid classic-project-grid-preview">{savedProjects.slice(0,2).map(project=>renderProjectCard(project,true))}</div>:<div className="classic-empty-state"><span>♜</span><strong>No tournaments yet</strong><p>Create a competition to see its progress here.</p></div>}
+            <div className="classic-home-preview-foot"><span><b>{savedProjects.length}</b> tournament{savedProjects.length===1?"":"s"}</span><span><b>{savedProjects.filter(project=>tournamentProgress(project.state).complete).length}</b> completed</span><span><b>{savedFolders.length}</b> folder{savedFolders.length===1?"":"s"}</span><span className="classic-save-indicator">✓ {saveStatusText}</span></div>
+          </section>
+          </>}
+
+          {shellPage==="new"&&<section id="shell-format" className="tourney-section-anchor classic-home-section classic-new-page-intro">
             <div className="classic-section-heading">
               <div><span className="classic-eyebrow">Choose a format</span><h3>Start a new tournament</h3></div>
               <p>Select a structure. You can configure participants and match rules next.</p>
@@ -5743,71 +5951,45 @@ export default function App(){
                 </button>
               ))}
             </div>
-          </section>
+          </section>}
 
-          <div className="classic-dashboard-grid">
-            <section id="shell-tournaments" className="tourney-section-anchor classic-home-section classic-panel classic-tournaments-panel">
-              <div className="classic-section-heading compact">
-                <div><span className="classic-eyebrow">Your tournaments</span><h3>Continue where you left off</h3></div>
-                <button className="classic-link-button" onClick={()=>setHomeEloOpen(open=>!open)}>{homeEloOpen?"Close Elo standings":"Open Elo standings"} <span aria-hidden="true">→</span></button>
-              </div>
-              {homeEloOpen&&<div id="shell-elo" className="tourney-section-anchor classic-elo-home"><EloStandingsPanel loadStandings={loadEloStandings} refreshToken={eloRefreshKey} createAutoSync={createEloSheetAutoSync} autoSyncAvailable={!!(supabaseConfigured&&currentUser?.supabase)}/></div>}
-              {!homeEloOpen&&visibleProjects.length>0&&<div className="classic-project-grid">
-                {visibleProjects.map(project=>{
-                  const inProgress=hasTournamentProgress(project.state);
-                  const formatLabel=project.formatType==="single"?"Single Elim":project.formatType==="double"?"Double Elim":project.formatType==="roundrobin"?"Round Robin":"Multi-Stage";
-                  return <article className="classic-project-card" key={project.id} onClick={()=>loadProject(project)} onKeyDown={event=>{if(event.key==="Enter")loadProject(project);}} role="button" tabIndex={0}>
-                    <div className="classic-project-card-head">
-                      <span className="classic-project-emblem" aria-hidden="true">◉</span>
-                      <div><h4>{project.name}</h4><p>{formatLabel} · {project.teamCount} teams</p></div>
-                      <span className={`classic-status-badge ${inProgress?"is-active":""}`}>{inProgress?"Active":"Ready"}</span>
-                    </div>
-                    <div className="classic-project-progress"><span style={{width:inProgress?"60%":"12%"}}/></div>
-                    <div className="classic-project-card-foot">
-                      <span>{inProgress?"Tournament in progress":"Ready to begin"}</span>
-                      <strong>Open bracket →</strong>
-                    </div>
-                    <div className="classic-project-actions">
-                      <button onClick={event=>{event.stopPropagation();exportProject(project);}} title="Download tournament file">↓</button>
-                      <button onClick={event=>{event.stopPropagation();shareProject(project);}} title="Copy share link">↗</button>
-                      <button onClick={event=>{event.stopPropagation();renameSavedProject(project);}} title="Rename tournament">✎</button>
-                      <button className="is-danger" onClick={event=>{event.stopPropagation();deleteProject(project);}} title="Delete project">×</button>
-                    </div>
-                  </article>;
-                })}
-              </div>}
-              {!homeEloOpen&&visibleProjects.length===0&&<div className="classic-empty-state"><span>♜</span><strong>No tournaments yet</strong><p>Choose a format above to create your first competition.</p></div>}
+          {shellPage==="tournaments"&&<section className="classic-home-section classic-panel classic-tournaments-panel classic-dedicated-page">
+            <div className="classic-section-heading compact">
+              <div><span className="classic-eyebrow">Tournament library</span><h3>{currentFolder?currentFolder.name:"All standalone tournaments"}</h3></div>
+              <div className="classic-page-actions"><select aria-label="Filter tournaments by folder" value={currentFolderId||""} onChange={event=>setCurrentFolderId(event.target.value||null)}><option value="">Standalone tournaments</option>{savedFolders.map(folder=><option key={folder.id} value={folder.id}>{folder.name} ({(folder.projectIds||[]).length})</option>)}</select><button className="classic-primary-button" onClick={()=>focusShellSection("format")}>New tournament <span aria-hidden="true">＋</span></button></div>
+            </div>
+            {visibleProjects.length>0?<div className="classic-project-grid">{visibleProjects.map(project=>renderProjectCard(project))}</div>:<div className="classic-empty-state"><span>♜</span><strong>No tournaments in this location</strong><p>Create a new tournament or choose another folder.</p></div>}
+          </section>}
+
+          {shellPage==="elo"&&<section className="classic-dedicated-page"><EloStandingsPanel loadStandings={loadEloStandings} refreshToken={eloRefreshKey} createAutoSync={createEloSheetAutoSync} autoSyncAvailable={!!(supabaseConfigured&&currentUser?.supabase)}/></section>}
+
+          {shellPage==="bonuses"&&<EloBonusPage loadStandings={loadEloStandings} submitBonus={submitEloBonus} refreshToken={eloRefreshKey} available={!!(supabaseConfigured&&currentUser?.supabase)}/>}
+
+          {shellPage==="files"&&<div className="classic-files-page-grid">
+            <section className="classic-panel classic-folders-library">
+              <div className="classic-section-heading compact"><div><span className="classic-eyebrow">Project locations</span><h3>Folders</h3></div><span className="classic-config-summary">{savedFolders.length+1} locations</span></div>
+              <button className={`classic-folder-card ${!currentFolderId?"is-selected":""}`} onClick={()=>setCurrentFolderId(null)}><span>▱</span><div><strong>Standalone tournaments</strong><small>{savedProjects.filter(project=>!project.folderId).length} projects</small></div></button>
+              {savedFolders.map(folder=><button className={`classic-folder-card ${currentFolderId===folder.id?"is-selected":""}`} key={folder.id} onClick={()=>setCurrentFolderId(folder.id)}><span>▰</span><div><strong>{folder.name}</strong><small>{(folder.projectIds||[]).length} projects</small></div></button>)}
             </section>
+            <section className="classic-panel classic-files-panel classic-files-workspace">
+              <div className="classic-section-heading compact"><div><span className="classic-eyebrow">Files & folders</span><h3>{currentFolder?.name||"Standalone tournaments"}</h3></div></div>
+              <label className="classic-field-label">Create a new folder</label>
+              <div className="classic-folder-create"><input value={folderNameInput} onChange={event=>setFolderNameInput(event.target.value)} onKeyDown={event=>event.key==="Enter"&&createFolder()} placeholder="New folder name…"/><button onClick={createFolder} disabled={!folderNameInput.trim()}>+</button></div>
+              <div className="classic-file-actions"><button onClick={()=>tournamentImportRef.current?.click()}><span aria-hidden="true">↥</span> Upload tournament</button><button onClick={()=>folderImportRef.current?.click()}><span aria-hidden="true">▱</span> Upload folder ZIP</button>{currentFolder&&<button onClick={()=>exportFolder(currentFolder)}><span aria-hidden="true">↓</span> Download folder ZIP</button>}</div>
+              <div className="classic-files-projects"><span className="classic-field-label">Projects in this location</span>{visibleProjects.length?visibleProjects.map(project=><button key={project.id} onClick={()=>loadProject(project)}><span>◉</span><strong>{project.name}</strong><small>{project.teamCount} teams · {tournamentProgress(project.state).percent}%</small></button>):<p>No projects stored here yet.</p>}</div>
+              <p className="classic-files-note">{currentFolder?`New tournaments will be stored in “${currentFolder.name}”.`:"Standalone mode. Select or create a folder to organize qualifier events."}</p>
+            </section>
+          </div>}
 
-            <aside className="classic-dashboard-side">
-              <section id="shell-files" className="tourney-section-anchor classic-home-section classic-panel classic-files-panel">
-                <div className="classic-section-heading compact"><div><span className="classic-eyebrow">Files & folders</span><h3>Organize projects</h3></div></div>
-                <label className="classic-field-label">Current location</label>
-                <select value={currentFolderId||""} onChange={event=>setCurrentFolderId(event.target.value||null)}>
-                  <option value="">Standalone tournaments</option>
-                  {savedFolders.map(folder=><option key={folder.id} value={folder.id}>{folder.name} ({(folder.projectIds||[]).length})</option>)}
-                </select>
-                <div className="classic-folder-create">
-                  <input value={folderNameInput} onChange={event=>setFolderNameInput(event.target.value)} onKeyDown={event=>event.key==="Enter"&&createFolder()} placeholder="New folder name…"/>
-                  <button onClick={createFolder} disabled={!folderNameInput.trim()}>+</button>
-                </div>
-                <div className="classic-file-actions">
-                  <button onClick={()=>tournamentImportRef.current?.click()}><span aria-hidden="true">↥</span> Upload tournament</button>
-                  <button onClick={()=>folderImportRef.current?.click()}><span aria-hidden="true">▱</span> Upload folder ZIP</button>
-                  {currentFolder&&<button onClick={()=>exportFolder(currentFolder)}><span aria-hidden="true">↓</span> Download folder ZIP</button>}
-                </div>
-                <p className="classic-files-note">{currentFolder?`New tournaments will be stored in “${currentFolder.name}”.`:"Standalone mode. Create a folder to link qualifier events."}</p>
-              </section>
-              <section className="classic-activity-card">
-                <span className="classic-activity-icon" aria-hidden="true">✓</span>
-                <div><span className="classic-eyebrow">Activity</span><strong>All changes saved</strong><p>{saveStatusText}</p></div>
-              </section>
-            </aside>
-          </div>
+          {shellPage==="settings"&&<div className="classic-settings-grid">
+            <section className="classic-panel classic-settings-card"><span className="classic-eyebrow">Account</span><h3>{currentUser?currentUser.name:"Local profile"}</h3><p>{currentUser?.email||authHint}</p><button className="classic-secondary-button" onClick={()=>currentUser?logout():setAuthOpen(true)}>{currentUser?"Log out":"Log in or sign up"}</button></section>
+            <section className="classic-panel classic-settings-card"><span className="classic-eyebrow">Storage</span><h3>{currentUser?.supabase?"Supabase sync":"Local autosave"}</h3><p>{cloudMessage}. {savedProjects.length} tournaments and {savedFolders.length} folders are currently available.</p><span className="classic-settings-status">✓ {saveStatusText}</span></section>
+            <section className="classic-panel classic-settings-card"><span className="classic-eyebrow">Tournament defaults</span><h3>Classic interface</h3><p>New tournaments start with Tier 3 Elo, the current stage month, and local autosave enabled.</p><button className="classic-secondary-button" onClick={()=>focusShellSection("format")}>Create tournament</button></section>
+          </div>}
           <input ref={tournamentImportRef} type="file" accept=".json,.tourney.json,application/json" onChange={event=>importTournamentFile(event.target.files?.[0])} style={{display:"none"}}/>
           <input ref={folderImportRef} type="file" accept=".zip,.tourney-folder.zip,application/zip" onChange={event=>importFolderFile(event.target.files?.[0])} style={{display:"none"}}/>
 
-          {formatType&&!isMulti&&(<section className="classic-config-panel classic-panel">
+          {shellPage==="new"&&formatType&&!isMulti&&(<section className="classic-config-panel classic-panel">
             <div className="classic-section-heading compact"><div><span className="classic-eyebrow">Quick config</span><h3>Tournament settings</h3></div><span className="classic-config-summary">{teamCount} teams · {formatType==="roundrobin"?`${rrTotalRounds} rounds`:formatType==="double"?"Double bracket":"Knockout bracket"}</span></div>
             <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:12}}>Participants</div>
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,padding:"14px 18px",background:"var(--color-background-secondary)",borderRadius:10,border:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap"}}>
@@ -5841,7 +6023,7 @@ export default function App(){
             <button onClick={()=>setStep("teams")} style={{padding:"10px 28px",borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,letterSpacing:"0.07em",textTransform:"uppercase",background:"#b99a55",color:"#17130b",border:"none",cursor:"pointer",marginTop:8}}>Continue →</button>
           </section>)}
 
-          {formatType==="multi"&&(()=>{
+          {shellPage==="new"&&formatType==="multi"&&(()=>{
             const totalAat=stages.slice(1).reduce((sum,stage)=>sum+(stage.aat||0),0);
             const requiredTeams=requiredMultiTeams(stages);
             const setupRanges=stageDateRanges(stages.map(stage=>stage.period));
@@ -6019,6 +6201,8 @@ export default function App(){
                 :<PlayerStandingsTable teams={allBracketTeams} matches={allBracketMatches} statCols={statCols} title="Player Standings" sortBy={playerSort} onSortBy={setPlayerSort}/>}
             </div>
           )}
+
+          {renderFinalStageTiebreakPanel()}
 
           {/* MVP Awards Panel */}
           {showAwards&&step==="bracket"&&(()=>{

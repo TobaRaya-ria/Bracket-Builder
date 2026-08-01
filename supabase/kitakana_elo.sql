@@ -46,6 +46,9 @@ create table if not exists public.kitakana_elo_bonuses (
 create index if not exists kitakana_elo_bonuses_owner_order_idx
   on public.kitakana_elo_bonuses (owner_user_id, bonus_order, bonus_id);
 
+create index if not exists kitakana_elo_bonuses_owner_team_idx
+  on public.kitakana_elo_bonuses (owner_user_id, team_name);
+
 create table if not exists public.kitakana_elo_matches (
   owner_user_id uuid not null references auth.users(id) on delete cascade,
   match_code text not null,
@@ -1121,6 +1124,81 @@ begin
 end;
 $$;
 
+create or replace function public.kitakana_submit_bonus(
+  p_team_name text,
+  p_category text,
+  p_points double precision,
+  p_event text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_owner uuid := auth.uid();
+  v_team_name text;
+  v_bonus_id bigint;
+  v_bonus_order bigint;
+begin
+  if v_owner is null then
+    raise exception 'Authentication required';
+  end if;
+  if p_points is null or p_points = 0 or p_points::text in ('NaN', 'Infinity', '-Infinity') then
+    raise exception 'Bonus points must be a non-zero finite number';
+  end if;
+  if btrim(coalesce(p_event, '')) = '' then
+    raise exception 'A bonus reason or event is required';
+  end if;
+
+  perform 1
+  from public.kitakana_elo_trackers
+  where owner_user_id = v_owner
+  for update;
+  if not found then
+    raise exception 'Kitakana Elo tracker is not initialized';
+  end if;
+
+  v_team_name := public.kitakana_resolve_team_internal(v_owner, p_team_name, '');
+  if v_team_name is null then
+    raise exception 'Country not found in tracker: %', p_team_name;
+  end if;
+
+  select coalesce(max(bonus_id), 0) + 1
+  into v_bonus_id
+  from public.kitakana_elo_bonuses
+  where owner_user_id = v_owner;
+
+  select coalesce(max(match_order), 0) + 1
+  into v_bonus_order
+  from public.kitakana_elo_matches
+  where owner_user_id = v_owner;
+
+  insert into public.kitakana_elo_bonuses (
+    owner_user_id, bonus_id, bonus_order, team_name, category, points, event, is_imported
+  ) values (
+    v_owner,
+    v_bonus_id,
+    v_bonus_order,
+    v_team_name,
+    left(btrim(coalesce(p_category, 'Tournament bonus')), 120),
+    p_points,
+    left(btrim(p_event), 500),
+    false
+  );
+
+  perform public.kitakana_recalculate_internal(v_owner);
+
+  return jsonb_build_object(
+    'ok', true,
+    'bonusId', v_bonus_id,
+    'bonusOrder', v_bonus_order,
+    'teamName', v_team_name,
+    'points', p_points
+  );
+end;
+$$;
+
 revoke all on function public.kitakana_resolve_team_internal(uuid, text, text) from public, anon, authenticated;
 revoke all on function public.kitakana_resequence_match_orders_internal(uuid) from public, anon, authenticated;
 revoke all on function public.kitakana_recalculate_internal(uuid) from public, anon, authenticated;
@@ -1133,6 +1211,7 @@ revoke all on function public.kitakana_elo_standings(text, text) from public, an
 revoke all on function public.kitakana_create_sheet_sync_token(text) from public, anon;
 revoke all on function public.kitakana_elo_sheet_export(text) from public, anon, authenticated;
 revoke all on function public.kitakana_submit_matches(jsonb) from public, anon;
+revoke all on function public.kitakana_submit_bonus(text, text, double precision, text) from public, anon;
 grant execute on function public.kitakana_elo_status() to authenticated;
 grant execute on function public.kitakana_import_seed(jsonb) to authenticated;
 grant execute on function public.kitakana_elo_context(text, text, text, text, text) to authenticated;
@@ -1140,3 +1219,4 @@ grant execute on function public.kitakana_elo_standings(text, text) to authentic
 grant execute on function public.kitakana_create_sheet_sync_token(text) to authenticated;
 grant execute on function public.kitakana_elo_sheet_export(text) to anon, authenticated;
 grant execute on function public.kitakana_submit_matches(jsonb) to authenticated;
+grant execute on function public.kitakana_submit_bonus(text, text, double precision, text) to authenticated;
