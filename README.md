@@ -13,7 +13,8 @@ A playful tournament bracket builder for single elimination, double elimination,
 - Export/import tournament folders as `.tourney-folder.zip`.
 - Share a tournament snapshot with a generated link.
 - Store Kitakana Elo teams, history, and match updates in Supabase.
-- Add signed-in country Elo bonuses with an explanation and automatic recalculation.
+- Search countries and add single or ordered bulk Elo bonuses with explanations and automatic recalculation.
+- Keep completed tournament matches, scores, statistics, MVPs, and tiebreak brackets read-only.
 - Resolve tied final placements beneath the final stage and submit those matches to Elo manually or in match-number order when ending the tournament.
 - Resubmit completed stage matches to Elo in match-number order when advancing or ending a tournament.
 

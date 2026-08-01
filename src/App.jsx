@@ -108,6 +108,7 @@ const EloBridgeContext=createContext({
 });
 const EMPTY_MATCH_SCHEDULE=new Map();
 const MatchScheduleContext=createContext(EMPTY_MATCH_SCHEDULE);
+const MatchEditLockContext=createContext(false);
 
 function StagePeriodInput({value,onChange,disabled=false,compact=false}){
   const[open,setOpen]=useState(false);
@@ -1699,7 +1700,7 @@ function Stepper({label,value,min,max,onChange,small,disabled=false}){
 }
 
 // ─── Player stat panel ────────────────────────────────────────────────────────
-function PlayerStatPanel({match,gameIdx,statCols,onUpdate}){
+function PlayerStatPanel({match,gameIdx,statCols,onUpdate,disabled=false}){
   const game=match.games[gameIdx];
   const teams=[match.teamA,match.teamB].filter(Boolean);
   if(teams.length<2)return null;
@@ -1726,11 +1727,11 @@ function PlayerStatPanel({match,gameIdx,statCols,onUpdate}){
                     <td style={{padding:"3px 4px",whiteSpace:"nowrap"}}><span style={{fontSize:10}}>{FLAG(p.nationality)}</span><span style={{marginLeft:3,color:"var(--color-text-primary)",fontWeight:600}}>{p.name}</span></td>
                     {statCols.map(col=>(
                       <td key={col} style={{padding:"2px 3px",textAlign:"center"}}>
-                        <input value={getStat(p.name,col)} onChange={e=>setStat(p.name,col,e.target.value)} placeholder="—" style={{width:30,fontSize:10,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,textAlign:"center",border:"0.5px solid var(--color-border-tertiary)",borderRadius:3,background:"var(--color-background-secondary)",color:"var(--color-text-primary)",padding:"1px 0"}}/>
+                        <input value={getStat(p.name,col)} disabled={disabled} onChange={e=>setStat(p.name,col,e.target.value)} placeholder="—" style={{width:30,fontSize:10,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,textAlign:"center",border:"0.5px solid var(--color-border-tertiary)",borderRadius:3,background:"var(--color-background-secondary)",color:"var(--color-text-primary)",padding:"1px 0",opacity:disabled?0.65:1,cursor:disabled?"not-allowed":"text"}}/>
                       </td>
                     ))}
                     <td style={{textAlign:"center",padding:"2px 3px"}}>
-                      <button onClick={()=>setMvp(p.name)} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,lineHeight:1,opacity:game.gameMvp===p.name?1:0.25,transition:"opacity 0.15s"}}>⭐</button>
+                      <button onClick={()=>!disabled&&setMvp(p.name)} disabled={disabled} style={{background:"none",border:"none",cursor:disabled?"not-allowed":"pointer",fontSize:13,lineHeight:1,opacity:game.gameMvp===p.name?1:disabled?0.12:0.25,transition:"opacity 0.15s"}}>⭐</button>
                     </td>
                   </tr>
                 ))}</tbody>
@@ -1803,6 +1804,7 @@ function GameSlot({game,gi,match,mode,onUpdate}){
 
 function MatchCard({match,onGameUpdate,statCols,onMatchUpdate,accentLabel,matchNumber}){
   const[open,setOpen]=useState(false);
+  const editLocked=useContext(MatchEditLockContext);
   const matchSchedules=useContext(MatchScheduleContext);
   const schedule=matchSchedules.get(match.id);
   const ready=!!(match.teamA&&match.teamB);
@@ -1839,7 +1841,7 @@ function MatchCard({match,onGameUpdate,statCols,onMatchUpdate,accentLabel,matchN
     <>
     <div style={{position:"relative",width:210,flexShrink:0}}>
       {Number.isFinite(matchNumber)&&<span title={`Match ${matchNumber}`} aria-label={`Match ${matchNumber}`} style={{position:"absolute",left:-17,top:10,width:14,textAlign:"right",fontSize:11,lineHeight:1,fontWeight:800,fontFamily:"'Barlow Condensed',sans-serif",color:"var(--color-text-tertiary)",fontVariantNumeric:"tabular-nums"}}>{matchNumber}</span>}
-      <div className="match-card" onClick={()=>ready&&setOpen(true)} style={{background:ready?"#101820":"#0a1117",border:winner?`1.5px solid ${winner.color}66`:ready?"1px solid rgba(255,255,255,0.18)":"1px dashed rgba(255,255,255,0.2)",borderRadius:8,padding:"9px 11px",fontFamily:"'Barlow Condensed',sans-serif",width:210,minHeight:96,boxSizing:"border-box",opacity:ready?1:0.8,cursor:ready?"pointer":"default",boxShadow:"0 8px 22px rgba(0,0,0,0.16)",color:"#efe9dc","--color-text-primary":"#efe9dc","--color-text-secondary":"rgba(239,233,220,0.82)","--color-text-tertiary":"rgba(239,233,220,0.62)","--color-background-primary":"#0a1117","--color-background-secondary":"rgba(255,255,255,0.07)","--color-border-tertiary":"rgba(255,255,255,0.2)"}}>
+      <div className={`match-card ${editLocked?"is-locked":""}`} title={editLocked?"Tournament ended — match is read-only":undefined} onClick={()=>ready&&setOpen(true)} style={{background:ready?"#101820":"#0a1117",border:winner?`1.5px solid ${winner.color}66`:ready?"1px solid rgba(255,255,255,0.18)":"1px dashed rgba(255,255,255,0.2)",borderRadius:8,padding:"9px 11px",fontFamily:"'Barlow Condensed',sans-serif",width:210,minHeight:96,boxSizing:"border-box",opacity:ready?1:0.8,cursor:ready?"pointer":"default",boxShadow:"0 8px 22px rgba(0,0,0,0.16)",color:"#efe9dc","--color-text-primary":"#efe9dc","--color-text-secondary":"rgba(239,233,220,0.82)","--color-text-tertiary":"rgba(239,233,220,0.62)","--color-background-primary":"#0a1117","--color-background-secondary":"rgba(255,255,255,0.07)","--color-border-tertiary":"rgba(255,255,255,0.2)"}}>
         {accentLabel&&<div style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:4}}>{accentLabel}</div>}
         <div style={{marginBottom:8}}>{match.teamA?<TeamRow team={match.teamA} w={wA} score={scoreA}/>:<TBDRow/>}</div>
         <div style={{marginTop:8}}>{match.teamB?<TeamRow team={match.teamB} w={wB} score={scoreB}/>:<TBDRow/>}</div>
@@ -1849,7 +1851,7 @@ function MatchCard({match,onGameUpdate,statCols,onMatchUpdate,accentLabel,matchN
         </div>
       </div>
     </div>
-    {open&&typeof document!=="undefined"&&createPortal(<MatchDetailsModal match={match} statCols={statCols} onClose={()=>setOpen(false)} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>,document.body)}
+    {open&&typeof document!=="undefined"&&createPortal(<MatchDetailsModal match={match} statCols={statCols} locked={editLocked} onClose={()=>setOpen(false)} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>,document.body)}
     </>
   );
 }
@@ -2113,12 +2115,80 @@ function EloStandingsPanel({loadStandings,refreshToken,createAutoSync,autoSyncAv
   );
 }
 
-function EloBonusPage({loadStandings,submitBonus,refreshToken,available=false}){
+function CountrySearchField({standings,value,onChange,disabled=false,id,label="Country",className=""}){
+  const[query,setQuery]=useState("");
+  const[open,setOpen]=useState(false);
+  const selected=standings.find(team=>team.name===value);
+  const listId=`${id}-results`;
+
+  useEffect(()=>{
+    if(value)setQuery(selected?.name||"");
+  },[value,selected?.name]);
+
+  const normalized=query.trim().toLowerCase();
+  const matches=(normalized
+    ?standings.filter(team=>[team.name,team.code,team.continent].some(field=>String(field||"").toLowerCase().includes(normalized)))
+    :standings
+  ).slice(0,12);
+  const choose=team=>{
+    onChange(team.name);
+    setQuery(team.name);
+    setOpen(false);
+  };
+  const clear=()=>{
+    onChange("");
+    setQuery("");
+    setOpen(true);
+  };
+
+  return <div className={`classic-form-field ${className}`}>
+    <span>{label}</span>
+    <div className={`classic-country-search ${open&&!disabled?"is-open":""}`} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget))setOpen(false);}}>
+      <span className="classic-country-search-icon" aria-hidden="true">⌕</span>
+      <input
+        id={id}
+        role="combobox"
+        aria-label={label}
+        aria-autocomplete="list"
+        aria-expanded={open&&!disabled}
+        aria-controls={listId}
+        autoComplete="off"
+        value={query}
+        disabled={disabled}
+        placeholder="Search for a country…"
+        onFocus={event=>{setOpen(true);event.currentTarget.select();}}
+        onChange={event=>{setQuery(event.target.value);if(value)onChange("");setOpen(true);}}
+        onKeyDown={event=>{
+          if(event.key==="Escape")setOpen(false);
+          if(event.key==="ArrowDown"){event.preventDefault();setOpen(true);}
+          if(event.key==="Enter"&&open&&matches.length){event.preventDefault();choose(matches[0]);}
+        }}
+      />
+      {(query||value)&&!disabled&&<button type="button" className="classic-country-search-clear" aria-label="Clear country search" onClick={clear}>×</button>}
+      {open&&!disabled&&(
+        <div className="classic-country-search-results" id={listId} role="listbox">
+          {matches.map(team=><button type="button" role="option" aria-selected={team.name===value} key={team.name} onMouseDown={event=>event.preventDefault()} onClick={()=>choose(team)}>
+            <span className="classic-country-search-flag">{regionFlag(team.name)}</span>
+            <span><strong>{team.name}</strong><small>{team.code||team.continent||"Elo country"} · Elo {formatEloNumber(team.currentElo)}</small></span>
+            {team.name===value&&<b aria-hidden="true">✓</b>}
+          </button>)}
+          {!matches.length&&<div className="classic-country-search-empty">No matching country</div>}
+        </div>
+      )}
+    </div>
+  </div>;
+}
+
+const newEloBonusItem=()=>({id:`bonus-item-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,teamName:"",category:"Tournament bonus",points:"",event:""});
+
+function EloBonusPage({loadStandings,submitBonus,submitBonuses,refreshToken,available=false}){
   const[data,setData]=useState({loading:available,error:"",standings:[],bonuses:[]});
+  const[mode,setMode]=useState("single");
   const[teamName,setTeamName]=useState("");
   const[category,setCategory]=useState("Tournament bonus");
   const[points,setPoints]=useState("");
   const[event,setEvent]=useState("");
+  const[bulkItems,setBulkItems]=useState(()=>[newEloBonusItem()]);
   const[submitState,setSubmitState]=useState({loading:false,message:"",error:false});
 
   useEffect(()=>{
@@ -2133,7 +2203,7 @@ function EloBonusPage({loadStandings,submitBonus,refreshToken,available=false}){
         if(cancelled)return;
         const standings=Array.isArray(result?.standings)?result.standings:[];
         setData({loading:false,error:"",standings,bonuses:Array.isArray(result?.exportBonuses)?result.exportBonuses:[]});
-        setTeamName(current=>current||standings[0]?.name||"");
+        setTeamName(current=>standings.some(team=>team.name===current)?current:"");
       })
       .catch(error=>{
         if(!cancelled)setData({loading:false,error:friendlyEloError(error)||"Could not load countries.",standings:[],bonuses:[]});
@@ -2144,8 +2214,36 @@ function EloBonusPage({loadStandings,submitBonus,refreshToken,available=false}){
   const selected=data.standings.find(team=>team.name===teamName);
   const pointValue=Number(points);
   const valid=!!selected&&Number.isFinite(pointValue)&&pointValue!==0&&event.trim();
+  const validBulkItems=bulkItems.filter(item=>{
+    const itemPoints=Number(item.points);
+    return data.standings.some(team=>team.name===item.teamName)&&Number.isFinite(itemPoints)&&itemPoints!==0&&item.event.trim();
+  });
+  const bulkValid=bulkItems.length>0&&validBulkItems.length===bulkItems.length;
+  const updateBulkItem=(id,updates)=>setBulkItems(current=>current.map(item=>item.id===id?{...item,...updates}:item));
   const handleSubmit=async submitEvent=>{
     submitEvent.preventDefault();
+    if(mode==="bulk"){
+      if(!bulkValid||submitState.loading)return;
+      const payloads=bulkItems.map(item=>({teamName:item.teamName,category:item.category.trim()||"Tournament bonus",points:Number(item.points),event:item.event.trim()}));
+      setSubmitState({loading:true,message:`Applying bonus 1 of ${payloads.length}…`,error:false});
+      try{
+        if(submitBonuses){
+          await submitBonuses(payloads,(completed,total)=>setSubmitState({loading:true,message:`Applied ${completed} of ${total} bonuses…`,error:false}));
+        }else{
+          for(let idx=0;idx<payloads.length;idx++){
+            const result=await submitBonus(payloads[idx]);
+            if(!result?.ok)throw new Error(result?.error||`Bonus ${idx+1} could not be applied.`);
+            setSubmitState({loading:true,message:`Applied ${idx+1} of ${payloads.length} bonuses…`,error:false});
+          }
+        }
+        const total=payloads.length;
+        setBulkItems([newEloBonusItem()]);
+        setSubmitState({loading:false,message:`${total} bonuses applied successfully.`,error:false});
+      }catch(error){
+        setSubmitState({loading:false,message:friendlyEloError(error)||error?.message||"Bulk bonuses could not be applied.",error:true});
+      }
+      return;
+    }
     if(!valid||submitState.loading)return;
     setSubmitState({loading:true,message:"Applying bonus and recalculating Elo…",error:false});
     try{
@@ -2161,20 +2259,43 @@ function EloBonusPage({loadStandings,submitBonus,refreshToken,available=false}){
 
   return <div className="classic-page-stack">
     <section className="classic-page-intro classic-panel">
-      <div><span className="classic-eyebrow">Country adjustments</span><h2>Elo Bonuses</h2><p>Add a positive reward or negative adjustment to any country in the Kitakana Elo tracker. The new value is applied before the next submitted match.</p></div>
+      <div><span className="classic-eyebrow">Country adjustments</span><h2>Elo Bonuses</h2><p>Search for a country, apply one adjustment, or prepare several bonus items and submit them together in a checked list.</p></div>
       <span className="classic-page-icon" aria-hidden="true">＋</span>
     </section>
-    <div className="classic-bonus-layout">
+    <div className={`classic-bonus-layout ${mode==="bulk"?"is-bulk":""}`}>
       <form className="classic-panel classic-bonus-form" onSubmit={handleSubmit}>
-        <div className="classic-section-heading compact"><div><span className="classic-eyebrow">New bonus</span><h3>Adjust a country</h3></div></div>
-        <label className="classic-form-field"><span>Country</span><select value={teamName} onChange={e=>setTeamName(e.target.value)} disabled={data.loading||!!data.error}><option value="">Choose a country…</option>{data.standings.map(team=><option key={team.name} value={team.name}>{regionFlag(team.name)} {team.name} · {team.code||team.continent||"Elo team"}</option>)}</select></label>
-        {selected&&<div className="classic-selected-country"><span>{regionFlag(selected.name)}</span><div><strong>{selected.name}</strong><small>Rank #{selected.rank||"—"} · Current Elo {formatEloNumber(selected.currentElo)}</small></div></div>}
-        <div className="classic-bonus-fields">
-          <label className="classic-form-field"><span>Category</span><input value={category} onChange={e=>setCategory(e.target.value)} placeholder="Tournament bonus"/></label>
-          <label className="classic-form-field"><span>Points</span><input type="number" step="0.1" value={points} onChange={e=>setPoints(e.target.value)} placeholder="e.g. 12.5 or -5"/></label>
+        <div className="classic-section-heading compact"><div><span className="classic-eyebrow">New bonus</span><h3>{mode==="bulk"?"Bulk adjustments":"Adjust a country"}</h3></div></div>
+        <div className="classic-bonus-mode-toggle" aria-label="Bonus entry mode">
+          <button type="button" className={mode==="single"?"is-active":""} onClick={()=>{setMode("single");setSubmitState({loading:false,message:"",error:false});}}>Single bonus</button>
+          <button type="button" className={mode==="bulk"?"is-active":""} onClick={()=>{setMode("bulk");setSubmitState({loading:false,message:"",error:false});}}>Bulk add</button>
         </div>
-        <label className="classic-form-field"><span>Reason / event</span><textarea rows="4" value={event} onChange={e=>setEvent(e.target.value)} placeholder="Explain why this country receives the adjustment…"/></label>
-        <button className="classic-primary-button" type="submit" disabled={!valid||submitState.loading}>{submitState.loading?"Applying bonus…":"Apply Elo bonus"}<span aria-hidden="true">→</span></button>
+        {mode==="single"?(
+          <>
+            <CountrySearchField id="single-bonus-country" standings={data.standings} value={teamName} onChange={setTeamName} disabled={data.loading||!!data.error}/>
+            {selected&&<div className="classic-selected-country"><span>{regionFlag(selected.name)}</span><div><strong>{selected.name}</strong><small>Rank #{selected.rank||"—"} · Current Elo {formatEloNumber(selected.currentElo)}</small></div></div>}
+            <div className="classic-bonus-fields">
+              <label className="classic-form-field"><span>Category</span><input value={category} onChange={e=>setCategory(e.target.value)} placeholder="Tournament bonus"/></label>
+              <label className="classic-form-field"><span>Points</span><input type="number" step="0.1" value={points} onChange={e=>setPoints(e.target.value)} placeholder="e.g. 12.5 or -5"/></label>
+            </div>
+            <label className="classic-form-field"><span>Reason / event</span><textarea rows="4" value={event} onChange={e=>setEvent(e.target.value)} placeholder="Explain why this country receives the adjustment…"/></label>
+          </>
+        ):(
+          <div className="classic-bulk-bonus-editor">
+            <div className="classic-bulk-bonus-summary"><span>{bulkItems.length} item{bulkItems.length===1?"":"s"}</span><small>Bonuses are submitted from top to bottom.</small></div>
+            <div className="classic-bulk-bonus-items">
+              {bulkItems.map((item,index)=><article key={item.id} className="classic-bulk-bonus-item">
+                <div className="classic-bulk-bonus-number">{String(index+1).padStart(2,"0")}</div>
+                <CountrySearchField id={`${item.id}-country`} className="is-country" label="Country" standings={data.standings} value={item.teamName} onChange={teamName=>updateBulkItem(item.id,{teamName})} disabled={data.loading||!!data.error}/>
+                <label className="classic-form-field is-category"><span>Category</span><input value={item.category} onChange={e=>updateBulkItem(item.id,{category:e.target.value})} placeholder="Tournament bonus"/></label>
+                <label className="classic-form-field is-points"><span>Points</span><input type="number" step="0.1" value={item.points} onChange={e=>updateBulkItem(item.id,{points:e.target.value})} placeholder="+ / −"/></label>
+                <label className="classic-form-field is-event"><span>Reason / event</span><input value={item.event} onChange={e=>updateBulkItem(item.id,{event:e.target.value})} placeholder="Reason for this adjustment…"/></label>
+                <button type="button" className="classic-bulk-bonus-remove" aria-label={`Remove bonus item ${index+1}`} onClick={()=>setBulkItems(current=>current.length===1?[newEloBonusItem()]:current.filter(row=>row.id!==item.id))}>×</button>
+              </article>)}
+            </div>
+            <button type="button" className="classic-bulk-bonus-add" onClick={()=>setBulkItems(current=>[...current,newEloBonusItem()])}>＋ Add another item</button>
+          </div>
+        )}
+        <button className="classic-primary-button" type="submit" disabled={(mode==="single"?!valid:!bulkValid)||submitState.loading}>{submitState.loading?mode==="bulk"?"Applying bonuses…":"Applying bonus…":mode==="bulk"?`Apply ${bulkItems.length} bonuses`:"Apply Elo bonus"}<span aria-hidden="true">→</span></button>
         {(data.error||submitState.message)&&<p className={`classic-form-message ${(data.error||submitState.error)?"is-error":""}`}>{data.error||submitState.message}</p>}
       </form>
       <section className="classic-panel classic-bonus-history">
@@ -2187,7 +2308,7 @@ function EloBonusPage({loadStandings,submitBonus,refreshToken,available=false}){
   </div>;
 }
 
-function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
+function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols,locked=false}){
   const[selectedGameIndex,setSelectedGameIndex]=useState(0);
   const ready=!!(match.teamA&&match.teamB);
   const{wA,wB,scoreA,scoreB,winner}=ready?matchResult(match):{wA:0,wB:0,scoreA:0,scoreB:0,winner:null};
@@ -2214,10 +2335,10 @@ function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
       const other=Number(game[otherScoreKey]);
       const hasBoth=game[scoreKey]!==""&&game[scoreKey]!=null&&game[otherScoreKey]!==""&&game[otherScoreKey]!=null;
       const isWinning=hasBoth&&own>other;
-      return <input type="number" min="0" step="any" aria-label={`${team.name} game ${gameIdx+1} score`} value={game[scoreKey]??""} onChange={event=>onGameUpdate(gameIdx,{[scoreKey]:event.target.value})} style={{width:70,height:38,borderRadius:6,border:`1px solid ${isWinning?team.color:"var(--color-border-tertiary)"}`,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontSize:16,fontWeight:800,fontFamily:"'Barlow Condensed',sans-serif",textAlign:"center",padding:"0 6px",boxSizing:"border-box"}}/>;
+      return <input type="number" min="0" step="any" aria-label={`${team.name} game ${gameIdx+1} score`} value={game[scoreKey]??""} disabled={locked} onChange={event=>onGameUpdate(gameIdx,{[scoreKey]:event.target.value})} style={{width:70,height:38,borderRadius:6,border:`1px solid ${isWinning?team.color:"var(--color-border-tertiary)"}`,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontSize:16,fontWeight:800,fontFamily:"'Barlow Condensed',sans-serif",textAlign:"center",padding:"0 6px",boxSizing:"border-box",opacity:locked?0.65:1,cursor:locked?"not-allowed":"text"}}/>;
     }
     const selected=!game.isTie&&game.winnerName===team.name;
-    return <button onClick={()=>onGameUpdate(gameIdx,{winnerName:selected?null:team.name,isTie:false})} aria-pressed={selected} style={{width:76,height:34,borderRadius:6,border:`1px solid ${selected?team.color:"var(--color-border-tertiary)"}`,background:selected?`${team.color}33`:"var(--color-background-primary)",color:selected?team.color:"var(--color-text-secondary)",fontSize:11,fontWeight:900,fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase",cursor:"pointer"}}>{selected?"Winner":"Select"}</button>;
+    return <button onClick={()=>onGameUpdate(gameIdx,{winnerName:selected?null:team.name,isTie:false})} disabled={locked} aria-pressed={selected} style={{width:76,height:34,borderRadius:6,border:`1px solid ${selected?team.color:"var(--color-border-tertiary)"}`,background:selected?`${team.color}33`:"var(--color-background-primary)",color:selected?team.color:"var(--color-text-secondary)",fontSize:11,fontWeight:900,fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase",cursor:locked?"not-allowed":"pointer",opacity:locked?0.65:1}}>{selected?"Winner":"Select"}</button>;
   };
   return(
     <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.78)",display:"flex",alignItems:"center",justifyContent:"center",padding:18}}>
@@ -2243,11 +2364,13 @@ function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
           ))}
         </div>
 
+        {locked&&<div className="classic-match-locked-notice"><span aria-hidden="true">⌑</span><div><strong>Tournament completed</strong><small>This match is read-only. Elo submission remains available below.</small></div></div>}
+
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:9,flexWrap:"wrap"}}>
           <div style={{fontSize:11,fontWeight:900,letterSpacing:"0.09em",textTransform:"uppercase",color:"#b99a55"}}>Games · all in one view</div>
           <div style={{display:"flex",gap:6}}>
-            <button onClick={()=>deleteGame(match.games.length-1)} disabled={match.games.length<=1} style={{...btn(false),padding:"4px 10px",border:"1px solid rgba(183,91,100,0.45)",color:"#b75b64",opacity:match.games.length<=1?0.4:1,cursor:match.games.length<=1?"not-allowed":"pointer"}}>− Game</button>
-            <button onClick={addGame} style={{...btn(false),padding:"4px 10px",border:"1px solid rgba(79,119,115,0.45)",color:"#4f7773"}}>+ Game</button>
+            <button onClick={()=>deleteGame(match.games.length-1)} disabled={locked||match.games.length<=1} style={{...btn(false),padding:"4px 10px",border:"1px solid rgba(183,91,100,0.45)",color:"#b75b64",opacity:locked||match.games.length<=1?0.4:1,cursor:locked||match.games.length<=1?"not-allowed":"pointer"}}>− Game</button>
+            <button onClick={addGame} disabled={locked} style={{...btn(false),padding:"4px 10px",border:"1px solid rgba(79,119,115,0.45)",color:"#4f7773",opacity:locked?0.4:1,cursor:locked?"not-allowed":"pointer"}}>+ Game</button>
           </div>
         </div>
         <div style={{overflowX:"auto",marginBottom:12,border:"1px solid var(--color-border-tertiary)",borderRadius:8,background:"var(--color-background-secondary)"}}>
@@ -2258,7 +2381,7 @@ function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
                 {match.games.map((game,gameIdx)=><th key={game.id??gameIdx} style={{minWidth:105,padding:"7px 8px",textAlign:"center",borderLeft:"1px solid var(--color-border-tertiary)",background:selectedGameIndex===gameIdx?"rgba(185,154,85,0.06)":"transparent"}}>
                   <button onClick={()=>setSelectedGameIndex(gameIdx)} style={{background:"none",border:0,color:selectedGameIndex===gameIdx?"#b99a55":"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:900,letterSpacing:"0.07em",textTransform:"uppercase",cursor:"pointer",padding:2}}>Game {gameIdx+1}</button>
                   {game.gameMvp&&<div title={`MVP: ${game.gameMvp}`} style={{fontSize:9,color:"#b99a55",fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>⭐ {game.gameMvp}</div>}
-                  {canTie&&match.matchMode!=="score"&&<button onClick={()=>onGameUpdate(gameIdx,{winnerName:null,isTie:!game.isTie})} aria-pressed={!!game.isTie} style={{marginTop:3,padding:"2px 7px",borderRadius:4,border:"1px solid var(--color-border-tertiary)",background:game.isTie?"#b99a55":"var(--color-background-primary)",color:game.isTie?"#17130b":"var(--color-text-tertiary)",fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:900,cursor:"pointer"}}>Tie</button>}
+                  {canTie&&match.matchMode!=="score"&&<button onClick={()=>onGameUpdate(gameIdx,{winnerName:null,isTie:!game.isTie})} disabled={locked} aria-pressed={!!game.isTie} style={{marginTop:3,padding:"2px 7px",borderRadius:4,border:"1px solid var(--color-border-tertiary)",background:game.isTie?"#b99a55":"var(--color-background-primary)",color:game.isTie?"#17130b":"var(--color-text-tertiary)",fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:900,cursor:locked?"not-allowed":"pointer",opacity:locked?0.65:1}}>Tie</button>}
                 </th>)}
               </tr>
             </thead>
@@ -2276,13 +2399,13 @@ function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
             <span style={{fontSize:11,fontWeight:900,letterSpacing:"0.07em",textTransform:"uppercase",color:"#b99a55"}}>Game {selectedGameIndex+1} player details</span>
             <span style={{fontSize:9,color:"var(--color-text-tertiary)"}}>Select a game heading above to edit its stats and MVP.</span>
           </div>
-          <PlayerStatPanel match={match} gameIdx={Math.min(selectedGameIndex,match.games.length-1)} statCols={statCols} onUpdate={onGameUpdate}/>
+          <PlayerStatPanel match={match} gameIdx={Math.min(selectedGameIndex,match.games.length-1)} statCols={statCols} onUpdate={onGameUpdate} disabled={locked}/>
         </div>}
 
         {allPlayers.length>0&&(
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
             <span style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#b99a55"}}>Match MVP</span>
-            <select value={match.mvp||""} onChange={e=>onMatchUpdate({mvp:e.target.value||null})} style={{fontSize:12,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,border:"0.5px solid rgba(185,154,85,0.4)",borderRadius:5,background:"rgba(185,154,85,0.07)",color:"var(--color-text-primary)",padding:"4px 7px",cursor:"pointer"}}>
+            <select value={match.mvp||""} disabled={locked} onChange={e=>onMatchUpdate({mvp:e.target.value||null})} style={{fontSize:12,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,border:"0.5px solid rgba(185,154,85,0.4)",borderRadius:5,background:"rgba(185,154,85,0.07)",color:"var(--color-text-primary)",padding:"4px 7px",cursor:locked?"not-allowed":"pointer",opacity:locked?0.65:1}}>
               <option value="">No MVP yet</option>
               {[match.teamA,match.teamB].map(team=><optgroup key={team.name} label={team.name}>{(team.players||[]).filter(p=>p.role==="player"||p.role==="substitute").map(p=><option key={p.name} value={p.name}>{p.name}</option>)}</optgroup>)}
             </select>
@@ -2577,6 +2700,7 @@ function SingleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualifi
 
 function DoubleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualificationStatus=null,matchNumbers:providedMatchNumbers}){
   const[showFull,setShowFull]=useState(false);
+  const editLocked=useContext(MatchEditLockContext);
   const matchSchedules=useContext(MatchScheduleContext);
   const finalState=doubleElimFinalState(bracketData);
   const propagated=finalState.propagated;
@@ -2615,12 +2739,12 @@ function DoubleElimView({bracketData,onGameUpdate,onMatchUpdate,statCols,qualifi
                 <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#b99a55",marginBottom:12}}>Grand Final{grandFinalSchedule&&<span> · {grandFinalSchedule.dateLabel}</span>}</div>
                 <div style={{display:"flex",flexDirection:"column",gap:10}}>
                   <MatchCard match={propagated.grandFinal} matchNumber={matchNumbers.get(propagated.grandFinal.id)} statCols={statCols} accentLabel="Grand Final" onGameUpdate={(gi,upd)=>onGameUpdate(propagated.grandFinal.id,gi,upd)} onMatchUpdate={upd=>onMatchUpdate(propagated.grandFinal.id,upd)}/>
-                  {resetNeeded&&!resetActive&&<button onClick={()=>onMatchUpdate(propagated.grandFinalReset.id,{_resetEnabled:true})} style={{...btn(false),padding:"6px 10px",fontSize:11,borderColor:"rgba(185,154,85,0.45)",color:"#c0a15c"}}>Add Bracket Reset</button>}
+                  {resetNeeded&&!resetActive&&<button onClick={()=>onMatchUpdate(propagated.grandFinalReset.id,{_resetEnabled:true})} disabled={editLocked} style={{...btn(false),padding:"6px 10px",fontSize:11,borderColor:"rgba(185,154,85,0.45)",color:"#c0a15c",opacity:editLocked?0.4:1,cursor:editLocked?"not-allowed":"pointer"}}>Add Bracket Reset</button>}
                   {resetActive&&(
                     <div style={{display:"flex",flexDirection:"column",gap:6}}>
                       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
                         <span style={{fontSize:10,color:"#b99a55",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase"}}>Bracket Reset{resetSchedule&&` · ${resetSchedule.dateLabel}`}</span>
-                        <button onClick={clearResetGames} style={{border:"none",background:"none",color:"var(--color-text-tertiary)",cursor:"pointer",fontSize:10,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,textTransform:"uppercase"}}>Skip</button>
+                        <button onClick={clearResetGames} disabled={editLocked} style={{border:"none",background:"none",color:"var(--color-text-tertiary)",cursor:editLocked?"not-allowed":"pointer",fontSize:10,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,textTransform:"uppercase",opacity:editLocked?0.4:1}}>Skip</button>
                       </div>
                       <MatchCard match={propagated.grandFinalReset} matchNumber={matchNumbers.get(propagated.grandFinalReset.id)} statCols={statCols} accentLabel="Bracket Reset" onGameUpdate={(gi,upd)=>onGameUpdate(propagated.grandFinalReset.id,gi,upd)} onMatchUpdate={upd=>onMatchUpdate(propagated.grandFinalReset.id,upd)}/>
                     </div>
@@ -2652,6 +2776,7 @@ function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreak
   const[activeRound,setActiveRound]=useState(0);
   const[playerSort,setPlayerSort]=useState("mw");
   const[showPlayers,setShowPlayers]=useState(false);
+  const editLocked=useContext(MatchEditLockContext);
   const matchSchedules=useContext(MatchScheduleContext);
   const total=rrRounds.length,all=rrRounds.flat();
   const matchNumbers=providedMatchNumbers||stageMatchNumberMap({type:"roundrobin",rounds:rrRounds});
@@ -2695,7 +2820,7 @@ function RoundRobinView({rrRounds,teams,onGameUpdate,onMatchUpdate,onAddTiebreak
             </button>
           );
         })}
-        {pendingTiebreak&&onAddTiebreakRound&&(
+        {pendingTiebreak&&onAddTiebreakRound&&!editLocked&&(
           <button onClick={()=>{onAddTiebreakRound(pendingTiebreak);setActiveRound(total);}} style={{...btn(false),padding:"5px 11px",borderRadius:6,cursor:"pointer",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:12,letterSpacing:"0.05em",textTransform:"uppercase",borderColor:"rgba(185,154,85,0.55)",color:"#c0a15c"}}>
             TB
             <span style={{fontSize:9,display:"block",fontWeight:500,color:"var(--color-text-tertiary)",lineHeight:1}}>Add</span>
@@ -2983,17 +3108,17 @@ function BulkTeamAdder({onAdd,maxAdd}){
 }
 
 // ─── Stat columns editor ──────────────────────────────────────────────────────
-function StatColsEditor({statCols,onChange}){
+function StatColsEditor({statCols,onChange,disabled=false}){
   const[input,setInput]=useState("");
   return(
     <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
       <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Stats:</span>
       {statCols.map((col,i)=>(
         <span key={i} style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:11,padding:"2px 6px",borderRadius:4,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,color:"var(--color-text-primary)"}}>
-          {col}<button onClick={()=>onChange(statCols.filter((_,idx)=>idx!==i))} style={{background:"none",border:"none",cursor:"pointer",color:"var(--color-text-tertiary)",fontSize:12,padding:"0 1px",lineHeight:1}}>×</button>
+          {col}<button onClick={()=>!disabled&&onChange(statCols.filter((_,idx)=>idx!==i))} disabled={disabled} style={{background:"none",border:"none",cursor:disabled?"not-allowed":"pointer",color:"var(--color-text-tertiary)",fontSize:12,padding:"0 1px",lineHeight:1,opacity:disabled?0.35:1}}>×</button>
         </span>
       ))}
-      <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&input.trim()){onChange([...statCols,input.trim()]);setInput("");}}} placeholder="+ stat…" style={{fontSize:11,width:70,padding:"2px 6px",borderRadius:4,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif"}}/>
+      <input value={input} disabled={disabled} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(!disabled&&e.key==="Enter"&&input.trim()){onChange([...statCols,input.trim()]);setInput("");}}} placeholder="+ stat…" style={{fontSize:11,width:70,padding:"2px 6px",borderRadius:4,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",opacity:disabled?0.45:1,cursor:disabled?"not-allowed":"text"}}/>
     </div>
   );
 }
@@ -3073,6 +3198,7 @@ const FORMAT_LABELS={"single":"Single Elim","double":"Double Elim","roundrobin":
 // Stage 0: pick how many teams play + how many advance
 // Stage N (idx>=1): choose AAT (auto-advance teams) + how many from previous stage
 function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=false,metricRulesLocked=false}){
+  const matchEditsLocked=useContext(MatchEditLockContext);
   const teamCount=stage.teamCount||2;
   let bracketSz=1; while(bracketSz<teamCount)bracketSz*=2;
   const bracketByes=bracketSz-teamCount;
@@ -3091,7 +3217,7 @@ function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=
       {/* ── Header row: stage label + format picker ── */}
       <div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderBottom:"0.5px solid var(--color-border-tertiary)",background:"rgba(0,0,0,0.05)"}}>
         <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:800,fontSize:13,letterSpacing:"0.07em",textTransform:"uppercase",color:"var(--color-text-primary)",minWidth:56}}>Stage {idx+1}</span>
-        <StagePeriodInput value={stage.period} onChange={period=>onChange({...stage,period})} compact/>
+        <StagePeriodInput value={stage.period} onChange={period=>onChange({...stage,period})} disabled={matchEditsLocked} compact/>
         <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
           {["single","double","roundrobin"].map(f=>(
             <button key={f} onClick={()=>!controlDisabled&&onChange({...stage,format:f})} disabled={controlDisabled} style={{...btn(stage.format===f),padding:"2px 8px",fontSize:10,...(controlDisabled?disabledStyle:{})}}>{FORMAT_LABELS[f]}</button>
@@ -3210,6 +3336,7 @@ function StageConfig({stage,idx,totalTeams,isLast,onChange,locked=false,lockAat=
 function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpdate,onStageUpdate,onAdvance,onStagePeriodChange,matchNumberMaps,matchScheduleMaps,stageRanges,activeStageIdx,setActiveStageIdx}){
   const[playerSort,setPlayerSort]=useState("mw");
   const[showPlayers,setShowPlayers]=useState(false);
+  const matchEditsLocked=useContext(MatchEditLockContext);
 
   const stage=stages[activeStageIdx];
   const data=stageData[activeStageIdx];
@@ -3319,7 +3446,7 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
           {(stageData[0]?.aatTeamsByStage?.[activeStageIdx]||[]).length>0&&<span style={{color:"#4f7773",marginLeft:6}}>({(stageData[0]?.aatTeamsByStage?.[activeStageIdx]||[]).length} AAT joined)</span>}
         </span>
         <span style={{fontSize:10,color:"var(--color-text-tertiary)",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.06em",marginLeft:6}}>Stage end month</span>
-        <StagePeriodInput value={stage?.period} onChange={period=>onStagePeriodChange?.(activeStageIdx,period)} compact/>
+        <StagePeriodInput value={stage?.period} onChange={period=>onStagePeriodChange?.(activeStageIdx,period)} disabled={matchEditsLocked} compact/>
         {stageRange&&<span style={{fontSize:10,color:stageRange.valid?"#c0a15c":"#b75b64",fontWeight:800}}>{formatStageDateRange(stageRange)}</span>}
         {data&&data.type!=="roundrobin"&&<button onClick={()=>setShowPlayers(p=>!p)} style={{...btn(showPlayers),padding:"4px 10px",fontSize:11,marginLeft:"auto"}}>{showPlayers?"🏆 Teams":"👤 Players"}</button>}
       </div>
@@ -5170,6 +5297,26 @@ export default function App(){
     return data;
   };
 
+  const submitEloBonuses=async(bonuses,onProgress)=>{
+    await ensureEloTrackerInitialized();
+    const results=[];
+    for(let idx=0;idx<bonuses.length;idx++){
+      const bonus=bonuses[idx];
+      const{data,error}=await supabase.rpc("kitakana_submit_bonus",{
+        p_team_name:bonus.teamName,
+        p_category:bonus.category,
+        p_points:bonus.points,
+        p_event:bonus.event
+      });
+      if(error)throw error;
+      if(!data?.ok)throw new Error(data?.error||`Bonus ${idx+1} could not be applied.`);
+      results.push(data);
+      onProgress?.(idx+1,bonuses.length);
+    }
+    if(results.length)setEloRefreshKey(value=>value+1);
+    return{ok:true,submitted:results.length,results};
+  };
+
   const collectCompletedEloPayloads=({stageIdx=null}={})=>{
     const payloads=new Map();
     const pushMatch=(match,context)=>{
@@ -5259,6 +5406,7 @@ export default function App(){
   };
 
   const renameParticipant=(seed,newName)=>{
+    if(tournamentEnded)return;
     const name=newName.trim();
     const current=teamsWithSeed.find(t=>t.seed===seed);
     if(!current||!name||name===current.name)return;
@@ -5292,6 +5440,7 @@ export default function App(){
   };
 
   const updateNonMultiSettings=(updates)=>{
+    if(tournamentEnded)return;
     if(Object.prototype.hasOwnProperty.call(updates,"stagePeriod")&&Object.keys(updates).every(key=>key==="stagePeriod")){
       setStagePeriod(normalizeStagePeriod(updates.stagePeriod));
       return;
@@ -5318,6 +5467,7 @@ export default function App(){
   };
 
   const updateStageConfigFromSettings=(idx,updated)=>{
+    if(tournamentEnded)return;
     if(stageData[idx]){
       if(normalizeStagePeriod(updated.period)){
         updateMultiStages(prev=>prev.map((stage,i)=>i===idx?{...stage,period:normalizeStagePeriod(updated.period)}:stage));
@@ -5360,6 +5510,7 @@ export default function App(){
 
   // Update match in any bracket structure
   const updateMatchInBracket=(matchId,updater)=>{
+    if(tournamentEnded)return;
     if(isRR){setRrRounds(prev=>prev.map(round=>round.map(m=>m.id===matchId?updater(m):m)));return;}
     setBracketData(prev=>{
       if(!prev)return prev;
@@ -5399,6 +5550,7 @@ export default function App(){
   };
 
   const updateMatchInStage=(stageIdx,matchId,updater)=>{
+    if(tournamentEnded)return;
     setStageData(prev=>{
       const base=prev[stageIdx];
       let sd={...(base?.type==="double"?normalizeDoubleElimData(base):base)};
@@ -5418,12 +5570,16 @@ export default function App(){
   const handleMatchUpdate=(matchId,upd)=>updateMatchInBracket(matchId,m=>({...m,...upd}));
   const handleStageGameUpdate=(stageIdx,matchId,gi,upd)=>updateMatchInStage(stageIdx,matchId,m=>({...m,games:m.games.map((g,i)=>i===gi?{...g,...upd}:g)}));
   const handleStageMatchUpdate=(stageIdx,matchId,upd)=>updateMatchInStage(stageIdx,matchId,m=>({...m,...upd}));
-  const handleStageDataUpdate=(stageIdx,updater)=>setStageData(prev=>{
-    const raw=typeof updater==="function"?updater(prev[stageIdx]):updater;
-    return {...prev,[stageIdx]:syncStageQualificationData(raw,stages[stageIdx],stageIdx===stages.length-1)};
-  });
+  const handleStageDataUpdate=(stageIdx,updater)=>{
+    if(tournamentEnded)return;
+    setStageData(prev=>{
+      const raw=typeof updater==="function"?updater(prev[stageIdx]):updater;
+      return {...prev,[stageIdx]:syncStageQualificationData(raw,stages[stageIdx],stageIdx===stages.length-1)};
+    });
+  };
 
   const handleAdvance=async(fromStageIdx,advancing)=>{
+    if(tournamentEnded)return;
     await resubmitEloSequentially({stageIdx:fromStageIdx,label:`Stage ${fromStageIdx+1}`});
     const nextIdx=fromStageIdx+1;
     const st=stages[nextIdx];
@@ -5466,6 +5622,7 @@ export default function App(){
   };
 
   const reconfigureGames=(newG)=>{
+    if(tournamentEnded)return;
     const ng=matchMode==="wl"?1:newG;setGamesPerMatch(newG);
     const adj=m=>adjGames(m,ng);
     if(isRR)setRrRounds(p=>p.map(r=>r.map(adj)));
@@ -5553,12 +5710,14 @@ export default function App(){
   };
 
   const createPlacementTiebreakForRange=(group)=>{
+    if(tournamentEnded)return;
     if(!group?.teams?.length||group.teams.length<2)return;
     const tiebreak=buildPlacementTiebreak(group.rankFrom,group.rankTo,group.teams,finalMatchConfigForState(liveTournamentState));
     setPlacementTiebreaks(prev=>[...prev.filter(item=>item.key!==tiebreak.key),tiebreak]);
   };
 
   const updatePlacementTiebreakMatch=(tiebreakId,matchId,updater)=>{
+    if(tournamentEnded)return;
     setPlacementTiebreaks(prev=>prev.map(tiebreak=>{
       if(tiebreak.id!==tiebreakId)return tiebreak;
       return syncPlacementTiebreak({
@@ -5607,7 +5766,8 @@ export default function App(){
                   <div className="classic-final-tiebreak-teams">
                     {listedTeams.map(team=><TeamTag key={team.name} name={team.name} color={team.color} seed={team.seed} small/>)}
                   </div>
-                  {!tiebreak&&<button onClick={()=>createPlacementTiebreakForRange(group)} style={{...btn(false),padding:"6px 11px",fontSize:11,borderColor:"rgba(79,119,115,0.45)",color:"#8fafab",marginLeft:"auto"}}>Create Tiebreak</button>}
+                  {!tiebreak&&!tournamentEnded&&<button onClick={()=>createPlacementTiebreakForRange(group)} style={{...btn(false),padding:"6px 11px",fontSize:11,borderColor:"rgba(79,119,115,0.45)",color:"#8fafab",marginLeft:"auto"}}>Create Tiebreak</button>}
+                  {!tiebreak&&tournamentEnded&&<span className="classic-final-tiebreak-status">Read only</span>}
                 </div>
                 {tiebreak&&(
                   <MatchScheduleContext.Provider value={placementMatchScheduleMaps.get(tiebreak.id)||new Map()}>
@@ -5666,7 +5826,7 @@ export default function App(){
         <div style={{padding:"14px 16px",borderRadius:10,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)"}}>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
             <div style={{fontSize:12,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"var(--color-text-primary)"}}>Tournament Settings</div>
-            {nonMultiSettingsLocked&&<span style={{fontSize:11,color:!nonMultiMetricRulesLocked&&formatType==="roundrobin"?"#c0a15c":"#b75b64",marginLeft:"auto"}}>{!nonMultiMetricRulesLocked&&formatType==="roundrobin"?"Started - metrics editable":"Started - read only"}</span>}
+            {(nonMultiSettingsLocked||tournamentEnded)&&<span style={{fontSize:11,color:tournamentEnded?"#8fafab":!nonMultiMetricRulesLocked&&formatType==="roundrobin"?"#c0a15c":"#b75b64",marginLeft:"auto"}}>{tournamentEnded?"Tournament ended - read only":!nonMultiMetricRulesLocked&&formatType==="roundrobin"?"Started - metrics editable":"Started - read only"}</span>}
           </div>
           <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:10}}>Format</div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
@@ -5694,9 +5854,9 @@ export default function App(){
                 {ELO_TIERS.map(tier=><option key={tier} value={tier}>{tier}</option>)}
               </select>
             </label>
-            <StagePeriodInput value={stagePeriod} onChange={period=>updateNonMultiSettings({stagePeriod:period})}/>
+            <StagePeriodInput value={stagePeriod} onChange={period=>updateNonMultiSettings({stagePeriod:period})} disabled={tournamentEnded}/>
           </div>
-          {formatType==="roundrobin"&&<StandingsRulesEditor rules={rrStandingsRules} onChange={rules=>updateNonMultiSettings({rrStandingsRules:rules})} disabled={nonMultiMetricRulesLocked}/>}
+          {formatType==="roundrobin"&&<StandingsRulesEditor rules={rrStandingsRules} onChange={rules=>updateNonMultiSettings({rrStandingsRules:rules})} disabled={nonMultiMetricRulesLocked||tournamentEnded}/>}
         </div>
       )}
       {isMulti&&(
@@ -5713,7 +5873,7 @@ export default function App(){
               const done=stageData[idx]?.type==="groupstage"?groupStageReady(stageData[idx],stage,idx===stages.length-1):stageQualificationStatus(stageData[idx],stage,idx===stages.length-1).ready;
               return(
                 <div key={idx}>
-                  <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:done?"#b75b64":started?"#c0a15c":"#4f7773",margin:"0 0 5px 2px"}}>{done?"Done - stage date remains editable":started?"Started - stage date and metrics editable":"Not started - editable"}</div>
+                  <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:tournamentEnded?"#8fafab":done?"#b75b64":started?"#c0a15c":"#4f7773",margin:"0 0 5px 2px"}}>{tournamentEnded?"Tournament ended - read only":done?"Done - stage date remains editable":started?"Started - stage date and metrics editable":"Not started - editable"}</div>
                   <StageConfig
                     stage={displayStage}
                     idx={idx}
@@ -5721,7 +5881,7 @@ export default function App(){
                     isLast={idx===stages.length-1}
                     locked={started}
                     lockAat={idx>0}
-                    metricRulesLocked={done}
+                    metricRulesLocked={done||tournamentEnded}
                     onChange={updated=>updateStageConfigFromSettings(idx,updated)}
                   />
                 </div>
@@ -5738,13 +5898,13 @@ export default function App(){
       <div style={{fontSize:12,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"var(--color-text-primary)",marginBottom:12}}>Participants</div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
         {teamsWithSeed.map(team=>{
-          const locked=!!team._qualificationLinkId;
+          const locked=tournamentEnded||!!team._qualificationLinkId;
           return(
             <div key={`${team.seed}-${team.name}`} style={{display:"grid",gridTemplateColumns:"42px minmax(0,1fr)",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-primary)"}}>
               <span style={{fontSize:12,fontWeight:800,color:"var(--color-text-tertiary)",textAlign:"right"}}>#{team.seed}</span>
               <div>
                 <ParticipantNameInput team={team} disabled={locked} onCommit={name=>renameParticipant(team.seed,name)}/>
-                {locked&&<div style={{fontSize:10,color:"var(--color-text-tertiary)",marginTop:3}}>Linked qualifier name</div>}
+                {locked&&<div style={{fontSize:10,color:"var(--color-text-tertiary)",marginTop:3}}>{tournamentEnded?"Tournament ended — participant locked":"Linked qualifier name"}</div>}
               </div>
             </div>
           );
@@ -5803,6 +5963,7 @@ export default function App(){
 
   return(
     <EloBridgeContext.Provider value={{getMatchContext:getMatchEloContext,loadMatchInfo:loadEloMatchInfo,submitMatch:submitEloMatch}}>
+    <MatchEditLockContext.Provider value={tournamentEnded}>
     <div className="tourney-app-shell" style={{fontFamily:"'Barlow Condensed',sans-serif"}}>
       <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Barlow:wght@400;500&display=swap" rel="stylesheet"/>
       <style>{`
@@ -5963,7 +6124,7 @@ export default function App(){
 
           {shellPage==="elo"&&<section className="classic-dedicated-page"><EloStandingsPanel loadStandings={loadEloStandings} refreshToken={eloRefreshKey} createAutoSync={createEloSheetAutoSync} autoSyncAvailable={!!(supabaseConfigured&&currentUser?.supabase)}/></section>}
 
-          {shellPage==="bonuses"&&<EloBonusPage loadStandings={loadEloStandings} submitBonus={submitEloBonus} refreshToken={eloRefreshKey} available={!!(supabaseConfigured&&currentUser?.supabase)}/>}
+          {shellPage==="bonuses"&&<EloBonusPage loadStandings={loadEloStandings} submitBonus={submitEloBonus} submitBonuses={submitEloBonuses} refreshToken={eloRefreshKey} available={!!(supabaseConfigured&&currentUser?.supabase)}/>}
 
           {shellPage==="files"&&<div className="classic-files-page-grid">
             <section className="classic-panel classic-folders-library">
@@ -6157,6 +6318,7 @@ export default function App(){
               ))}
             </div>
             {canEndTournament&&<button onClick={endTournament} style={{...btn(false),padding:"7px 13px",fontSize:12,borderColor:"rgba(79,119,115,0.45)",color:"#4f7773"}}>End Tournament</button>}
+            {tournamentEnded&&<span className="classic-workspace-readonly">⌑ Matches read only</span>}
           </div>
           {bracketTab==="tournament"&&(
             <>
@@ -6164,14 +6326,14 @@ export default function App(){
             <div className="classic-workspace-toolbar" style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"10px 14px",background:"var(--color-background-secondary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap"}}>
               <span style={{padding:"3px 10px",borderRadius:5,background:"rgba(185,154,85,0.12)",border:"1px solid rgba(185,154,85,0.3)",fontSize:12,fontWeight:700,color:"#c0a15c",fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase",letterSpacing:"0.05em"}}>{matchMode==="wl"?"Win/Lose":matchMode==="games"?"Game Wins":"Score"}{matchMode!=="wl"&&` · Bo${effectiveGames}`}</span>
               <span style={{fontSize:10,color:"var(--color-text-tertiary)",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.06em"}}>Stage end month</span>
-              <StagePeriodInput value={stagePeriod} onChange={period=>{setStagePeriod(normalizeStagePeriod(period));setEloSyncState({loading:false,message:"Stage date changed. Sync Elo to update completed matches.",error:false});}} compact/>
+              <StagePeriodInput value={stagePeriod} onChange={period=>{if(tournamentEnded)return;setStagePeriod(normalizeStagePeriod(period));setEloSyncState({loading:false,message:"Stage date changed. Sync Elo to update completed matches.",error:false});}} disabled={tournamentEnded} compact/>
               <span style={{fontSize:10,color:nonMultiStageRange?.valid?"#c0a15c":"#b75b64",fontWeight:800}}>{formatStageDateRange(nonMultiStageRange)}</span>
-              {matchMode!=="wl"&&<><Stepper value={gamesPerMatch} min={1} max={11} onChange={reconfigureGames} small/><span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>games</span></>}
+              {matchMode!=="wl"&&<><Stepper value={gamesPerMatch} min={1} max={11} onChange={reconfigureGames} small disabled={tournamentEnded}/><span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>games</span></>}
               <button onClick={()=>setShowPlayers(p=>!p)} style={{...btn(showPlayers),padding:"4px 10px",fontSize:11}}>{showPlayers?"🏆 Teams":"👤 Players"}</button>
               <button onClick={()=>setShowAwards(p=>!p)} style={{...btn(showAwards),padding:"4px 10px",fontSize:11,borderColor:showAwards?"#b99a55":"rgba(185,154,85,0.3)",color:showAwards?"#b99a55":"rgba(185,154,85,0.7)"}}>⭐ MVP Awards</button>
               <button onClick={syncCompletedEloMatches} disabled={eloSyncState.loading} style={{...btn(false),padding:"4px 10px",fontSize:11,borderColor:"rgba(79,119,115,0.45)",color:"#4f7773",opacity:eloSyncState.loading?0.55:1,cursor:eloSyncState.loading?"not-allowed":"pointer"}}>{eloSyncState.loading?"Syncing Elo":"Sync Elo"}</button>
               {eloSyncState.message&&<span style={{fontSize:10,color:eloSyncState.error?"#b75b64":"#4f7773",fontWeight:800}}>{eloSyncState.message}</span>}
-              <div style={{marginLeft:"auto"}}><StatColsEditor statCols={statCols} onChange={setStatCols}/></div>
+              <div style={{marginLeft:"auto"}}><StatColsEditor statCols={statCols} onChange={setStatCols} disabled={tournamentEnded}/></div>
             </div>
           )}
           {isMulti&&(
@@ -6180,13 +6342,13 @@ export default function App(){
               <button onClick={()=>setShowAwards(p=>!p)} style={{...btn(showAwards),padding:"4px 10px",fontSize:11,borderColor:showAwards?"#b99a55":"rgba(185,154,85,0.3)",color:showAwards?"#b99a55":"rgba(185,154,85,0.7)"}}>⭐ MVP Awards</button>
               <button onClick={syncCompletedEloMatches} disabled={eloSyncState.loading} style={{...btn(false),padding:"4px 10px",fontSize:11,borderColor:"rgba(79,119,115,0.45)",color:"#4f7773",opacity:eloSyncState.loading?0.55:1,cursor:eloSyncState.loading?"not-allowed":"pointer"}}>{eloSyncState.loading?"Syncing Elo":"Sync Elo"}</button>
               {eloSyncState.message&&<span style={{fontSize:10,color:eloSyncState.error?"#b75b64":"#4f7773",fontWeight:800}}>{eloSyncState.message}</span>}
-              <div style={{marginLeft:"auto"}}><StatColsEditor statCols={statCols} onChange={setStatCols}/></div>
+              <div style={{marginLeft:"auto"}}><StatColsEditor statCols={statCols} onChange={setStatCols} disabled={tournamentEnded}/></div>
             </div>
           )}
 
-          {isMulti&&<MultiStageView stages={stages} stageData={stageData} teams={teamsWithSeed} statCols={statCols} matchNumberMaps={multiMatchNumbering.maps} matchScheduleMaps={multiMatchScheduling.maps} stageRanges={multiMatchScheduling.ranges} onGameUpdate={handleStageGameUpdate} onMatchUpdate={handleStageMatchUpdate} onStageUpdate={handleStageDataUpdate} onAdvance={handleAdvance} onStagePeriodChange={(idx,period)=>{const normalized=normalizeStagePeriod(period);if(!normalized)return;updateMultiStages(prev=>prev.map((stage,stageIdx)=>stageIdx===idx?{...stage,period:normalized}:stage));setEloSyncState({loading:false,message:"Stage date changed. Sync Elo to update completed matches.",error:false});}} activeStageIdx={activeStageIdx} setActiveStageIdx={setActiveStageIdx}/>}
+          {isMulti&&<MultiStageView stages={stages} stageData={stageData} teams={teamsWithSeed} statCols={statCols} matchNumberMaps={multiMatchNumbering.maps} matchScheduleMaps={multiMatchScheduling.maps} stageRanges={multiMatchScheduling.ranges} onGameUpdate={handleStageGameUpdate} onMatchUpdate={handleStageMatchUpdate} onStageUpdate={handleStageDataUpdate} onAdvance={handleAdvance} onStagePeriodChange={(idx,period)=>{if(tournamentEnded)return;const normalized=normalizeStagePeriod(period);if(!normalized)return;updateMultiStages(prev=>prev.map((stage,stageIdx)=>stageIdx===idx?{...stage,period:normalized}:stage));setEloSyncState({loading:false,message:"Stage date changed. Sync Elo to update completed matches.",error:false});}} activeStageIdx={activeStageIdx} setActiveStageIdx={setActiveStageIdx}/>}
 
-          {!isMulti&&isRR&&<MatchScheduleContext.Provider value={nonMultiMatchSchedule}><RoundRobinView rrRounds={rrRounds} teams={teamsWithSeed} matchNumbers={nonMultiMatchNumbers} onGameUpdate={handleGameUpdate} onMatchUpdate={handleMatchUpdate} onAddTiebreakRound={round=>setRrRounds(prev=>[...prev,round])} matchMode={matchMode} statCols={statCols} standingsRules={rrStandingsRules}/></MatchScheduleContext.Provider>}
+          {!isMulti&&isRR&&<MatchScheduleContext.Provider value={nonMultiMatchSchedule}><RoundRobinView rrRounds={rrRounds} teams={teamsWithSeed} matchNumbers={nonMultiMatchNumbers} onGameUpdate={handleGameUpdate} onMatchUpdate={handleMatchUpdate} onAddTiebreakRound={round=>{if(!tournamentEnded)setRrRounds(prev=>[...prev,round]);}} matchMode={matchMode} statCols={statCols} standingsRules={rrStandingsRules}/></MatchScheduleContext.Provider>}
 
           {!isMulti&&!isRR&&bracketData&&(isDE
             ?<MatchScheduleContext.Provider value={nonMultiMatchSchedule}><DoubleElimView bracketData={bracketData} matchNumbers={nonMultiMatchNumbers} onGameUpdate={handleGameUpdate} onMatchUpdate={handleMatchUpdate} statCols={statCols}/></MatchScheduleContext.Provider>
@@ -6257,6 +6419,7 @@ export default function App(){
       </div>
       </main>
     </div>
+    </MatchEditLockContext.Provider>
     </EloBridgeContext.Provider>
   );
 }
