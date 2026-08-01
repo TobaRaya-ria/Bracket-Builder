@@ -154,10 +154,10 @@ function StagePeriodInput({value,onChange,disabled=false,compact=false}){
   };
 
   return <div ref={rootRef} style={{position:"relative",display:"inline-flex"}}>
-    <button type="button" title="Month and year when this stage is run" aria-label="Stage month and year" aria-haspopup="dialog" aria-expanded={open} disabled={disabled} onClick={()=>!disabled&&setOpen(current=>!current)} style={{display:"inline-flex",alignItems:"center",gap:6,padding:compact?"3px 8px":"6px 10px",borderRadius:7,border:`1px solid ${valid?"rgba(233,196,106,0.5)":"#e63946"}`,background:"var(--color-background-primary)",color:valid?"#e9c46a":"#e63946",fontFamily:"'Barlow Condensed',sans-serif",fontSize:compact?10:11,fontWeight:900,textTransform:"uppercase",letterSpacing:"0.04em",cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.5:1,whiteSpace:"nowrap"}}>
+    <button type="button" title="Month and year when this stage ends" aria-label="Stage ending month and year" aria-haspopup="dialog" aria-expanded={open} disabled={disabled} onClick={()=>!disabled&&setOpen(current=>!current)} style={{display:"inline-flex",alignItems:"center",gap:6,padding:compact?"3px 8px":"6px 10px",borderRadius:7,border:`1px solid ${valid?"rgba(233,196,106,0.5)":"#e63946"}`,background:"var(--color-background-primary)",color:valid?"#e9c46a":"#e63946",fontFamily:"'Barlow Condensed',sans-serif",fontSize:compact?10:11,fontWeight:900,textTransform:"uppercase",letterSpacing:"0.04em",cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.5:1,whiteSpace:"nowrap"}}>
       <span>📅 {formatStagePeriod(value)}</span><span aria-hidden="true" style={{fontSize:9}}>{open?"▲":"▼"}</span>
     </button>
-    {open&&typeof document!=="undefined"&&createPortal(<div ref={popupRef} role="dialog" aria-label="Choose stage month and year" style={{position:"fixed",top:popupPosition.top,left:popupPosition.left,zIndex:5000,width:244,padding:12,borderRadius:14,border:"1px solid rgba(233,196,106,0.55)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",boxShadow:"0 18px 48px rgba(0,0,0,0.3)",boxSizing:"border-box"}}>
+    {open&&typeof document!=="undefined"&&createPortal(<div ref={popupRef} role="dialog" aria-label="Choose stage ending month and year" style={{position:"fixed",top:popupPosition.top,left:popupPosition.left,zIndex:5000,width:244,padding:12,borderRadius:14,border:"1px solid rgba(233,196,106,0.55)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",boxShadow:"0 18px 48px rgba(0,0,0,0.3)",boxSizing:"border-box"}}>
       <div style={{display:"grid",gridTemplateColumns:"30px minmax(0,1fr) 30px",alignItems:"center",gap:7,marginBottom:10}}>
         <button type="button" aria-label="Previous year" onClick={()=>setDisplayYear(year=>Math.max(1900,year-1))} style={{height:30,borderRadius:8,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",color:"var(--color-text-primary)",cursor:"pointer",fontWeight:900}}>‹</button>
         <select aria-label="Stage year" value={displayYear} onChange={event=>setDisplayYear(Number(event.target.value))} style={{height:30,borderRadius:8,border:"1px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",color:"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,textAlign:"center"}}>{yearOptions.map(year=><option key={year} value={year}>{year}</option>)}</select>
@@ -616,7 +616,14 @@ function matchBatchesForData(data){
   if(data.type==="groupstage"){
     const groupBatches=(data.groups||[]).map(group=>matchBatchesForData(group));
     const batchCount=Math.max(0,...groupBatches.map(batches=>batches.length));
-    return Array.from({length:batchCount},(_,batchIdx)=>groupBatches.flatMap(batches=>batches[batchIdx]||[])).filter(batch=>batch.length);
+    const ordered=[];
+    for(let batchIdx=0;batchIdx<batchCount;batchIdx++){
+      groupBatches.forEach(batches=>{
+        const batch=batches[batchIdx]||[];
+        if(batch.length)ordered.push(batch);
+      });
+    }
+    return ordered;
   }
   if(data.type==="single")return[
     ...(data.winners||[]).map(visibleMatchBatch),
@@ -3239,7 +3246,7 @@ function MultiStageView({stages,stageData,teams,statCols,onGameUpdate,onMatchUpd
           {FORMAT_LABELS[stages[activeStageIdx]?.format]} · {getStageTeams(activeStageIdx).length} teams
           {(stageData[0]?.aatTeamsByStage?.[activeStageIdx]||[]).length>0&&<span style={{color:"#2a9d8f",marginLeft:6}}>({(stageData[0]?.aatTeamsByStage?.[activeStageIdx]||[]).length} AAT joined)</span>}
         </span>
-        <span style={{fontSize:10,color:"var(--color-text-tertiary)",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.06em",marginLeft:6}}>Stage date</span>
+        <span style={{fontSize:10,color:"var(--color-text-tertiary)",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.06em",marginLeft:6}}>Stage end month</span>
         <StagePeriodInput value={stage?.period} onChange={period=>onStagePeriodChange?.(activeStageIdx,period)} compact/>
         {stageRange&&<span style={{fontSize:10,color:stageRange.valid?"#b8921a":"#e63946",fontWeight:800}}>{formatStageDateRange(stageRange)}</span>}
         {data&&data.type!=="roundrobin"&&<button onClick={()=>setShowPlayers(p=>!p)} style={{...btn(showPlayers),padding:"4px 10px",fontSize:11,marginLeft:"auto"}}>{showPlayers?"🏆 Teams":"👤 Players"}</button>}
@@ -5788,7 +5795,7 @@ export default function App(){
                         });
                       }}
                     />
-                    <div style={{position:"absolute",right:34,top:9,fontSize:10,color:setupRanges[idx]?.valid?"#b8921a":"#e63946",fontWeight:800,fontFamily:"'Barlow Condensed',sans-serif"}}>{formatStageDateRange(setupRanges[idx])}</div>
+                    <div style={{margin:"4px 34px 0 12px",fontSize:10,color:setupRanges[idx]?.valid?"#b8921a":"#e63946",fontWeight:800,fontFamily:"'Barlow Condensed',sans-serif"}}>Scheduled: {formatStageDateRange(setupRanges[idx])}</div>
                     {stages.length>1&&<button onClick={()=>updateMultiStages(p=>p.filter((_,i)=>i!==idx))} style={{position:"absolute",top:8,right:8,width:20,height:20,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:"var(--color-text-tertiary)",background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:4,cursor:"pointer",fontWeight:700,zIndex:1}}>×</button>}
                   </div>
                 );
@@ -5884,7 +5891,7 @@ export default function App(){
           {!isMulti&&(
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"10px 14px",background:"var(--color-background-secondary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap"}}>
               <span style={{padding:"3px 10px",borderRadius:5,background:"rgba(233,196,106,0.12)",border:"1px solid rgba(233,196,106,0.3)",fontSize:12,fontWeight:700,color:"#b8921a",fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase",letterSpacing:"0.05em"}}>{matchMode==="wl"?"Win/Lose":matchMode==="games"?"Game Wins":"Score"}{matchMode!=="wl"&&` · Bo${effectiveGames}`}</span>
-              <span style={{fontSize:10,color:"var(--color-text-tertiary)",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.06em"}}>Stage date</span>
+              <span style={{fontSize:10,color:"var(--color-text-tertiary)",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.06em"}}>Stage end month</span>
               <StagePeriodInput value={stagePeriod} onChange={period=>{setStagePeriod(normalizeStagePeriod(period));setEloSyncState({loading:false,message:"Stage date changed. Sync Elo to update completed matches.",error:false});}} compact/>
               <span style={{fontSize:10,color:nonMultiStageRange?.valid?"#b8921a":"#e63946",fontWeight:800}}>{formatStageDateRange(nonMultiStageRange)}</span>
               {matchMode!=="wl"&&<><Stepper value={gamesPerMatch} min={1} max={11} onChange={reconfigureGames} small/><span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>games</span></>}
