@@ -2179,8 +2179,6 @@ function CountrySearchField({standings,value,onChange,disabled=false,id,label="C
   </div>;
 }
 
-const newEloBonusItem=()=>({id:`bonus-item-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,teamName:"",category:"Tournament bonus",points:"",event:""});
-
 function EloBonusPage({loadStandings,submitBonus,submitBonuses,refreshToken,available=false}){
   const[data,setData]=useState({loading:available,error:"",standings:[],bonuses:[]});
   const[mode,setMode]=useState("single");
@@ -2188,7 +2186,10 @@ function EloBonusPage({loadStandings,submitBonus,submitBonuses,refreshToken,avai
   const[category,setCategory]=useState("Tournament bonus");
   const[points,setPoints]=useState("");
   const[event,setEvent]=useState("");
-  const[bulkItems,setBulkItems]=useState(()=>[newEloBonusItem()]);
+  const[bulkCountriesText,setBulkCountriesText]=useState("");
+  const[bulkCategory,setBulkCategory]=useState("Tournament bonus");
+  const[bulkPoints,setBulkPoints]=useState("");
+  const[bulkEvent,setBulkEvent]=useState("");
   const[submitState,setSubmitState]=useState({loading:false,message:"",error:false});
 
   useEffect(()=>{
@@ -2214,17 +2215,25 @@ function EloBonusPage({loadStandings,submitBonus,submitBonuses,refreshToken,avai
   const selected=data.standings.find(team=>team.name===teamName);
   const pointValue=Number(points);
   const valid=!!selected&&Number.isFinite(pointValue)&&pointValue!==0&&event.trim();
-  const validBulkItems=bulkItems.filter(item=>{
-    const itemPoints=Number(item.points);
-    return data.standings.some(team=>team.name===item.teamName)&&Number.isFinite(itemPoints)&&itemPoints!==0&&item.event.trim();
+  const bulkCountryLines=bulkCountriesText.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+  const seenBulkCountryNames=new Set();
+  const uniqueBulkCountryLines=bulkCountryLines.filter(line=>{
+    const key=line.toLocaleLowerCase();
+    if(seenBulkCountryNames.has(key))return false;
+    seenBulkCountryNames.add(key);
+    return true;
   });
-  const bulkValid=bulkItems.length>0&&validBulkItems.length===bulkItems.length;
-  const updateBulkItem=(id,updates)=>setBulkItems(current=>current.map(item=>item.id===id?{...item,...updates}:item));
+  const standingsByName=new Map(data.standings.map(team=>[team.name.trim().toLocaleLowerCase(),team]));
+  const bulkCountries=uniqueBulkCountryLines.map(line=>standingsByName.get(line.toLocaleLowerCase())).filter(Boolean);
+  const bulkUnknownCountries=uniqueBulkCountryLines.filter(line=>!standingsByName.has(line.toLocaleLowerCase()));
+  const bulkDuplicateCount=bulkCountryLines.length-uniqueBulkCountryLines.length;
+  const bulkPointValue=Number(bulkPoints);
+  const bulkValid=bulkCountries.length>0&&bulkUnknownCountries.length===0&&Number.isFinite(bulkPointValue)&&bulkPointValue!==0&&bulkEvent.trim();
   const handleSubmit=async submitEvent=>{
     submitEvent.preventDefault();
     if(mode==="bulk"){
       if(!bulkValid||submitState.loading)return;
-      const payloads=bulkItems.map(item=>({teamName:item.teamName,category:item.category.trim()||"Tournament bonus",points:Number(item.points),event:item.event.trim()}));
+      const payloads=bulkCountries.map(team=>({teamName:team.name,category:bulkCategory.trim()||"Tournament bonus",points:bulkPointValue,event:bulkEvent.trim()}));
       setSubmitState({loading:true,message:`Applying bonus 1 of ${payloads.length}…`,error:false});
       try{
         if(submitBonuses){
@@ -2237,7 +2246,9 @@ function EloBonusPage({loadStandings,submitBonus,submitBonuses,refreshToken,avai
           }
         }
         const total=payloads.length;
-        setBulkItems([newEloBonusItem()]);
+        setBulkCountriesText("");
+        setBulkPoints("");
+        setBulkEvent("");
         setSubmitState({loading:false,message:`${total} bonuses applied successfully.`,error:false});
       }catch(error){
         setSubmitState({loading:false,message:friendlyEloError(error)||error?.message||"Bulk bonuses could not be applied.",error:true});
@@ -2259,7 +2270,7 @@ function EloBonusPage({loadStandings,submitBonus,submitBonuses,refreshToken,avai
 
   return <div className="classic-page-stack">
     <section className="classic-page-intro classic-panel">
-      <div><span className="classic-eyebrow">Country adjustments</span><h2>Elo Bonuses</h2><p>Search for a country, apply one adjustment, or prepare several bonus items and submit them together in a checked list.</p></div>
+      <div><span className="classic-eyebrow">Country adjustments</span><h2>Elo Bonuses</h2><p>Search for one country, or paste a country list and apply one shared adjustment to every unique line.</p></div>
       <span className="classic-page-icon" aria-hidden="true">＋</span>
     </section>
     <div className={`classic-bonus-layout ${mode==="bulk"?"is-bulk":""}`}>
@@ -2281,21 +2292,19 @@ function EloBonusPage({loadStandings,submitBonus,submitBonuses,refreshToken,avai
           </>
         ):(
           <div className="classic-bulk-bonus-editor">
-            <div className="classic-bulk-bonus-summary"><span>{bulkItems.length} item{bulkItems.length===1?"":"s"}</span><small>Bonuses are submitted from top to bottom.</small></div>
-            <div className="classic-bulk-bonus-items">
-              {bulkItems.map((item,index)=><article key={item.id} className="classic-bulk-bonus-item">
-                <div className="classic-bulk-bonus-number">{String(index+1).padStart(2,"0")}</div>
-                <CountrySearchField id={`${item.id}-country`} className="is-country" label="Country" standings={data.standings} value={item.teamName} onChange={teamName=>updateBulkItem(item.id,{teamName})} disabled={data.loading||!!data.error}/>
-                <label className="classic-form-field is-category"><span>Category</span><input value={item.category} onChange={e=>updateBulkItem(item.id,{category:e.target.value})} placeholder="Tournament bonus"/></label>
-                <label className="classic-form-field is-points"><span>Points</span><input type="number" step="0.1" value={item.points} onChange={e=>updateBulkItem(item.id,{points:e.target.value})} placeholder="+ / −"/></label>
-                <label className="classic-form-field is-event"><span>Reason / event</span><input value={item.event} onChange={e=>updateBulkItem(item.id,{event:e.target.value})} placeholder="Reason for this adjustment…"/></label>
-                <button type="button" className="classic-bulk-bonus-remove" aria-label={`Remove bonus item ${index+1}`} onClick={()=>setBulkItems(current=>current.length===1?[newEloBonusItem()]:current.filter(row=>row.id!==item.id))}>×</button>
-              </article>)}
+            <div className="classic-bulk-bonus-summary"><span>{bulkCountries.length} unique countr{bulkCountries.length===1?"y":"ies"}</span><small>One country per line · each country is applied once.</small></div>
+            <label className="classic-form-field classic-bulk-country-list"><span>Countries — one per line</span><textarea rows="8" value={bulkCountriesText} onChange={e=>setBulkCountriesText(e.target.value)} placeholder={"Indonesia\nJapan\nThailand"} disabled={data.loading||!!data.error}/></label>
+            <div className="classic-bonus-fields">
+              <label className="classic-form-field"><span>Category</span><input value={bulkCategory} onChange={e=>setBulkCategory(e.target.value)} placeholder="Tournament bonus"/></label>
+              <label className="classic-form-field"><span>Nominal / points</span><input type="number" step="0.1" value={bulkPoints} onChange={e=>setBulkPoints(e.target.value)} placeholder="e.g. 12.5 or -5"/></label>
             </div>
-            <button type="button" className="classic-bulk-bonus-add" onClick={()=>setBulkItems(current=>[...current,newEloBonusItem()])}>＋ Add another item</button>
+            <label className="classic-form-field"><span>Reason / event</span><textarea rows="3" value={bulkEvent} onChange={e=>setBulkEvent(e.target.value)} placeholder="Shared reason for every country in this list…"/></label>
+            {bulkCountries.length>0&&<div className="classic-bulk-country-preview" aria-label="Recognized countries">{bulkCountries.map(team=><span className="classic-bulk-country-chip" key={team.name}><b>{regionFlag(team.name)}</b>{team.name}</span>)}</div>}
+            {bulkDuplicateCount>0&&<p className="classic-bulk-validation is-warning">{bulkDuplicateCount} duplicate line{bulkDuplicateCount===1?"":"s"} ignored. Every country will be inserted once.</p>}
+            {bulkUnknownCountries.length>0&&<p className="classic-bulk-validation is-error">Country not found: {bulkUnknownCountries.join(", ")}</p>}
           </div>
         )}
-        <button className="classic-primary-button" type="submit" disabled={(mode==="single"?!valid:!bulkValid)||submitState.loading}>{submitState.loading?mode==="bulk"?"Applying bonuses…":"Applying bonus…":mode==="bulk"?`Apply ${bulkItems.length} bonuses`:"Apply Elo bonus"}<span aria-hidden="true">→</span></button>
+        <button className="classic-primary-button" type="submit" disabled={(mode==="single"?!valid:!bulkValid)||submitState.loading}>{submitState.loading?mode==="bulk"?"Applying bonuses…":"Applying bonus…":mode==="bulk"?`Apply to ${bulkCountries.length} ${bulkCountries.length===1?"country":"countries"}`:"Apply Elo bonus"}<span aria-hidden="true">→</span></button>
         {(data.error||submitState.message)&&<p className={`classic-form-message ${(data.error||submitState.error)?"is-error":""}`}>{data.error||submitState.message}</p>}
       </form>
       <section className="classic-panel classic-bonus-history">
