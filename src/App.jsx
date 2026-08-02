@@ -1869,7 +1869,9 @@ function MatchCard({match,onGameUpdate,statCols,onMatchUpdate,accentLabel,matchN
 
 function MatchEloPanel({match}){
   const eloBridge=useContext(EloBridgeContext);
-  const context=eloBridge.getMatchContext(match);
+  const matchSchedules=useContext(MatchScheduleContext);
+  const visibleSchedule=matchSchedules.get(match.id)||null;
+  const context=eloBridge.getMatchContext(match,visibleSchedule);
   const mapped=kitakanaEloResult(match);
   const[info,setInfo]=useState(null);
   const[status,setStatus]=useState({loading:false,message:"",error:false});
@@ -1880,7 +1882,7 @@ function MatchEloPanel({match}){
     if(!ready)return;
     setStatus({loading:true,message:"",error:false});
     try{
-      const data=await eloBridge.loadMatchInfo(match);
+      const data=await eloBridge.loadMatchInfo(match,context);
       setInfo(data);
       setStatus({loading:false,message:"",error:false});
     }catch(error){
@@ -1906,7 +1908,7 @@ function MatchEloPanel({match}){
       if(!ready)return;
       setStatus({loading:true,message:"",error:false});
       try{
-        const data=await eloBridge.loadMatchInfo(match);
+        const data=await eloBridge.loadMatchInfo(match,context);
         if(cancelled)return;
         setInfo(data);
         setStatus({loading:false,message:"",error:false});
@@ -1923,6 +1925,7 @@ function MatchEloPanel({match}){
     match.teamB?.name,
     match.teamB?.region,
     context?.matchCode,
+    context?.playedAt,
     context?.matchFormat,
     context?.tier,
     mapped?.winner,
@@ -1936,7 +1939,7 @@ function MatchEloPanel({match}){
   const submit=async()=>{
     setSubmitState({loading:true,message:"",error:false});
     try{
-      const result=await eloBridge.submitMatch(match);
+      const result=await eloBridge.submitMatch(match,context);
       if(!result.ok)throw new Error(result.error||"Submit failed");
       const message=result.status==="unchanged"
         ?`Already recorded as Elo match ${result.matchOrder}`
@@ -1948,12 +1951,17 @@ function MatchEloPanel({match}){
     }
   };
   const recordedMatch=info?.match||null;
+  const recordedPlayedAt=Date.parse(recordedMatch?.playedAt||"");
+  const scheduledPlayedAt=Date.parse(context?.playedAt||"");
+  const recordedDateMatches=!context?.playedAt||(Number.isFinite(recordedPlayedAt)&&recordedPlayedAt===scheduledPlayedAt);
   const recordMatchesCurrent=!!(recordedMatch&&mapped
+    &&recordedMatch.matchCode===context.matchCode
     &&recordedMatch.winner===mapped.winner
     &&recordedMatch.resultType===mapped.resultType
     &&(recordedMatch.matchFormat||"")===(context.matchFormat||"")
     &&recordedMatch.tier===(context.tier||DEFAULT_ELO_TIER)
-    &&recordedMatch.score===mapped.score);
+    &&recordedMatch.score===mapped.score
+    &&recordedDateMatches);
   const resultValue=mapped?kitakanaResultValue(mapped.resultType,context.matchFormat):0;
   const sideForTeam=team=>team===match.teamA?"teamA":"teamB";
   const InfoCard=({team})=>{
@@ -5167,7 +5175,7 @@ export default function App(){
   const[eloSyncState,setEloSyncState]=useState({loading:false,message:"",error:false});
   const[eloRefreshKey,setEloRefreshKey]=useState(0);
 
-  const getMatchEloContext=(match)=>{
+  const getMatchEloContext=(match,scheduleHint=null)=>{
     if(!match?.teamA||!match?.teamB)return null;
     const tournamentName=currentTournamentName||projectNameFromState({formatType,teams:teamsWithSeed});
     const projectPart=currentProjectId||safeMatchCodePart(tournamentName);
@@ -5206,26 +5214,32 @@ export default function App(){
         matchCode:["tourney",safeMatchCodePart(projectPart),safeMatchCodePart(stageKey),safeMatchCodePart(match.id)].join("-")
       };
     }
-    for(const [idxKey,data] of Object.entries(stageData||{})){
-      const idx=Number(idxKey);
-      const found=dataMatches(data).some(item=>item?.id===match.id);
-      if(found){
-        const stageKey=`stage-${idx+1}`;
-        const tier=stages[idx]?.eloTier||DEFAULT_ELO_TIER;
-        const schedule=multiMatchScheduling.maps?.[idx]?.get(match.id);
-        return {
-          projectId:projectPart,
-          tournamentName,
-          stageKey,
-          matchFormat:stages[idx]?.format||"",
-          stagePeriod:normalizeStagePeriod(stages[idx]?.period),
-          tier,
-          playedAt:schedule?.playedAt||"",
-          scheduleLabel:schedule?.label||"",
-          matchNumber:multiMatchNumbering.maps?.[idx]?.get(match.id),
-          matchCode:["tourney",safeMatchCodePart(projectPart),safeMatchCodePart(stageKey),safeMatchCodePart(match.id)].join("-")
-        };
-      }
+    const stageCandidates=Object.entries(stageData||{}).flatMap(([idxKey,data])=>{
+      const matches=dataMatches(data);
+      return matches.some(item=>item?.id===match.id)?[{idx:Number(idxKey),matches}]:[];
+    });
+    const scheduledCandidate=scheduleHint?.playedAt
+      ?stageCandidates.find(candidate=>multiMatchScheduling.maps?.[candidate.idx]?.get(match.id)?.playedAt===scheduleHint.playedAt)
+      :null;
+    const exactCandidate=stageCandidates.find(candidate=>candidate.matches.some(item=>item===match));
+    const candidate=scheduledCandidate||exactCandidate||stageCandidates[0];
+    if(candidate){
+      const idx=candidate.idx;
+      const stageKey=`stage-${idx+1}`;
+      const tier=stages[idx]?.eloTier||DEFAULT_ELO_TIER;
+      const schedule=multiMatchScheduling.maps?.[idx]?.get(match.id);
+      return {
+        projectId:projectPart,
+        tournamentName,
+        stageKey,
+        matchFormat:stages[idx]?.format||"",
+        stagePeriod:normalizeStagePeriod(stages[idx]?.period),
+        tier,
+        playedAt:schedule?.playedAt||"",
+        scheduleLabel:schedule?.label||"",
+        matchNumber:multiMatchNumbering.maps?.[idx]?.get(match.id),
+        matchCode:["tourney",safeMatchCodePart(projectPart),safeMatchCodePart(stageKey),safeMatchCodePart(match.id)].join("-")
+      };
     }
     return null;
   };
@@ -5257,9 +5271,9 @@ export default function App(){
     return eloInitializationRef.current.promise;
   };
 
-  const loadEloMatchInfo=async(match)=>{
+  const loadEloMatchInfo=async(match,contextOverride=null)=>{
     await ensureEloTrackerInitialized();
-    const context=getMatchEloContext(match);
+    const context=contextOverride||getMatchEloContext(match);
     const{data,error}=await supabase.rpc("kitakana_elo_context",{
       p_team_a:match.teamA?.name||"",
       p_team_a_region:match.teamA?.region||"",
@@ -5349,8 +5363,8 @@ export default function App(){
     return data;
   };
 
-  const submitEloMatch=async(match)=>{
-    const context=getMatchEloContext(match);
+  const submitEloMatch=async(match,contextOverride=null)=>{
+    const context=contextOverride||getMatchEloContext(match);
     const payload=buildKitakanaEloPayload(match,context);
     if(!payload)return {ok:false,error:"Complete the match before submitting."};
     try{
