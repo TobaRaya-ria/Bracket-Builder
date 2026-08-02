@@ -2421,7 +2421,17 @@ function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
       const other=Number(game[otherScoreKey]);
       const hasBoth=game[scoreKey]!==""&&game[scoreKey]!=null&&game[otherScoreKey]!==""&&game[otherScoreKey]!=null;
       const isWinning=hasBoth&&own>other;
-      return <input type="number" min="0" step="any" aria-label={`${team.name} game ${gameIdx+1} score`} value={game[scoreKey]??""} onChange={event=>onGameUpdate(gameIdx,{[scoreKey]:event.target.value})} style={{width:70,height:38,borderRadius:6,border:`1px solid ${isWinning?team.color:"var(--color-border-tertiary)"}`,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontSize:16,fontWeight:800,fontFamily:"'Barlow Condensed',sans-serif",textAlign:"center",padding:"0 6px",boxSizing:"border-box",cursor:"text"}}/>;
+      const adjustScore=delta=>{
+        const current=Number.isFinite(own)?own:0;
+        onGameUpdate(gameIdx,{[scoreKey]:String(Math.max(0,current+delta))});
+      };
+      return <div className="match-score-control">
+        <input className="match-score-input" type="number" min="0" step="any" aria-label={`${team.name} game ${gameIdx+1} score`} value={game[scoreKey]??""} onChange={event=>onGameUpdate(gameIdx,{[scoreKey]:event.target.value})} style={{borderColor:isWinning?team.color:"var(--color-border-tertiary)"}}/>
+        <div className="match-score-arrows" aria-label={`${team.name} game ${gameIdx+1} score controls`}>
+          <button type="button" onClick={()=>adjustScore(1)} aria-label={`Increase ${team.name} game ${gameIdx+1} score`}>▲</button>
+          <button type="button" onClick={()=>adjustScore(-1)} disabled={!Number.isFinite(own)||own<=0} aria-label={`Decrease ${team.name} game ${gameIdx+1} score`}>▼</button>
+        </div>
+      </div>;
     }
     const selected=!game.isTie&&game.winnerName===team.name;
     return <button onClick={()=>onGameUpdate(gameIdx,{winnerName:selected?null:team.name,isTie:false})} aria-pressed={selected} style={{width:76,height:34,borderRadius:6,border:`1px solid ${selected?team.color:"var(--color-border-tertiary)"}`,background:selected?`${team.color}33`:"var(--color-background-primary)",color:selected?team.color:"var(--color-text-secondary)",fontSize:11,fontWeight:900,fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase",cursor:"pointer"}}>{selected?"Winner":"Select"}</button>;
