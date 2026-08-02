@@ -1341,3 +1341,60 @@ grant execute on function public.kitakana_create_sheet_sync_token(text) to authe
 grant execute on function public.kitakana_elo_sheet_export(text) to anon, authenticated;
 grant execute on function public.kitakana_submit_matches(jsonb) to authenticated;
 grant execute on function public.kitakana_submit_bonus(text, text, double precision, text) to authenticated;
+
+-- Older website submissions predate match_format. Infer it from the saved
+-- tournament configuration in one pass so later resubmissions are idempotent
+-- instead of gradually switching individual matches to a different formula.
+do $$
+declare
+  affected_owner record;
+begin
+  for affected_owner in
+    with project_stages as (
+      select
+        project.user_id as owner_user_id,
+        left(trim(both '-' from regexp_replace(lower(project.id), '[^a-z0-9_-]+', '-', 'g')), 90) as project_key,
+        stage.ordinality::integer as stage_number,
+        lower(stage.value->>'format') as match_format
+      from public.tourney_projects project
+      cross join lateral jsonb_array_elements(coalesce(project.state->'stages', '[]'::jsonb))
+        with ordinality as stage(value, ordinality)
+      where lower(stage.value->>'format') in ('single', 'double', 'roundrobin')
+    ), inferred_formats as (
+      select elo_match.owner_user_id, elo_match.match_code, project_stage.match_format
+      from public.kitakana_elo_matches elo_match
+      join project_stages project_stage
+        on project_stage.owner_user_id = elo_match.owner_user_id
+       and elo_match.match_code like concat(
+         'tourney-', project_stage.project_key, '-stage-', project_stage.stage_number, '-%'
+       )
+      where not elo_match.is_imported and elo_match.match_format is null
+
+      union all
+
+      select elo_match.owner_user_id, elo_match.match_code, 'single'
+      from public.kitakana_elo_matches elo_match
+      join public.tourney_projects project
+        on project.user_id = elo_match.owner_user_id
+       and elo_match.match_code like concat(
+         'tourney-',
+         left(trim(both '-' from regexp_replace(lower(project.id), '[^a-z0-9_-]+', '-', 'g')), 90),
+         '-final-stage-tiebreak-%'
+       )
+      where not elo_match.is_imported and elo_match.match_format is null
+    ), updated as (
+      update public.kitakana_elo_matches elo_match
+      set match_format = inferred.match_format,
+          validation = 'Pending',
+          updated_at = now()
+      from inferred_formats inferred
+      where elo_match.owner_user_id = inferred.owner_user_id
+        and elo_match.match_code = inferred.match_code
+      returning elo_match.owner_user_id
+    )
+    select distinct owner_user_id from updated
+  loop
+    perform public.kitakana_recalculate_internal(affected_owner.owner_user_id);
+  end loop;
+end;
+$$;

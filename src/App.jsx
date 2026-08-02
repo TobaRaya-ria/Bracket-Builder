@@ -104,7 +104,8 @@ const formatStageDateRange=range=>range?.valid?`${formatScheduleDate(range.start
 const EloBridgeContext=createContext({
   getMatchContext:()=>null,
   loadMatchInfo:async()=>({initialized:false}),
-  submitMatch:async()=>({ok:false,error:"Supabase Elo unavailable"})
+  submitMatch:async()=>({ok:false,error:"Supabase Elo unavailable"}),
+  refreshToken:0
 });
 const EMPTY_MATCH_SCHEDULE=new Map();
 const MatchScheduleContext=createContext(EMPTY_MATCH_SCHEDULE);
@@ -1873,6 +1874,7 @@ function MatchEloPanel({match}){
   const[info,setInfo]=useState(null);
   const[status,setStatus]=useState({loading:false,message:"",error:false});
   const[submitState,setSubmitState]=useState({loading:false,message:"",error:false});
+  const[focusRefresh,setFocusRefresh]=useState(0);
   const ready=!!(match?.teamA&&match?.teamB);
   const fetchInfo=async()=>{
     if(!ready)return;
@@ -1885,6 +1887,18 @@ function MatchEloPanel({match}){
       setStatus({loading:false,message:friendlyEloError(error),error:true});
     }
   };
+
+  useEffect(()=>{
+    const refresh=()=>{
+      if(typeof document==="undefined"||document.visibilityState==="visible")setFocusRefresh(value=>value+1);
+    };
+    window.addEventListener("focus",refresh);
+    document.addEventListener("visibilitychange",refresh);
+    return()=>{
+      window.removeEventListener("focus",refresh);
+      document.removeEventListener("visibilitychange",refresh);
+    };
+  },[]);
 
   useEffect(()=>{
     let cancelled=false;
@@ -1902,7 +1916,21 @@ function MatchEloPanel({match}){
     };
     run();
     return()=>{cancelled=true;};
-  },[ready,match.teamA?.name,match.teamA?.region,match.teamB?.name,match.teamB?.region]);
+  },[
+    ready,
+    match.teamA?.name,
+    match.teamA?.region,
+    match.teamB?.name,
+    match.teamB?.region,
+    context?.matchCode,
+    context?.matchFormat,
+    context?.tier,
+    mapped?.winner,
+    mapped?.resultType,
+    mapped?.score,
+    eloBridge.refreshToken,
+    focusRefresh
+  ]);
 
   if(!ready||!context)return null;
   const submit=async()=>{
@@ -1951,14 +1979,14 @@ function MatchEloPanel({match}){
         </div>
         {hasPreMatchElo&&hasPostMatchElo?(
           <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"end",gap:7}}>
-            <div><small style={{display:"block",fontSize:8,color:"var(--color-text-tertiary)",textTransform:"uppercase",letterSpacing:"0.07em"}}>Before</small><strong style={{fontSize:17,color:"var(--color-text-primary)",fontVariantNumeric:"tabular-nums"}}>{formatEloNumber(preMatchElo)}</strong></div>
+            <div><small style={{display:"block",fontSize:8,color:"var(--color-text-tertiary)",textTransform:"uppercase",letterSpacing:"0.07em"}}>Before this match</small><strong style={{fontSize:17,color:"var(--color-text-primary)",fontVariantNumeric:"tabular-nums"}}>{formatEloNumber(preMatchElo)}</strong></div>
             <span style={{paddingBottom:2,fontSize:10,fontWeight:900,color:changeColor,fontVariantNumeric:"tabular-nums"}}>{changeArrow} {eloChange>0?"+":""}{formatEloNumber(eloChange)}</span>
-            <div style={{textAlign:"right"}}><small style={{display:"block",fontSize:8,color:"var(--color-text-tertiary)",textTransform:"uppercase",letterSpacing:"0.07em"}}>After</small><strong style={{fontSize:17,color:team.color||"#b99a55",fontVariantNumeric:"tabular-nums"}}>{formatEloNumber(postMatchElo)}</strong></div>
+            <div style={{textAlign:"right"}}><small style={{display:"block",fontSize:8,color:"var(--color-text-tertiary)",textTransform:"uppercase",letterSpacing:"0.07em"}}>After this match</small><strong style={{fontSize:17,color:team.color||"#b99a55",fontVariantNumeric:"tabular-nums"}}>{formatEloNumber(postMatchElo)}</strong></div>
           </div>
         ):(
           <div style={{fontSize:20,fontWeight:800,color:team.color||"#b99a55",fontVariantNumeric:"tabular-nums"}}>{data?formatEloNumber(data.currentElo):"-"}</div>
         )}
-        <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginTop:3}}>{hasPostMatchElo?`Current overall Elo ${formatEloNumber(data?.currentElo)} · `:"Current overall Elo · "}{data?.code||"Not found in tracker"}{data?.continent?` · ${data.continent}`:""}</div>
+        <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginTop:3}}>{hasPostMatchElo?`Latest standings Elo ${formatEloNumber(data?.currentElo)} · `:"Latest standings Elo · "}{data?.code||"Not found in tracker"}{data?.continent?` · ${data.continent}`:""}</div>
         {trackerName&&trackerName!==team.name&&<div style={{fontSize:9,color:"var(--color-text-tertiary)",marginTop:2}}>Tracker team: {trackerName}</div>}
         {history.length>0&&(
           <div style={{marginTop:7,display:"flex",flexDirection:"column",gap:2}}>
@@ -2007,6 +2035,19 @@ function EloStandingsPanel({loadStandings,refreshToken,createAutoSync,autoSyncAv
   const[endPeriod,setEndPeriod]=useState("latest");
   const[openTeam,setOpenTeam]=useState("");
   const[autoSyncState,setAutoSyncState]=useState({loading:false,message:"",error:false});
+  const[focusRefresh,setFocusRefresh]=useState(0);
+
+  useEffect(()=>{
+    const refresh=()=>{
+      if(typeof document==="undefined"||document.visibilityState==="visible")setFocusRefresh(value=>value+1);
+    };
+    window.addEventListener("focus",refresh);
+    document.addEventListener("visibilitychange",refresh);
+    return()=>{
+      window.removeEventListener("focus",refresh);
+      document.removeEventListener("visibilitychange",refresh);
+    };
+  },[]);
 
   useEffect(()=>{
     let cancelled=false;
@@ -2019,7 +2060,7 @@ function EloStandingsPanel({loadStandings,refreshToken,createAutoSync,autoSyncAv
         if(!cancelled)setState(current=>({...current,loading:false,error:friendlyEloError(error)||"Could not load Elo standings.",standings:[]}));
       });
     return()=>{cancelled=true;};
-  },[refreshToken,startPeriod,endPeriod]);
+  },[refreshToken,startPeriod,endPeriod,focusRefresh]);
 
   const regions=[...new Set(state.standings.map(team=>team.continent).filter(Boolean))].sort();
   const subregions=[...new Set(state.standings.map(eloSubregion).filter(Boolean))].sort();
@@ -6000,7 +6041,7 @@ export default function App(){
     :`${formatType==="single"?"Single Elim":formatType==="double"?"Double Elim":"Round Robin"} · ${teamsWithSeed.length} teams · ${formatStagePeriod(stagePeriod)}`;
 
   return(
-    <EloBridgeContext.Provider value={{getMatchContext:getMatchEloContext,loadMatchInfo:loadEloMatchInfo,submitMatch:submitEloMatch}}>
+    <EloBridgeContext.Provider value={{getMatchContext:getMatchEloContext,loadMatchInfo:loadEloMatchInfo,submitMatch:submitEloMatch,refreshToken:eloRefreshKey}}>
     <MatchEditLockContext.Provider value={tournamentEnded}>
     <div className="tourney-app-shell" style={{fontFamily:"'Barlow Condensed',sans-serif"}}>
       <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Barlow:wght@400;500&display=swap" rel="stylesheet"/>
