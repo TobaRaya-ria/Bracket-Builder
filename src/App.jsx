@@ -5804,7 +5804,6 @@ export default function App(){
   };
 
   const createPlacementTiebreakForRange=(group)=>{
-    if(tournamentEnded)return;
     if(!group?.teams?.length||group.teams.length<2)return;
     const tiebreak=buildPlacementTiebreak(group.rankFrom,group.rankTo,group.teams,finalMatchConfigForState(liveTournamentState));
     setPlacementTiebreaks(prev=>[...prev.filter(item=>item.key!==tiebreak.key),tiebreak]);
@@ -5859,18 +5858,19 @@ export default function App(){
                   <div className="classic-final-tiebreak-teams">
                     {listedTeams.map(team=><TeamTag key={team.name} name={team.name} color={team.color} seed={team.seed} small/>)}
                   </div>
-                  {!tiebreak&&!tournamentEnded&&<button onClick={()=>createPlacementTiebreakForRange(group)} style={{...btn(false),padding:"6px 11px",fontSize:11,borderColor:"rgba(79,119,115,0.45)",color:"#8fafab",marginLeft:"auto"}}>Create Tiebreak</button>}
-                  {!tiebreak&&tournamentEnded&&<span className="classic-final-tiebreak-status">Read only</span>}
+                  {!tiebreak&&<button onClick={()=>createPlacementTiebreakForRange(group)} style={{...btn(false),padding:"6px 11px",fontSize:11,borderColor:"rgba(79,119,115,0.45)",color:"#8fafab",marginLeft:"auto"}}>Create Tiebreak</button>}
                 </div>
                 {tiebreak&&(
                   <MatchScheduleContext.Provider value={placementMatchScheduleMaps.get(tiebreak.id)||new Map()}>
-                    <PlacementTiebreakView
-                      tiebreak={tiebreak}
-                      matchNumbers={placementMatchNumberMaps.get(tiebreak.id)}
-                      statCols={statCols}
-                      onGameUpdate={(matchId,gi,upd)=>handlePlacementGameUpdate(tiebreak.id,matchId,gi,upd)}
-                      onMatchUpdate={(matchId,upd)=>handlePlacementMatchUpdate(tiebreak.id,matchId,upd)}
-                    />
+                    <MatchEditLockContext.Provider value={false}>
+                      <PlacementTiebreakView
+                        tiebreak={tiebreak}
+                        matchNumbers={placementMatchNumberMaps.get(tiebreak.id)}
+                        statCols={statCols}
+                        onGameUpdate={(matchId,gi,upd)=>handlePlacementGameUpdate(tiebreak.id,matchId,gi,upd)}
+                        onMatchUpdate={(matchId,upd)=>handlePlacementMatchUpdate(tiebreak.id,matchId,upd)}
+                      />
+                    </MatchEditLockContext.Provider>
                   </MatchScheduleContext.Provider>
                 )}
               </div>
