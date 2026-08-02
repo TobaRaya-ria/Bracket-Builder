@@ -1480,45 +1480,6 @@ textarea:focus-visible,
   color: #d07780;
 }
 
-.classic-match-locked-notice {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: 9px;
-  align-items: center;
-  margin-bottom: 14px;
-  padding: 10px 12px;
-  border: 1px solid rgba(79, 119, 115, 0.5);
-  border-radius: 6px;
-  background: rgba(79, 119, 115, 0.1);
-  color: #a9cbc7;
-}
-
-.classic-match-locked-notice > span {
-  font-size: 22px;
-  text-align: center;
-}
-
-.classic-match-locked-notice strong,
-.classic-match-locked-notice small {
-  display: block;
-}
-
-.classic-match-locked-notice strong {
-  font-size: 11px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-
-.classic-match-locked-notice small {
-  margin-top: 2px;
-  color: var(--color-text-tertiary);
-  font-size: 10px;
-}
-
-.match-card.is-locked {
-  background-image: linear-gradient(rgba(79, 119, 115, 0.035), rgba(79, 119, 115, 0.035));
-}
-
 .classic-selected-country {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);

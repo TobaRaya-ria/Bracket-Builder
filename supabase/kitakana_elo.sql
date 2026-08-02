@@ -61,6 +61,7 @@ create table if not exists public.kitakana_elo_matches (
   website_team_b text,
   winner text not null check (winner in ('Team A', 'Team B', 'Tie')),
   result_type text not null check (result_type in ('Hoshin-Tora', 'Hoshin-Kai', 'Hoshin-Renga', 'Renga')),
+  match_format text check (match_format is null or match_format in ('single', 'double', 'roundrobin')),
   tier text not null check (tier in ('Tier 1', 'Tier 2', 'Tier 3', 'Tier 4', 'Tier 5')),
   period_month date,
   played_at timestamptz,
@@ -102,6 +103,16 @@ alter table public.kitakana_elo_matches
 alter table public.kitakana_elo_matches
   add column if not exists played_at timestamptz;
 
+alter table public.kitakana_elo_matches
+  add column if not exists match_format text;
+
+alter table public.kitakana_elo_matches
+  drop constraint if exists kitakana_elo_matches_match_format_check;
+
+alter table public.kitakana_elo_matches
+  add constraint kitakana_elo_matches_match_format_check
+  check (match_format is null or match_format in ('single', 'double', 'roundrobin'));
+
 create index if not exists kitakana_elo_matches_owner_order_idx
   on public.kitakana_elo_matches (owner_user_id, match_order desc);
 
@@ -111,12 +122,29 @@ create index if not exists kitakana_elo_matches_owner_period_idx
 create index if not exists kitakana_elo_matches_owner_played_at_idx
   on public.kitakana_elo_matches (owner_user_id, played_at, match_order);
 
+create index if not exists kitakana_elo_matches_owner_team_a_order_idx
+  on public.kitakana_elo_matches (owner_user_id, team_a, match_order);
+
+create index if not exists kitakana_elo_matches_owner_team_b_order_idx
+  on public.kitakana_elo_matches (owner_user_id, team_b, match_order);
+
+create index if not exists kitakana_elo_matches_submitted_by_idx
+  on public.kitakana_elo_matches (submitted_by);
+
 create table if not exists public.kitakana_elo_sheet_sync_tokens (
-  owner_user_id uuid primary key references auth.users(id) on delete cascade,
+  owner_user_id uuid not null references auth.users(id) on delete cascade,
   token_hash text not null unique,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  primary key (owner_user_id, token_hash)
 );
+
+-- Keep several Sheets connected at once. Older versions used owner_user_id as
+-- the only primary key, so creating a second Sheet invalidated the first one.
+alter table public.kitakana_elo_sheet_sync_tokens
+  drop constraint if exists kitakana_elo_sheet_sync_tokens_pkey;
+alter table public.kitakana_elo_sheet_sync_tokens
+  add constraint kitakana_elo_sheet_sync_tokens_pkey primary key (owner_user_id, token_hash);
 
 alter table public.kitakana_elo_trackers enable row level security;
 alter table public.kitakana_elo_teams enable row level security;
@@ -131,19 +159,19 @@ drop policy if exists "Users can read own Kitakana matches" on public.kitakana_e
 
 create policy "Users can read own Kitakana tracker"
 on public.kitakana_elo_trackers for select to authenticated
-using (auth.uid() = owner_user_id);
+using ((select auth.uid()) = owner_user_id);
 
 create policy "Users can read own Kitakana teams"
 on public.kitakana_elo_teams for select to authenticated
-using (auth.uid() = owner_user_id);
+using ((select auth.uid()) = owner_user_id);
 
 create policy "Users can read own Kitakana bonuses"
 on public.kitakana_elo_bonuses for select to authenticated
-using (auth.uid() = owner_user_id);
+using ((select auth.uid()) = owner_user_id);
 
 create policy "Users can read own Kitakana matches"
 on public.kitakana_elo_matches for select to authenticated
-using (auth.uid() = owner_user_id);
+using ((select auth.uid()) = owner_user_id);
 
 revoke all on public.kitakana_elo_trackers from anon, authenticated;
 revoke all on public.kitakana_elo_teams from anon, authenticated;
@@ -294,10 +322,12 @@ begin
     from public.kitakana_elo_teams team
     where team.owner_user_id = p_owner and team.name = match_row.team_b;
 
-    v_result_value := case match_row.result_type
-      when 'Hoshin-Tora' then 5
-      when 'Hoshin-Kai' then 3
-      when 'Hoshin-Renga' then 1.5
+    v_result_value := case
+      when match_row.match_format in ('single', 'double') and match_row.result_type = 'Hoshin-Kai' then 4
+      when match_row.match_format in ('single', 'double') and match_row.result_type = 'Hoshin-Renga' then 2.5
+      when match_row.result_type = 'Hoshin-Tora' then 5
+      when match_row.result_type = 'Hoshin-Kai' then 3
+      when match_row.result_type = 'Hoshin-Renga' then 1.5
       else 0
     end;
     v_multiplier := case match_row.tier
@@ -653,11 +683,18 @@ begin
       'matchCode', v_match.match_code,
       'matchOrder', v_match.match_order,
       'playedAt', v_match.played_at,
+      'winner', v_match.winner,
+      'resultType', v_match.result_type,
+      'matchFormat', v_match.match_format,
+      'tier', v_match.tier,
+      'score', v_match.score_text,
       'teamA', jsonb_build_object(
+        'preElo', v_match.team_a_pre_elo,
         'postElo', v_match.team_a_post_elo,
         'eloChange', v_match.team_a_delta
       ),
       'teamB', jsonb_build_object(
+        'preElo', v_match.team_b_pre_elo,
         'postElo', v_match.team_b_post_elo,
         'eloChange', v_match.team_b_delta
       )
@@ -853,11 +890,28 @@ begin
   ) values (
     v_owner, md5(p_sync_token), now(), now()
   )
-  on conflict (owner_user_id) do update set
-    token_hash = excluded.token_hash,
+  on conflict (token_hash) do update set
     updated_at = now();
 
-  return jsonb_build_object('ok', true, 'createdAt', now());
+  delete from public.kitakana_elo_sheet_sync_tokens token
+  where token.owner_user_id = v_owner
+    and token.token_hash not in (
+      select recent.token_hash
+      from public.kitakana_elo_sheet_sync_tokens recent
+      where recent.owner_user_id = v_owner
+      order by recent.updated_at desc, recent.created_at desc
+      limit 5
+    );
+
+  return jsonb_build_object(
+    'ok', true,
+    'createdAt', now(),
+    'activeSheets', (
+      select count(*)
+      from public.kitakana_elo_sheet_sync_tokens token
+      where token.owner_user_id = v_owner
+    )
+  );
 end;
 $$;
 
@@ -920,6 +974,7 @@ begin
     'playedAt', match.played_at,
     'event', match.event,
     'tier', match.tier,
+    'matchFormat', match.match_format,
     'resultType', match.result_type,
     'teamA', match.team_a,
     'teamB', match.team_b,
@@ -970,18 +1025,33 @@ as $$
 declare
   v_owner uuid := auth.uid();
   item jsonb;
+  v_existing public.kitakana_elo_matches%rowtype;
   v_code text;
   v_team_a text;
   v_team_b text;
   v_winner text;
   v_result_type text;
+  v_match_format text;
   v_tier text;
   v_period_month date;
   v_played_at timestamptz;
+  v_score_a double precision;
+  v_score_b double precision;
+  v_score_text text;
+  v_event text;
+  v_notes text;
   v_order bigint;
   v_count integer := 0;
+  v_inserted integer := 0;
+  v_updated integer := 0;
+  v_unchanged integer := 0;
   v_results jsonb := '[]'::jsonb;
   v_updated_at timestamptz;
+  v_exists boolean;
+  v_rating_changed boolean;
+  v_metadata_changed boolean;
+  v_status text;
+  v_should_recalculate boolean := false;
 begin
   if v_owner is null then
     raise exception 'Authentication required';
@@ -992,7 +1062,17 @@ begin
   if not exists(select 1 from public.kitakana_elo_teams where owner_user_id = v_owner) then
     raise exception 'Kitakana Elo tracker is not initialized';
   end if;
+  if exists (
+    select 1
+    from jsonb_array_elements(p_matches) submitted(item)
+    group by btrim(coalesce(submitted.item->>'matchCode', ''))
+    having count(*) > 1
+  ) then
+    raise exception 'A match appears more than once in the Elo batch';
+  end if;
 
+  -- One lock covers the complete batch. A validation error rolls back every
+  -- match, so stage/tournament submissions can never stop half-finished.
   perform 1
   from public.kitakana_elo_trackers
   where owner_user_id = v_owner
@@ -1021,6 +1101,7 @@ begin
 
     v_winner := case when item->>'winner' in ('Tie', 'Renga') then 'Tie' else item->>'winner' end;
     v_result_type := item->>'resultType';
+    v_match_format := nullif(lower(btrim(coalesce(item->>'matchFormat', ''))), '');
     v_tier := item->>'tier';
     if coalesce(item->>'stagePeriod', '') !~ '^\d{4}-(0[1-9]|1[0-2])$' then
       raise exception 'Stage month and year are required';
@@ -1037,90 +1118,130 @@ begin
     end;
     if v_winner not in ('Team A', 'Team B', 'Tie') then raise exception 'Invalid winner'; end if;
     if v_result_type not in ('Hoshin-Tora', 'Hoshin-Kai', 'Hoshin-Renga', 'Renga') then raise exception 'Invalid result type'; end if;
+    if v_match_format is not null and v_match_format not in ('single', 'double', 'roundrobin') then raise exception 'Invalid match format'; end if;
     if v_tier not in ('Tier 1', 'Tier 2', 'Tier 3', 'Tier 4', 'Tier 5') then raise exception 'Invalid tier'; end if;
 
-    select match_order into v_order
+    v_score_a := nullif(item->>'scoreA', '')::double precision;
+    v_score_b := nullif(item->>'scoreB', '')::double precision;
+    v_score_text := coalesce(item->>'score', '');
+    v_event := coalesce(item->>'tournamentName', '');
+    v_notes := concat_ws(' | ',
+      nullif(concat('website teams ', item->>'teamA', ' vs ', item->>'teamB'), ''),
+      nullif(concat('score ', item->>'score'), 'score '),
+      concat('source Tourney · ', v_code)
+    );
+
+    select * into v_existing
     from public.kitakana_elo_matches
     where owner_user_id = v_owner and match_code = v_code;
-    if v_order is null then
+    v_exists := found;
+    if v_exists then
+      v_order := v_existing.match_order;
+    else
       select coalesce(max(match_order), 0) + 1 into v_order
       from public.kitakana_elo_matches
       where owner_user_id = v_owner;
     end if;
+
+    v_rating_changed := not v_exists
+      or v_existing.team_a is distinct from v_team_a
+      or v_existing.team_b is distinct from v_team_b
+      or v_existing.winner is distinct from v_winner
+      or v_existing.result_type is distinct from v_result_type
+      or v_existing.match_format is distinct from v_match_format
+      or v_existing.tier is distinct from v_tier;
+    v_metadata_changed := not v_exists
+      or v_existing.source_match_id is distinct from item->>'sourceMatchId'
+      or v_existing.website_team_a is distinct from item->>'teamA'
+      or v_existing.website_team_b is distinct from item->>'teamB'
+      or v_existing.period_month is distinct from v_period_month
+      or v_existing.played_at is distinct from v_played_at
+      or v_existing.score_a is distinct from v_score_a
+      or v_existing.score_b is distinct from v_score_b
+      or v_existing.score_text is distinct from v_score_text
+      or v_existing.event is distinct from v_event
+      or v_existing.notes is distinct from v_notes;
     v_updated_at := now();
 
-    insert into public.kitakana_elo_matches (
-      owner_user_id, match_code, match_order, source_match_id, is_imported,
-      team_a, team_b, website_team_a, website_team_b,
-      winner, result_type, tier, period_month, played_at, score_a, score_b, score_text,
-      event, notes, validation, submitted_by, updated_at
-    ) values (
-      v_owner,
-      v_code,
-      v_order,
-      item->>'sourceMatchId',
-      false,
-      v_team_a,
-      v_team_b,
-      item->>'teamA',
-      item->>'teamB',
-      v_winner,
-      v_result_type,
-      v_tier,
-      v_period_month,
-      v_played_at,
-      nullif(item->>'scoreA', '')::double precision,
-      nullif(item->>'scoreB', '')::double precision,
-      coalesce(item->>'score', ''),
-      coalesce(item->>'tournamentName', ''),
-      concat_ws(' | ',
-        nullif(concat('website teams ', item->>'teamA', ' vs ', item->>'teamB'), ''),
-        nullif(concat('score ', item->>'score'), 'score '),
-        concat('source Tourney · ', v_code)
-      ),
-      'Pending',
-      v_owner,
-      v_updated_at
-    )
-    on conflict (owner_user_id, match_code) do update set
-      source_match_id = excluded.source_match_id,
-      team_a = excluded.team_a,
-      team_b = excluded.team_b,
-      website_team_a = excluded.website_team_a,
-      website_team_b = excluded.website_team_b,
-      winner = excluded.winner,
-      result_type = excluded.result_type,
-      tier = excluded.tier,
-      period_month = excluded.period_month,
-      played_at = excluded.played_at,
-      score_a = excluded.score_a,
-      score_b = excluded.score_b,
-      score_text = excluded.score_text,
-      event = excluded.event,
-      notes = excluded.notes,
-      validation = 'Pending',
-      submitted_by = excluded.submitted_by,
-      updated_at = excluded.updated_at;
+    if not v_exists then
+      insert into public.kitakana_elo_matches (
+        owner_user_id, match_code, match_order, source_match_id, is_imported,
+        team_a, team_b, website_team_a, website_team_b,
+        winner, result_type, match_format, tier, period_month, played_at, score_a, score_b, score_text,
+        event, notes, validation, submitted_by, updated_at
+      ) values (
+        v_owner, v_code, v_order, item->>'sourceMatchId', false,
+        v_team_a, v_team_b, item->>'teamA', item->>'teamB',
+        v_winner, v_result_type, v_match_format, v_tier, v_period_month, v_played_at,
+        v_score_a, v_score_b, v_score_text, v_event, v_notes,
+        'Pending', v_owner, v_updated_at
+      );
+      v_status := 'inserted';
+      v_inserted := v_inserted + 1;
+      v_should_recalculate := true;
+    elsif v_rating_changed or v_metadata_changed then
+      update public.kitakana_elo_matches
+      set source_match_id = item->>'sourceMatchId',
+          team_a = v_team_a,
+          team_b = v_team_b,
+          website_team_a = item->>'teamA',
+          website_team_b = item->>'teamB',
+          winner = v_winner,
+          result_type = v_result_type,
+          match_format = v_match_format,
+          tier = v_tier,
+          period_month = v_period_month,
+          played_at = v_played_at,
+          score_a = v_score_a,
+          score_b = v_score_b,
+          score_text = v_score_text,
+          event = v_event,
+          notes = v_notes,
+          validation = case when v_rating_changed then 'Pending' else validation end,
+          submitted_by = v_owner,
+          updated_at = v_updated_at
+      where owner_user_id = v_owner and match_code = v_code;
+
+      if v_rating_changed then
+        v_status := 'updated';
+        v_updated := v_updated + 1;
+        v_should_recalculate := true;
+      else
+        v_status := 'unchanged';
+        v_unchanged := v_unchanged + 1;
+      end if;
+    else
+      v_status := 'unchanged';
+      v_unchanged := v_unchanged + 1;
+      v_updated_at := v_existing.updated_at;
+    end if;
 
     v_count := v_count + 1;
+    v_results := v_results || jsonb_build_array(jsonb_build_object(
+      'matchCode', v_code,
+      'matchOrder', v_order,
+      'playedAt', v_played_at,
+      'updatedAt', v_updated_at,
+      'status', v_status
+    ));
   end loop;
 
-  perform public.kitakana_resequence_match_orders_internal(v_owner);
-  perform public.kitakana_recalculate_internal(v_owner);
+  -- match_order is immutable after first insertion. This prevents a harmless
+  -- resubmission or newly supplied date from rewriting historical Elo.
+  if v_should_recalculate then
+    perform public.kitakana_recalculate_internal(v_owner);
+  end if;
 
-  select coalesce(jsonb_agg(jsonb_build_object(
-    'matchCode', match.match_code,
-    'matchOrder', match.match_order,
-    'playedAt', match.played_at,
-    'updatedAt', match.updated_at
-  ) order by submitted.ordinality), '[]'::jsonb)
-  into v_results
-  from jsonb_array_elements(p_matches) with ordinality as submitted(item, ordinality)
-  join public.kitakana_elo_matches match
-    on match.owner_user_id = v_owner
-   and match.match_code = btrim(coalesce(submitted.item->>'matchCode', ''));
-
-  return jsonb_build_object('ok', true, 'submitted', v_count, 'results', v_results, 'errors', '[]'::jsonb);
+  return jsonb_build_object(
+    'ok', true,
+    'submitted', v_count,
+    'inserted', v_inserted,
+    'updated', v_updated,
+    'unchanged', v_unchanged,
+    'recalculated', v_should_recalculate,
+    'results', v_results,
+    'errors', '[]'::jsonb
+  );
 end;
 $$;
 

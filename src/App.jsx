@@ -513,6 +513,14 @@ function kitakanaEloResult(match){
   return {winner:winnerSide,resultType,scoreA,scoreB,score:`${formatEloNumber(scoreA)}-${formatEloNumber(scoreB)}`,usesNumericScore:hasNumericScore};
 }
 
+function kitakanaResultValue(resultType,matchFormat){
+  const elimination=matchFormat==="single"||matchFormat==="double";
+  if(resultType==="Hoshin-Tora")return 5;
+  if(resultType==="Hoshin-Kai")return elimination?4:3;
+  if(resultType==="Hoshin-Renga")return elimination?2.5:1.5;
+  return 0;
+}
+
 function buildKitakanaEloPayload(match,context){
   const mapped=kitakanaEloResult(match);
   if(!mapped||!context)return null;
@@ -524,6 +532,9 @@ function buildKitakanaEloPayload(match,context){
   ].join("-");
   return {
     matchCode,
+    projectId:context.projectId||"",
+    stageKey:context.stageKey||"",
+    matchFormat:context.matchFormat||"",
     tournamentName:context.tournamentName||"Tournament",
     stagePeriod:normalizeStagePeriod(context.stagePeriod),
     tier:context.tier||DEFAULT_ELO_TIER,
@@ -1804,7 +1815,6 @@ function GameSlot({game,gi,match,mode,onUpdate}){
 
 function MatchCard({match,onGameUpdate,statCols,onMatchUpdate,accentLabel,matchNumber}){
   const[open,setOpen]=useState(false);
-  const editLocked=useContext(MatchEditLockContext);
   const matchSchedules=useContext(MatchScheduleContext);
   const schedule=matchSchedules.get(match.id);
   const ready=!!(match.teamA&&match.teamB);
@@ -1841,7 +1851,7 @@ function MatchCard({match,onGameUpdate,statCols,onMatchUpdate,accentLabel,matchN
     <>
     <div style={{position:"relative",width:210,flexShrink:0}}>
       {Number.isFinite(matchNumber)&&<span title={`Match ${matchNumber}`} aria-label={`Match ${matchNumber}`} style={{position:"absolute",left:-17,top:10,width:14,textAlign:"right",fontSize:11,lineHeight:1,fontWeight:800,fontFamily:"'Barlow Condensed',sans-serif",color:"var(--color-text-tertiary)",fontVariantNumeric:"tabular-nums"}}>{matchNumber}</span>}
-      <div className={`match-card ${editLocked?"is-locked":""}`} title={editLocked?"Tournament ended — match is read-only":undefined} onClick={()=>ready&&setOpen(true)} style={{background:ready?"#101820":"#0a1117",border:winner?`1.5px solid ${winner.color}66`:ready?"1px solid rgba(255,255,255,0.18)":"1px dashed rgba(255,255,255,0.2)",borderRadius:8,padding:"9px 11px",fontFamily:"'Barlow Condensed',sans-serif",width:210,minHeight:96,boxSizing:"border-box",opacity:ready?1:0.8,cursor:ready?"pointer":"default",boxShadow:"0 8px 22px rgba(0,0,0,0.16)",color:"#efe9dc","--color-text-primary":"#efe9dc","--color-text-secondary":"rgba(239,233,220,0.82)","--color-text-tertiary":"rgba(239,233,220,0.62)","--color-background-primary":"#0a1117","--color-background-secondary":"rgba(255,255,255,0.07)","--color-border-tertiary":"rgba(255,255,255,0.2)"}}>
+      <div className="match-card" onClick={()=>ready&&setOpen(true)} style={{background:ready?"#101820":"#0a1117",border:winner?`1.5px solid ${winner.color}66`:ready?"1px solid rgba(255,255,255,0.18)":"1px dashed rgba(255,255,255,0.2)",borderRadius:8,padding:"9px 11px",fontFamily:"'Barlow Condensed',sans-serif",width:210,minHeight:96,boxSizing:"border-box",opacity:ready?1:0.8,cursor:ready?"pointer":"default",boxShadow:"0 8px 22px rgba(0,0,0,0.16)",color:"#efe9dc","--color-text-primary":"#efe9dc","--color-text-secondary":"rgba(239,233,220,0.82)","--color-text-tertiary":"rgba(239,233,220,0.62)","--color-background-primary":"#0a1117","--color-background-secondary":"rgba(255,255,255,0.07)","--color-border-tertiary":"rgba(255,255,255,0.2)"}}>
         {accentLabel&&<div style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"var(--color-text-tertiary)",marginBottom:4}}>{accentLabel}</div>}
         <div style={{marginBottom:8}}>{match.teamA?<TeamRow team={match.teamA} w={wA} score={scoreA}/>:<TBDRow/>}</div>
         <div style={{marginTop:8}}>{match.teamB?<TeamRow team={match.teamB} w={wB} score={scoreB}/>:<TBDRow/>}</div>
@@ -1851,7 +1861,7 @@ function MatchCard({match,onGameUpdate,statCols,onMatchUpdate,accentLabel,matchN
         </div>
       </div>
     </div>
-    {open&&typeof document!=="undefined"&&createPortal(<MatchDetailsModal match={match} statCols={statCols} locked={editLocked} onClose={()=>setOpen(false)} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>,document.body)}
+    {open&&typeof document!=="undefined"&&createPortal(<MatchDetailsModal match={match} statCols={statCols} onClose={()=>setOpen(false)} onGameUpdate={onGameUpdate} onMatchUpdate={onMatchUpdate}/>,document.body)}
     </>
   );
 }
@@ -1900,12 +1910,23 @@ function MatchEloPanel({match}){
     try{
       const result=await eloBridge.submitMatch(match);
       if(!result.ok)throw new Error(result.error||"Submit failed");
-      setSubmitState({loading:false,message:`Submitted as Elo match ${result.matchOrder}`,error:false});
+      const message=result.status==="unchanged"
+        ?`Already recorded as Elo match ${result.matchOrder}`
+        :`${result.status==="updated"?"Updated":"Recorded"} as Elo match ${result.matchOrder}`;
+      setSubmitState({loading:false,message,error:false});
       fetchInfo();
     }catch(error){
       setSubmitState({loading:false,message:friendlyEloError(error)||"Submit failed",error:true});
     }
   };
+  const recordedMatch=info?.match||null;
+  const recordMatchesCurrent=!!(recordedMatch&&mapped
+    &&recordedMatch.winner===mapped.winner
+    &&recordedMatch.resultType===mapped.resultType
+    &&(recordedMatch.matchFormat||"")===(context.matchFormat||"")
+    &&recordedMatch.tier===(context.tier||DEFAULT_ELO_TIER)
+    &&recordedMatch.score===mapped.score);
+  const resultValue=mapped?kitakanaResultValue(mapped.resultType,context.matchFormat):0;
   const sideForTeam=team=>team===match.teamA?"teamA":"teamB";
   const InfoCard=({team})=>{
     const sideKey=sideForTeam(team);
@@ -1914,8 +1935,10 @@ function MatchEloPanel({match}){
     const history=(side?.history||info?.history?.[team.name]||[]).slice(0,5);
     const trackerName=side?.trackerName||data?.name||"";
     const matchResult=info?.match?.[sideKey]||null;
+    const preMatchElo=Number(matchResult?.preElo);
     const postMatchElo=Number(matchResult?.postElo);
     const eloChange=Number(matchResult?.eloChange);
+    const hasPreMatchElo=Number.isFinite(preMatchElo);
     const hasPostMatchElo=Number.isFinite(postMatchElo);
     const hasEloChange=Number.isFinite(eloChange);
     const changeColor=eloChange>0?"#4f7773":eloChange<0?"#b75b64":"var(--color-text-tertiary)";
@@ -1926,11 +1949,16 @@ function MatchEloPanel({match}){
           <TeamTag name={team.name} color={team.color} seed={team.seed} small/>
           {data?.currentRank&&<span style={{marginLeft:"auto",fontSize:10,color:"var(--color-text-tertiary)",fontWeight:800}}>#{data.currentRank}</span>}
         </div>
-        <div style={{display:"flex",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>
-          <div style={{fontSize:20,fontWeight:800,color:team.color||"#b99a55",fontVariantNumeric:"tabular-nums"}}>{hasPostMatchElo?formatEloNumber(postMatchElo):data?formatEloNumber(data.currentElo):"-"}</div>
-          {hasEloChange&&<span style={{fontSize:10,fontWeight:900,color:changeColor,fontVariantNumeric:"tabular-nums"}}>{changeArrow} {eloChange>0?"+":""}{formatEloNumber(eloChange)}</span>}
-        </div>
-        <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginTop:2}}>{hasPostMatchElo?"Elo after this match · ":"Current Elo · "}{data?.code||"Not found in tracker"}{data?.continent?` · ${data.continent}`:""}</div>
+        {hasPreMatchElo&&hasPostMatchElo?(
+          <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"end",gap:7}}>
+            <div><small style={{display:"block",fontSize:8,color:"var(--color-text-tertiary)",textTransform:"uppercase",letterSpacing:"0.07em"}}>Before</small><strong style={{fontSize:17,color:"var(--color-text-primary)",fontVariantNumeric:"tabular-nums"}}>{formatEloNumber(preMatchElo)}</strong></div>
+            <span style={{paddingBottom:2,fontSize:10,fontWeight:900,color:changeColor,fontVariantNumeric:"tabular-nums"}}>{changeArrow} {eloChange>0?"+":""}{formatEloNumber(eloChange)}</span>
+            <div style={{textAlign:"right"}}><small style={{display:"block",fontSize:8,color:"var(--color-text-tertiary)",textTransform:"uppercase",letterSpacing:"0.07em"}}>After</small><strong style={{fontSize:17,color:team.color||"#b99a55",fontVariantNumeric:"tabular-nums"}}>{formatEloNumber(postMatchElo)}</strong></div>
+          </div>
+        ):(
+          <div style={{fontSize:20,fontWeight:800,color:team.color||"#b99a55",fontVariantNumeric:"tabular-nums"}}>{data?formatEloNumber(data.currentElo):"-"}</div>
+        )}
+        <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginTop:3}}>{hasPostMatchElo?`Current overall Elo ${formatEloNumber(data?.currentElo)} · `:"Current overall Elo · "}{data?.code||"Not found in tracker"}{data?.continent?` · ${data.continent}`:""}</div>
         {trackerName&&trackerName!==team.name&&<div style={{fontSize:9,color:"var(--color-text-tertiary)",marginTop:2}}>Tracker team: {trackerName}</div>}
         {history.length>0&&(
           <div style={{marginTop:7,display:"flex",flexDirection:"column",gap:2}}>
@@ -1954,14 +1982,14 @@ function MatchEloPanel({match}){
         <span style={{fontSize:10,color:"var(--color-text-tertiary)",fontWeight:700}}>{context.tier||DEFAULT_ELO_TIER}</span>
         <span style={{fontSize:10,color:"var(--color-text-tertiary)",fontWeight:700}}>📅 {context.scheduleLabel||formatStagePeriod(context.stagePeriod)}</span>
         {info?.backend&&<span style={{fontSize:9,color:"#4f7773",fontWeight:800}}>{info.backend}</span>}
-        {mapped&&<span style={{fontSize:10,color:"#4f7773",fontWeight:800,marginLeft:"auto"}}>{mapped.resultType} · {mapped.score}</span>}
+        {mapped&&<span style={{fontSize:10,color:"#4f7773",fontWeight:800,marginLeft:"auto"}}>{mapped.resultType} · value {formatEloNumber(resultValue)} · {mapped.score}</span>}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:8}}>
         {[match.teamA,match.teamB].filter(Boolean).map(team=><InfoCard key={team.name} team={team}/>)}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10,flexWrap:"wrap"}}>
-        <button onClick={submit} disabled={!mapped||submitState.loading} style={{...btn(false),padding:"6px 12px",fontSize:11,background:mapped?"#b99a55":"var(--color-background-secondary)",borderColor:mapped?"#b99a55":"var(--color-border-tertiary)",color:mapped?"#17130b":"var(--color-text-tertiary)",opacity:submitState.loading?0.6:1,cursor:mapped&&!submitState.loading?"pointer":"not-allowed"}}>
-          {submitState.loading?"Submitting...":"Submit to Elo Tracker"}
+        <button onClick={submit} disabled={!mapped||submitState.loading||recordMatchesCurrent} style={{...btn(false),padding:"6px 12px",fontSize:11,background:mapped&&!recordMatchesCurrent?"#b99a55":"var(--color-background-secondary)",borderColor:mapped&&!recordMatchesCurrent?"#b99a55":"var(--color-border-tertiary)",color:mapped&&!recordMatchesCurrent?"#17130b":"var(--color-text-tertiary)",opacity:submitState.loading?0.6:1,cursor:mapped&&!submitState.loading&&!recordMatchesCurrent?"pointer":"not-allowed"}}>
+          {submitState.loading?"Submitting...":recordMatchesCurrent?"Recorded ✓":recordedMatch?"Update Elo record":"Submit to Elo Tracker"}
         </button>
         <span style={{fontSize:10,color:submitState.error||status.error?"#b75b64":submitState.message?"#4f7773":"var(--color-text-tertiary)",fontWeight:700}}>
           {submitState.message||status.message||(status.loading?"Loading tracker...":mapped?context.matchCode:"Complete match first")}
@@ -2317,7 +2345,7 @@ function EloBonusPage({loadStandings,submitBonus,submitBonuses,refreshToken,avai
   </div>;
 }
 
-function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols,locked=false}){
+function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols}){
   const[selectedGameIndex,setSelectedGameIndex]=useState(0);
   const ready=!!(match.teamA&&match.teamB);
   const{wA,wB,scoreA,scoreB,winner}=ready?matchResult(match):{wA:0,wB:0,scoreA:0,scoreB:0,winner:null};
@@ -2344,10 +2372,10 @@ function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols,lo
       const other=Number(game[otherScoreKey]);
       const hasBoth=game[scoreKey]!==""&&game[scoreKey]!=null&&game[otherScoreKey]!==""&&game[otherScoreKey]!=null;
       const isWinning=hasBoth&&own>other;
-      return <input type="number" min="0" step="any" aria-label={`${team.name} game ${gameIdx+1} score`} value={game[scoreKey]??""} disabled={locked} onChange={event=>onGameUpdate(gameIdx,{[scoreKey]:event.target.value})} style={{width:70,height:38,borderRadius:6,border:`1px solid ${isWinning?team.color:"var(--color-border-tertiary)"}`,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontSize:16,fontWeight:800,fontFamily:"'Barlow Condensed',sans-serif",textAlign:"center",padding:"0 6px",boxSizing:"border-box",opacity:locked?0.65:1,cursor:locked?"not-allowed":"text"}}/>;
+      return <input type="number" min="0" step="any" aria-label={`${team.name} game ${gameIdx+1} score`} value={game[scoreKey]??""} onChange={event=>onGameUpdate(gameIdx,{[scoreKey]:event.target.value})} style={{width:70,height:38,borderRadius:6,border:`1px solid ${isWinning?team.color:"var(--color-border-tertiary)"}`,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontSize:16,fontWeight:800,fontFamily:"'Barlow Condensed',sans-serif",textAlign:"center",padding:"0 6px",boxSizing:"border-box",cursor:"text"}}/>;
     }
     const selected=!game.isTie&&game.winnerName===team.name;
-    return <button onClick={()=>onGameUpdate(gameIdx,{winnerName:selected?null:team.name,isTie:false})} disabled={locked} aria-pressed={selected} style={{width:76,height:34,borderRadius:6,border:`1px solid ${selected?team.color:"var(--color-border-tertiary)"}`,background:selected?`${team.color}33`:"var(--color-background-primary)",color:selected?team.color:"var(--color-text-secondary)",fontSize:11,fontWeight:900,fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase",cursor:locked?"not-allowed":"pointer",opacity:locked?0.65:1}}>{selected?"Winner":"Select"}</button>;
+    return <button onClick={()=>onGameUpdate(gameIdx,{winnerName:selected?null:team.name,isTie:false})} aria-pressed={selected} style={{width:76,height:34,borderRadius:6,border:`1px solid ${selected?team.color:"var(--color-border-tertiary)"}`,background:selected?`${team.color}33`:"var(--color-background-primary)",color:selected?team.color:"var(--color-text-secondary)",fontSize:11,fontWeight:900,fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase",cursor:"pointer"}}>{selected?"Winner":"Select"}</button>;
   };
   return(
     <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.78)",display:"flex",alignItems:"center",justifyContent:"center",padding:18}}>
@@ -2373,13 +2401,11 @@ function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols,lo
           ))}
         </div>
 
-        {locked&&<div className="classic-match-locked-notice"><span aria-hidden="true">⌑</span><div><strong>Tournament completed</strong><small>This match is read-only. Elo submission remains available below.</small></div></div>}
-
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:9,flexWrap:"wrap"}}>
           <div style={{fontSize:11,fontWeight:900,letterSpacing:"0.09em",textTransform:"uppercase",color:"#b99a55"}}>Games · all in one view</div>
           <div style={{display:"flex",gap:6}}>
-            <button onClick={()=>deleteGame(match.games.length-1)} disabled={locked||match.games.length<=1} style={{...btn(false),padding:"4px 10px",border:"1px solid rgba(183,91,100,0.45)",color:"#b75b64",opacity:locked||match.games.length<=1?0.4:1,cursor:locked||match.games.length<=1?"not-allowed":"pointer"}}>− Game</button>
-            <button onClick={addGame} disabled={locked} style={{...btn(false),padding:"4px 10px",border:"1px solid rgba(79,119,115,0.45)",color:"#4f7773",opacity:locked?0.4:1,cursor:locked?"not-allowed":"pointer"}}>+ Game</button>
+            <button onClick={()=>deleteGame(match.games.length-1)} disabled={match.games.length<=1} style={{...btn(false),padding:"4px 10px",border:"1px solid rgba(183,91,100,0.45)",color:"#b75b64",opacity:match.games.length<=1?0.4:1,cursor:match.games.length<=1?"not-allowed":"pointer"}}>− Game</button>
+            <button onClick={addGame} style={{...btn(false),padding:"4px 10px",border:"1px solid rgba(79,119,115,0.45)",color:"#4f7773",cursor:"pointer"}}>+ Game</button>
           </div>
         </div>
         <div style={{overflowX:"auto",marginBottom:12,border:"1px solid var(--color-border-tertiary)",borderRadius:8,background:"var(--color-background-secondary)"}}>
@@ -2390,7 +2416,7 @@ function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols,lo
                 {match.games.map((game,gameIdx)=><th key={game.id??gameIdx} style={{minWidth:105,padding:"7px 8px",textAlign:"center",borderLeft:"1px solid var(--color-border-tertiary)",background:selectedGameIndex===gameIdx?"rgba(185,154,85,0.06)":"transparent"}}>
                   <button onClick={()=>setSelectedGameIndex(gameIdx)} style={{background:"none",border:0,color:selectedGameIndex===gameIdx?"#b99a55":"var(--color-text-primary)",fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:900,letterSpacing:"0.07em",textTransform:"uppercase",cursor:"pointer",padding:2}}>Game {gameIdx+1}</button>
                   {game.gameMvp&&<div title={`MVP: ${game.gameMvp}`} style={{fontSize:9,color:"#b99a55",fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>⭐ {game.gameMvp}</div>}
-                  {canTie&&match.matchMode!=="score"&&<button onClick={()=>onGameUpdate(gameIdx,{winnerName:null,isTie:!game.isTie})} disabled={locked} aria-pressed={!!game.isTie} style={{marginTop:3,padding:"2px 7px",borderRadius:4,border:"1px solid var(--color-border-tertiary)",background:game.isTie?"#b99a55":"var(--color-background-primary)",color:game.isTie?"#17130b":"var(--color-text-tertiary)",fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:900,cursor:locked?"not-allowed":"pointer",opacity:locked?0.65:1}}>Tie</button>}
+                  {canTie&&match.matchMode!=="score"&&<button onClick={()=>onGameUpdate(gameIdx,{winnerName:null,isTie:!game.isTie})} aria-pressed={!!game.isTie} style={{marginTop:3,padding:"2px 7px",borderRadius:4,border:"1px solid var(--color-border-tertiary)",background:game.isTie?"#b99a55":"var(--color-background-primary)",color:game.isTie?"#17130b":"var(--color-text-tertiary)",fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:900,cursor:"pointer"}}>Tie</button>}
                 </th>)}
               </tr>
             </thead>
@@ -2408,13 +2434,13 @@ function MatchDetailsModal({match,onClose,onGameUpdate,onMatchUpdate,statCols,lo
             <span style={{fontSize:11,fontWeight:900,letterSpacing:"0.07em",textTransform:"uppercase",color:"#b99a55"}}>Game {selectedGameIndex+1} player details</span>
             <span style={{fontSize:9,color:"var(--color-text-tertiary)"}}>Select a game heading above to edit its stats and MVP.</span>
           </div>
-          <PlayerStatPanel match={match} gameIdx={Math.min(selectedGameIndex,match.games.length-1)} statCols={statCols} onUpdate={onGameUpdate} disabled={locked}/>
+          <PlayerStatPanel match={match} gameIdx={Math.min(selectedGameIndex,match.games.length-1)} statCols={statCols} onUpdate={onGameUpdate}/>
         </div>}
 
         {allPlayers.length>0&&(
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
             <span style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#b99a55"}}>Match MVP</span>
-            <select value={match.mvp||""} disabled={locked} onChange={e=>onMatchUpdate({mvp:e.target.value||null})} style={{fontSize:12,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,border:"0.5px solid rgba(185,154,85,0.4)",borderRadius:5,background:"rgba(185,154,85,0.07)",color:"var(--color-text-primary)",padding:"4px 7px",cursor:locked?"not-allowed":"pointer",opacity:locked?0.65:1}}>
+            <select value={match.mvp||""} onChange={e=>onMatchUpdate({mvp:e.target.value||null})} style={{fontSize:12,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,border:"0.5px solid rgba(185,154,85,0.4)",borderRadius:5,background:"rgba(185,154,85,0.07)",color:"var(--color-text-primary)",padding:"4px 7px",cursor:"pointer"}}>
               <option value="">No MVP yet</option>
               {[match.teamA,match.teamB].map(team=><optgroup key={team.name} label={team.name}>{(team.players||[]).filter(p=>p.role==="player"||p.role==="substitute").map(p=><option key={p.name} value={p.name}>{p.name}</option>)}</optgroup>)}
             </select>
@@ -3767,11 +3793,11 @@ function eloExportSheets(data){
   };
   const historySheet={
     name:"Match History",
-    headers:["Team A Region","Team A Subregion","Team B Region","Team B Subregion","Match Order","Period","Played At","Event","Tier","Result Type","Team A","Team A Code","Team A Score","Team A Pre Elo","Team A Elo Change","Team A Post Elo","Team B","Team B Code","Team B Score","Team B Pre Elo","Team B Elo Change","Team B Post Elo","Winner","Score","Source Match ID","Updated At"],
+    headers:["Team A Region","Team A Subregion","Team B Region","Team B Subregion","Match Order","Period","Played At","Event","Tier","Match Format","Result Type","Team A","Team A Code","Team A Score","Team A Pre Elo","Team A Elo Change","Team A Post Elo","Team B","Team B Code","Team B Score","Team B Pre Elo","Team B Elo Change","Team B Post Elo","Winner","Score","Source Match ID","Updated At"],
     rows:matches.map(match=>{
       const teamA=teamMeta(match.team_a),teamB=teamMeta(match.team_b);
       const[scoreA,scoreB]=matchScorePair(match);
-      return[teamA.continent||"",teamA.subregion,teamB.continent||"",teamB.subregion,Number(match.match_order)||"",String(match.period_month||"").slice(0,7),match.played_at||"",match.event||"",match.tier||"",match.result_type||"",match.team_a,teamA.code||"",scoreA??"",Number(match.team_a_pre_elo)||"",Number(match.team_a_delta)||0,Number(match.team_a_post_elo)||"",match.team_b,teamB.code||"",scoreB??"",Number(match.team_b_pre_elo)||"",Number(match.team_b_delta)||0,Number(match.team_b_post_elo)||"",match.winner||"",match.score_text||"",match.source_match_id||"",match.updated_at||""];
+      return[teamA.continent||"",teamA.subregion,teamB.continent||"",teamB.subregion,Number(match.match_order)||"",String(match.period_month||"").slice(0,7),match.played_at||"",match.event||"",match.tier||"",match.match_format||"",match.result_type||"",match.team_a,teamA.code||"",scoreA??"",Number(match.team_a_pre_elo)||"",Number(match.team_a_delta)||0,Number(match.team_a_post_elo)||"",match.team_b,teamB.code||"",scoreB??"",Number(match.team_b_pre_elo)||"",Number(match.team_b_delta)||0,Number(match.team_b_post_elo)||"",match.winner||"",match.score_text||"",match.source_match_id||"",match.updated_at||""];
     })
   };
   const bonusesSheet={
@@ -3885,11 +3911,11 @@ function refreshKitakanaElo() {
   );
 
   writeKitakanaSheet_("Match History",
-    ["Team A Region","Team A Subregion","Team B Region","Team B Subregion","Match Order","Period","Played At","Event","Tier","Result Type","Team A","Team A Code","Team A Score","Team A Pre Elo","Team A Elo Change","Team A Post Elo","Team B","Team B Code","Team B Score","Team B Pre Elo","Team B Elo Change","Team B Post Elo","Winner","Score","Source Match ID","Updated At"],
+    ["Team A Region","Team A Subregion","Team B Region","Team B Subregion","Match Order","Period","Played At","Event","Tier","Match Format","Result Type","Team A","Team A Code","Team A Score","Team A Pre Elo","Team A Elo Change","Team A Post Elo","Team B","Team B Code","Team B Score","Team B Pre Elo","Team B Elo Change","Team B Post Elo","Winner","Score","Source Match ID","Updated At"],
     matches.map(function(match) {
       const teamA=teamMap[match.teamA] || {}, teamB=teamMap[match.teamB] || {};
       const scores=kitakanaScorePair_(match);
-      return [teamA.continent||"",kitakanaSubregion_(teamA),teamB.continent||"",kitakanaSubregion_(teamB),match.matchOrder||"",String(match.periodMonth||"").slice(0,7),match.playedAt||"",match.event||"",match.tier||"",match.resultType||"",match.teamA,teamA.code||"",scores[0],valueOrBlank_(match.teamAPreElo),number_(match.teamADelta),valueOrBlank_(match.teamAPostElo),match.teamB,teamB.code||"",scores[1],valueOrBlank_(match.teamBPreElo),number_(match.teamBDelta),valueOrBlank_(match.teamBPostElo),match.winner||"",match.score||"",match.sourceMatchId||"",match.updatedAt||""];
+      return [teamA.continent||"",kitakanaSubregion_(teamA),teamB.continent||"",kitakanaSubregion_(teamB),match.matchOrder||"",String(match.periodMonth||"").slice(0,7),match.playedAt||"",match.event||"",match.tier||"",match.matchFormat||"",match.resultType||"",match.teamA,teamA.code||"",scores[0],valueOrBlank_(match.teamAPreElo),number_(match.teamADelta),valueOrBlank_(match.teamAPostElo),match.teamB,teamB.code||"",scores[1],valueOrBlank_(match.teamBPreElo),number_(match.teamBDelta),valueOrBlank_(match.teamBPostElo),match.winner||"",match.score||"",match.sourceMatchId||"",match.updatedAt||""];
     })
   );
 
@@ -5114,6 +5140,7 @@ export default function App(){
         projectId:projectPart,
         tournamentName,
         stageKey,
+        matchFormat:"single",
         stagePeriod:isMulti?normalizeStagePeriod(finalStage?.period):stagePeriod,
         tier:isMulti?(finalStage?.eloTier||DEFAULT_ELO_TIER):(eloTier||DEFAULT_ELO_TIER),
         playedAt:schedule?.playedAt||"",
@@ -5129,6 +5156,7 @@ export default function App(){
         projectId:projectPart,
         tournamentName,
         stageKey,
+        matchFormat:formatType,
         stagePeriod,
         tier:eloTier||DEFAULT_ELO_TIER,
         playedAt:schedule?.playedAt||"",
@@ -5148,6 +5176,7 @@ export default function App(){
           projectId:projectPart,
           tournamentName,
           stageKey,
+          matchFormat:stages[idx]?.format||"",
           stagePeriod:normalizeStagePeriod(stages[idx]?.period),
           tier,
           playedAt:schedule?.playedAt||"",
@@ -5206,7 +5235,7 @@ export default function App(){
     const requestedEnd=startPeriod==="all"?"all":endPeriod;
     const[standingResult,matchResult,bonusResult]=await Promise.all([
       supabase.rpc("kitakana_elo_standings",{p_start_period:startPeriod,p_end_period:requestedEnd}),
-      supabase.from("kitakana_elo_matches").select("match_order,source_match_id,team_a,team_b,winner,result_type,tier,score_a,score_b,score_text,event,team_a_pre_elo,team_b_pre_elo,team_a_delta,team_b_delta,team_a_post_elo,team_b_post_elo,period_month,played_at,updated_at").eq("validation","OK").order("match_order",{ascending:false}).limit(3000),
+      supabase.from("kitakana_elo_matches").select("match_order,source_match_id,match_format,team_a,team_b,winner,result_type,tier,score_a,score_b,score_text,event,team_a_pre_elo,team_b_pre_elo,team_a_delta,team_b_delta,team_a_post_elo,team_b_post_elo,period_month,played_at,updated_at").eq("validation","OK").order("match_order",{ascending:false}).limit(3000),
       supabase.from("kitakana_elo_bonuses").select("bonus_id,bonus_order,team_name,category,points,event,created_at").order("bonus_order",{ascending:false}).limit(3000)
     ]);
     if(standingResult.error)throw standingResult.error;
@@ -5269,7 +5298,7 @@ export default function App(){
     if(!data?.ok)throw new Error("Could not create a Google Sheets sync token.");
     const script=googleSheetsSyncScript({supabaseUrl:SUPABASE_URL,anonKey:SUPABASE_ANON_KEY,token});
     downloadBlob(new Blob([script],{type:"text/plain;charset=utf-8"}),`kitakana-elo-google-sheets-sync-${new Date().toISOString().slice(0,10)}.gs`);
-    return{message:"Sync script downloaded. Open a blank Google Sheet → Extensions → Apps Script, paste the file, then run setupKitakanaElo()."};
+    return{message:"Sync script downloaded. Open a blank Google Sheet → Extensions → Apps Script, paste the file, then run setupKitakanaElo(). Up to five Sheets can remain connected."};
   };
 
   const submitEloPayloads=async(payloads)=>{
@@ -5344,6 +5373,7 @@ export default function App(){
           projectId:projectPart,
           tournamentName,
           stageKey,
+          matchFormat:stages[idx]?.format||"",
           stagePeriod:normalizeStagePeriod(stages[idx]?.period),
           tier:stages[idx]?.eloTier||DEFAULT_ELO_TIER
         };
@@ -5354,7 +5384,7 @@ export default function App(){
       });
     } else {
       const stageKey=formatType||"stage-1";
-      const context={projectId:projectPart,tournamentName,stageKey,stagePeriod,tier:eloTier||DEFAULT_ELO_TIER};
+      const context={projectId:projectPart,tournamentName,stageKey,matchFormat:formatType,stagePeriod,tier:eloTier||DEFAULT_ELO_TIER};
       (isRR?rrRounds.flat():bracketData?dataMatches(bracketData):[]).forEach(match=>{
         const schedule=nonMultiMatchSchedule.get(match.id);
         pushMatch(match,{...context,playedAt:schedule?.playedAt||"",matchNumber:nonMultiMatchNumbers.get(match.id),matchCode:["tourney",safeMatchCodePart(projectPart),safeMatchCodePart(stageKey),safeMatchCodePart(match.id)].join("-")});
@@ -5378,21 +5408,20 @@ export default function App(){
       setEloSyncState({loading:false,message:`${label} completed. Log in with Supabase to resubmit its Elo matches.`,error:true});
       return{ok:false,submitted:0,unavailable:true};
     }
-    setEloSyncState({loading:true,message:`${label}: resubmitting match 1 of ${matches.length}…`,error:false});
-    let submitted=0;
+    setEloSyncState({loading:true,message:`${label}: checking ${matches.length} matches in number order…`,error:false});
     try{
-      for(const payload of matches){
-        setEloSyncState({loading:true,message:`${label}: resubmitting match ${submitted+1} of ${matches.length}…`,error:false});
-        const data=await submitEloPayloads([payload]);
-        if(!data?.ok)throw new Error(`Elo resubmission stopped at match ${payload.matchNumber||submitted+1}.`);
-        submitted++;
-      }
+      const data=await submitEloPayloads(matches);
+      if(!data?.ok)throw new Error(`${label} Elo batch could not be recorded.`);
+      const submitted=Number(data.submitted)||matches.length;
+      const inserted=Number(data.inserted)||0;
+      const updated=Number(data.updated)||0;
+      const unchanged=Number(data.unchanged)||Math.max(0,submitted-inserted-updated);
       setEloRefreshKey(value=>value+1);
-      setEloSyncState({loading:false,message:`${label}: ${submitted} match${submitted===1?"":"es"} resubmitted in number order.`,error:false});
-      return{ok:true,submitted};
+      setEloSyncState({loading:false,message:`${label}: ${submitted} match${submitted===1?"":"es"} checked atomically · ${inserted} new, ${updated} updated, ${unchanged} already recorded.`,error:false});
+      return{ok:true,submitted,inserted,updated,unchanged};
     }catch(error){
-      setEloSyncState({loading:false,message:`${label}: ${submitted} of ${matches.length} submitted. ${friendlyEloError(error)}`,error:true});
-      return{ok:false,submitted,error};
+      setEloSyncState({loading:false,message:`${label}: nothing was changed. ${friendlyEloError(error)}`,error:true});
+      return{ok:false,submitted:0,error};
     }
   };
 
@@ -5519,7 +5548,6 @@ export default function App(){
 
   // Update match in any bracket structure
   const updateMatchInBracket=(matchId,updater)=>{
-    if(tournamentEnded)return;
     if(isRR){setRrRounds(prev=>prev.map(round=>round.map(m=>m.id===matchId?updater(m):m)));return;}
     setBracketData(prev=>{
       if(!prev)return prev;
@@ -5559,7 +5587,6 @@ export default function App(){
   };
 
   const updateMatchInStage=(stageIdx,matchId,updater)=>{
-    if(tournamentEnded)return;
     setStageData(prev=>{
       const base=prev[stageIdx];
       let sd={...(base?.type==="double"?normalizeDoubleElimData(base):base)};
@@ -5589,7 +5616,8 @@ export default function App(){
 
   const handleAdvance=async(fromStageIdx,advancing)=>{
     if(tournamentEnded)return;
-    await resubmitEloSequentially({stageIdx:fromStageIdx,label:`Stage ${fromStageIdx+1}`});
+    const eloResult=await resubmitEloSequentially({stageIdx:fromStageIdx,label:`Stage ${fromStageIdx+1}`});
+    if(!eloResult.ok)return;
     const nextIdx=fromStageIdx+1;
     const st=stages[nextIdx];
     if(!st)return;
@@ -5677,10 +5705,11 @@ export default function App(){
   const endTournament=async()=>{
     const placements=resultPlacementsFromState(liveTournamentState);
     if(!placements.length)return;
+    const eloResult=await resubmitEloSequentially({label:"Tournament"});
+    if(!eloResult.ok)return;
     setResultPlacements(placements);
     setTournamentEnded(true);
     setBracketTab("result");
-    await resubmitEloSequentially({label:"Tournament"});
   };
 
   const sameResultRank=(a,b)=>a&&b&&a.rankFrom===b.rankFrom&&a.rankTo===b.rankTo;
@@ -5695,9 +5724,10 @@ export default function App(){
   };
 
   useEffect(()=>{
-    if(!tournamentEnded||!placementTiebreaks.length)return;
-    setResultPlacements(prev=>applyPlacementTiebreaksToPlacements(prev,placementTiebreaks));
-  },[tournamentEnded,placementTiebreaks]);
+    if(!tournamentEnded)return;
+    const refreshed=resultPlacementsFromState(liveTournamentState);
+    setResultPlacements(applyPlacementTiebreaksToPlacements(refreshed,placementTiebreaks));
+  },[tournamentEnded,bracketData,rrRounds,stageData,placementTiebreaks]);
 
   const resultTieGroups=(placements=resultPlacements)=>{
     const groups=[];
@@ -5726,7 +5756,6 @@ export default function App(){
   };
 
   const updatePlacementTiebreakMatch=(tiebreakId,matchId,updater)=>{
-    if(tournamentEnded)return;
     setPlacementTiebreaks(prev=>prev.map(tiebreak=>{
       if(tiebreak.id!==tiebreakId)return tiebreak;
       return syncPlacementTiebreak({
@@ -6327,7 +6356,7 @@ export default function App(){
               ))}
             </div>
             {canEndTournament&&<button onClick={endTournament} style={{...btn(false),padding:"7px 13px",fontSize:12,borderColor:"rgba(79,119,115,0.45)",color:"#4f7773"}}>End Tournament</button>}
-            {tournamentEnded&&<span className="classic-workspace-readonly">⌑ Matches read only</span>}
+            {tournamentEnded&&<span className="classic-workspace-readonly">✓ Tournament ended · matches editable</span>}
           </div>
           {bracketTab==="tournament"&&(
             <>

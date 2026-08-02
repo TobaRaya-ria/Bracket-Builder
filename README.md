@@ -14,9 +14,9 @@ A playful tournament bracket builder for single elimination, double elimination,
 - Share a tournament snapshot with a generated link.
 - Store Kitakana Elo teams, history, and match updates in Supabase.
 - Search countries or paste a one-country-per-line list to apply one shared Elo bonus once to every unique country.
-- Keep completed tournament matches, scores, statistics, MVPs, and tiebreak brackets read-only.
+- Keep the tournament structure closed after completion while allowing match scores, statistics, MVPs, and existing tiebreak matches to be corrected and resubmitted to Elo.
 - Resolve tied final placements beneath the final stage and submit those matches to Elo manually or in match-number order when ending the tournament.
-- Resubmit completed stage matches to Elo in match-number order when advancing or ending a tournament.
+- Check completed stage and tournament matches in match-number order as one atomic Elo batch; unchanged matches are kept without recalculation.
 
 ## Run locally
 
@@ -57,7 +57,9 @@ VITE_SUPABASE_ANON_KEY=...
 
 When these env vars are present, login/signup uses Supabase and projects sync online. Without them, the app falls back to local browser storage.
 
-The first Kitakana Elo lookup for an account imports the verified workbook baseline once: 330 teams, 38 bonuses, and 453 historical matches. New submissions are stored by unique match code and recalculate directly in Supabase; no local Excel bridge is required.
+The first Kitakana Elo lookup for an account imports the verified workbook baseline once: 330 teams, 38 bonuses, and 453 historical matches. New submissions are stored by unique match code and calculated directly in Supabase. Match order stays fixed after the first recording, identical resubmissions are idempotent, and stage/tournament batches roll back together if any match fails.
+
+For single- and double-elimination matches, Hoshin-Renga has a result value of 2.5 and Hoshin-Kai has a result value of 4. Round-robin matches retain the standard values of 1.5 and 3.
 
 ## Round-robin AI rules
 
